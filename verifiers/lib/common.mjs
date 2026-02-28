@@ -125,3 +125,12 @@ export function loadSigningKeyFromEnvOrFile({ envVar = "REPOMESH_SIGNING_KEY", f
   if (!filePath) throw new Error(`Missing signing key: set ${envVar} or pass --signing-key <path>`);
   return fs.readFileSync(filePath, "utf8");
 }
+
+export function getOverridesForRepo(repoId) {
+  const [org, repo] = repoId.split("/");
+  const p = path.join(process.cwd(), "ledger/nodes", org, repo, "repomesh.overrides.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { return null; }
+}

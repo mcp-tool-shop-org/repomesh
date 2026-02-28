@@ -1,0 +1,20 @@
+{
+  "id": "mcp-tool-shop-org/repomesh-repro-verifier",
+  "kind": "attestor",
+  "description": "Reproducibility verifier — rebuilds release artifacts and compares hashes",
+  "provides": ["repro.build.v1"],
+  "consumes": ["network.ledger.v1"],
+  "interfaces": [
+    { "name": "repro-verifier", "version": "v1", "schemaPath": "./schemas/event.schema.json" }
+  ],
+  "invariants": { "deterministicBuild": true, "signedReleases": true, "semver": true, "changelog": true },
+  "maintainers": [
+    {
+      "name": "mcp-tool-shop",
+      "keyId": "ci-repomesh-2026",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAauffIokii3uu7oOQvkFXemEROPhBjnez/DEyir25J7w=\n-----END PUBLIC KEY-----",
+      "contact": "64996768+mcp-tool-shop@users.noreply.github.com"
+    }
+  ],
+  "tags": ["repomesh", "verifier", "reproducibility"]
+}

@@ -262,11 +262,19 @@ if (allMissing.length > 0) {
         break;
       case "repro.build":
         if (m.result === "pending") {
-          console.log(`    \u2192 Reproducible build check not yet available (planned)`);
+          console.log(`    \u2192 Reproducible build check not yet run`);
           if (m.required) {
             console.log(`      Your profile (${profileId}) requires this check.`);
-            console.log(`      This will be scored once the repro.build verifier ships.`);
           }
+          console.log(`      Wait for attestor cycle, or run locally:`);
+          console.log(`      node verifiers/repro/scripts/verify-repro.mjs --repo ${repo} --version ${entry.version}`);
+          console.log(`      Requires Docker for container-based rebuild.`);
+        } else if (m.result === "fail") {
+          console.log(`    \u2192 Reproducible build failed: artifact hashes don't match`);
+          const att = (entry.attestations || []).find(a => a.kind === "repro.build");
+          if (att?.reason) console.log(`      Reason: ${att.reason}`);
+          console.log(`      Check build determinism: timestamps, random IDs, or platform-specific output.`);
+          console.log(`      Config: verifiers/repro/config.json (allowNonDeterministicExtensions)`);
         }
         break;
     }

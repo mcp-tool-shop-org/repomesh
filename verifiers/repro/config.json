@@ -1,0 +1,7 @@
+{
+  "mode": "pragmatic",
+  "buildCommand": "npm ci && npm run build && npm pack",
+  "dockerImage": "node:22-bookworm",
+  "allowNonDeterministicExtensions": [".zip"],
+  "hashAlgorithm": "sha256"
+}

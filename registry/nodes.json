@@ -36,6 +36,23 @@
     "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
   },
   {
+    "id": "mcp-tool-shop-org/repomesh-repro-verifier",
+    "kind": "attestor",
+    "description": "Reproducibility verifier — rebuilds release artifacts and compares hashes",
+    "provides": [
+      "repro.build.v1"
+    ],
+    "consumes": [
+      "network.ledger.v1"
+    ],
+    "tags": [
+      "repomesh",
+      "verifier",
+      "reproducibility"
+    ],
+    "homepage": ""
+  },
+  {
     "id": "mcp-tool-shop-org/repomesh-security-verifier",
     "kind": "attestor",
     "description": "RepoMesh verifier: dependency vulnerability scan via OSV.dev using SBOM PURLs.",

@@ -48,6 +48,14 @@ jobs:
         run: |
           node verifiers/security/scripts/verify-security.mjs --scan-new --sign --output /tmp/repomesh-ci/security.jsonl || true
 
+      # Run reproducibility verifier
+      - name: Run reproducibility verifier
+        env:
+          REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+          REPOMESH_KEY_ID: ci-repomesh-2026
+        run: |
+          node verifiers/repro/scripts/verify-repro.mjs --scan-new --sign --output /tmp/repomesh-ci/repro.jsonl || true
+
       # Run policy checks
       - name: Run policy checks
         env:
@@ -63,14 +71,16 @@ jobs:
           ATTESTATIONS=$(wc -l < /tmp/repomesh-ci/attestations.jsonl 2>/dev/null || echo 0)
           LICENSE=$(wc -l < /tmp/repomesh-ci/license.jsonl 2>/dev/null || echo 0)
           SECURITY=$(wc -l < /tmp/repomesh-ci/security.jsonl 2>/dev/null || echo 0)
+          REPRO=$(wc -l < /tmp/repomesh-ci/repro.jsonl 2>/dev/null || echo 0)
           VIOLATIONS=$(wc -l < /tmp/repomesh-ci/violations.jsonl 2>/dev/null || echo 0)
-          TOTAL=$((ATTESTATIONS + LICENSE + SECURITY + VIOLATIONS))
+          TOTAL=$((ATTESTATIONS + LICENSE + SECURITY + REPRO + VIOLATIONS))
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "attestations=$ATTESTATIONS" >> "$GITHUB_OUTPUT"
           echo "license=$LICENSE" >> "$GITHUB_OUTPUT"
           echo "security=$SECURITY" >> "$GITHUB_OUTPUT"
+          echo "repro=$REPRO" >> "$GITHUB_OUTPUT"
           echo "violations=$VIOLATIONS" >> "$GITHUB_OUTPUT"
-          echo "Attestations: $ATTESTATIONS, License: $LICENSE, Security: $SECURITY, Violations: $VIOLATIONS, Total: $TOTAL"
+          echo "Attestations: $ATTESTATIONS, License: $LICENSE, Security: $SECURITY, Repro: $REPRO, Violations: $VIOLATIONS, Total: $TOTAL"
 
       # Append events and open PR
       - name: Append events to ledger via PR
@@ -100,24 +110,30 @@ jobs:
             cat /tmp/repomesh-ci/security.jsonl >> ledger/events/events.jsonl
           fi
 
+          # Append reproducibility verifier events
+          if [ -s /tmp/repomesh-ci/repro.jsonl ]; then
+            cat /tmp/repomesh-ci/repro.jsonl >> ledger/events/events.jsonl
+          fi
+
           # Append violation events
           if [ -s /tmp/repomesh-ci/violations.jsonl ]; then
             cat /tmp/repomesh-ci/violations.jsonl >> ledger/events/events.jsonl
           fi
 
           git add ledger/events/events.jsonl
-          git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.violations }} violation(s)"
+          git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro, ${{ steps.check.outputs.violations }} violation(s)"
           git push origin "$BRANCH"
 
           gh pr create \
             --head "$BRANCH" \
-            --title "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security" \
+            --title "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro" \
             --body "$(cat <<'EOF'
           ## RepoMesh Attestor Run
 
           **Attestations:** ${{ steps.check.outputs.attestations }}
           **License Audits:** ${{ steps.check.outputs.license }}
           **Security Scans:** ${{ steps.check.outputs.security }}
+          **Repro Builds:** ${{ steps.check.outputs.repro }}
           **Policy Violations:** ${{ steps.check.outputs.violations }}
 
           Automated attestor + verifier + policy scan. Ledger CI will verify schema and signatures.
