@@ -20,21 +20,31 @@
         "kind": "signature.chain",
         "result": "pass",
         "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)"
+      },
+      {
+        "kind": "license.audit",
+        "result": "pass",
+        "reason": "All 0 component licenses are in the allowlist"
+      },
+      {
+        "kind": "security.scan",
+        "result": "pass",
+        "reason": "No dependencies in SBOM; zero attack surface."
       }
     ],
     "policyViolations": [],
     "trustScore": 100,
     "integrityScore": 100,
-    "assuranceScore": 0,
+    "assuranceScore": 70,
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
-        "points": 0,
+        "result": "pass",
+        "points": 30,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
-        "points": 0,
+        "result": "pass",
+        "points": 40,
         "max": 40
       },
       "repro.build": {
@@ -65,21 +75,31 @@
         "kind": "signature.chain",
         "result": "pass",
         "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)"
+      },
+      {
+        "kind": "license.audit",
+        "result": "warn",
+        "reason": "SBOM missing from ReleasePublished attestations; cannot audit licenses."
+      },
+      {
+        "kind": "security.scan",
+        "result": "warn",
+        "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan."
       }
     ],
     "policyViolations": [],
     "trustScore": 60,
     "integrityScore": 60,
-    "assuranceScore": 0,
+    "assuranceScore": 35,
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
-        "points": 0,
+        "result": "warn",
+        "points": 15,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
-        "points": 0,
+        "result": "warn",
+        "points": 20,
         "max": 40
       },
       "repro.build": {

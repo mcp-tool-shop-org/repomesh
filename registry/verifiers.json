@@ -6,7 +6,7 @@
       "checks": [
         "license.audit"
       ],
-      "lastRun": null
+      "lastRun": "2026-02-28T05:59:58.843Z"
     },
     {
       "id": "mcp-tool-shop-org/repomesh-security-verifier",
@@ -14,13 +14,19 @@
       "checks": [
         "security.scan"
       ],
-      "lastRun": null
+      "lastRun": "2026-02-28T05:59:59.059Z"
     }
   ],
   "coverage": {
     "mcp-tool-shop-org/shipcheck": {
-      "1.0.3": [],
-      "1.0.4": []
+      "1.0.3": [
+        "license.audit",
+        "security.scan"
+      ],
+      "1.0.4": [
+        "license.audit",
+        "security.scan"
+      ]
     }
   }
 }
