@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/repomesh.profile.schema.json",
+  "title": "RepoMesh Profile Selection",
+  "description": "Declares which profile a node uses and where its overrides live.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profileId"],
+  "properties": {
+    "profileId": {
+      "type": "string",
+      "enum": ["baseline", "open-source", "regulated"],
+      "description": "Which canonical profile this node follows"
+    },
+    "profileVersion": {
+      "type": "string",
+      "pattern": "^v[0-9]+$",
+      "default": "v1",
+      "description": "Profile version to pin against (default: latest)"
+    },
+    "overridesPath": {
+      "type": "string",
+      "default": "repomesh.overrides.json",
+      "description": "Path to optional overrides file, relative to node snapshot directory"
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "Free-text notes about profile selection rationale"
+    }
+  }
+}

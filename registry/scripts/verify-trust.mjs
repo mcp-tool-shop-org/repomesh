@@ -5,7 +5,7 @@
 //   node verify-trust.mjs --repo org/repo --version 1.2.3
 //   node verify-trust.mjs --repo org/repo  (latest version)
 //
-// Prints trust summary with both integrity and assurance breakdowns.
+// Prints trust summary with integrity/assurance breakdowns and profile-based coaching.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +13,8 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TRUST_PATH = path.join(ROOT, "registry", "trust.json");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
+const NODES_DIR = path.join(ROOT, "ledger", "nodes");
+const PROFILES_DIR = path.join(ROOT, "profiles");
 
 const args = process.argv.slice(2);
 const repoIdx = args.indexOf("--repo");
@@ -53,6 +55,24 @@ if (!entry) {
   process.exit(1);
 }
 
+// Load profile info
+function loadRepoProfile(repoId) {
+  const [org, r] = repoId.split("/");
+  const p = path.join(NODES_DIR, org, r, "repomesh.profile.json");
+  if (!fs.existsSync(p)) return null;
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
+}
+
+function loadProfileDef(profileId) {
+  const p = path.join(PROFILES_DIR, `${profileId}.json`);
+  if (!fs.existsSync(p)) return null;
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
+}
+
+const repoProfile = loadRepoProfile(entry.repo);
+const profileId = entry.profileId || repoProfile?.profileId || null;
+const profileDef = profileId ? loadProfileDef(profileId) : null;
+
 // Load release event for inline attestation info
 const events = fs.existsSync(LEDGER_PATH)
   ? fs.readFileSync(LEDGER_PATH, "utf8")
@@ -73,42 +93,18 @@ for (const a of entry.attestations || []) {
 
 // Build integrity checklist
 const integrityChecks = [
+  { name: "Signed & in ledger", key: "signed", weight: 15, pass: true },
+  { name: "Has artifacts", key: "hasArtifacts", weight: 15, pass: entry.artifactCount > 0 },
+  { name: "No policy violations", key: "noPolicyViolations", weight: 15, pass: (entry.policyViolations || []).length === 0 },
   {
-    name: "Signed & in ledger",
-    key: "signed",
-    weight: 15,
-    pass: true
-  },
-  {
-    name: "Has artifacts",
-    key: "hasArtifacts",
-    weight: 15,
-    pass: entry.artifactCount > 0
-  },
-  {
-    name: "No policy violations",
-    key: "noPolicyViolations",
-    weight: 15,
-    pass: (entry.policyViolations || []).length === 0
-  },
-  {
-    name: "SBOM present",
-    key: "sbom.present",
-    weight: 20,
+    name: "SBOM present", key: "sbom.present", weight: 20,
     pass: inlineTypes.has("sbom") || inlineTypes.has("sbom.present") || attestedKinds.get("sbom.present") === "pass"
   },
   {
-    name: "Provenance present",
-    key: "provenance.present",
-    weight: 20,
+    name: "Provenance present", key: "provenance.present", weight: 20,
     pass: inlineTypes.has("provenance") || attestedKinds.get("provenance.present") === "pass"
   },
-  {
-    name: "Signature chain verified",
-    key: "signature.chain",
-    weight: 15,
-    pass: attestedKinds.get("signature.chain") === "pass"
-  }
+  { name: "Signature chain verified", key: "signature.chain", weight: 15, pass: attestedKinds.get("signature.chain") === "pass" }
 ];
 
 // Build assurance checklist
@@ -118,7 +114,10 @@ const assuranceWeights = {
   "repro.build":   { pass: 30, warn: 15, fail: 0 }
 };
 
-const assuranceChecks = Object.entries(assuranceWeights).map(([kind, weights]) => {
+const expectedAssurance = profileDef?.requiredChecks?.assurance || Object.keys(assuranceWeights);
+
+const assuranceChecks = expectedAssurance.map((kind) => {
+  const weights = assuranceWeights[kind] || { pass: 0, warn: 0, fail: 0 };
   const result = attestedKinds.get(kind) || "pending";
   const pts = result !== "pending" ? (weights[result] ?? 0) : 0;
   return {
@@ -126,7 +125,8 @@ const assuranceChecks = Object.entries(assuranceWeights).map(([kind, weights]) =
     key: kind,
     maxWeight: weights.pass,
     result,
-    points: pts
+    points: pts,
+    required: (profileDef?.requiredChecks?.assurance || []).includes(kind)
   };
 });
 
@@ -140,6 +140,9 @@ const aBadge = assuranceScore >= 70 ? "\u2705" : assuranceScore >= 30 ? "\u26A0\
 console.log(`\n${iBadge} ${entry.repo}@${entry.version}`);
 console.log(`  Integrity Score:  ${integrityScore}/100`);
 console.log(`  Assurance Score:  ${assuranceScore}/100`);
+if (profileId) {
+  console.log(`  Profile:          ${profileId}${profileDef ? ` (${profileDef.version})` : ""}`);
+}
 console.log();
 console.log(`  Commit:    ${entry.commit}`);
 console.log(`  Published: ${entry.timestamp}`);
@@ -178,47 +181,93 @@ for (const c of assuranceChecks) {
     mark = "\u23F3";
     ptsStr = ` 0`;
   }
-  const label = `${c.name} (${c.result})`;
-  console.log(`    ${mark} ${label.padEnd(32)} ${ptsStr.padStart(3)} / ${c.maxWeight} pts`);
+  const reqTag = c.required ? "" : " (optional)";
+  const label = `${c.name} (${c.result})${reqTag}`;
+  console.log(`    ${mark} ${label.padEnd(38)} ${ptsStr.padStart(3)} / ${c.maxWeight} pts`);
   computedAssurance += c.points;
   if (c.result === "pending" || c.result === "fail") missingAssurance.push(c);
 }
-console.log(`${"".padEnd(41)}${"---".padStart(6)}`);
-console.log(`${"".padEnd(38)}Total: ${computedAssurance}/100`);
+console.log(`${"".padEnd(45)}${"---".padStart(6)}`);
+console.log(`${"".padEnd(42)}Total: ${computedAssurance}/100`);
 
-// Print recommendations
+// Print coaching recommendations
 const allMissing = [...missingIntegrity, ...missingAssurance];
 if (allMissing.length > 0) {
-  console.log("\n  Recommendations:");
+  console.log("\n  What to do next:");
+
   for (const m of missingIntegrity) {
     switch (m.key) {
       case "sbom.present":
-        console.log(`    - Add SBOM generation to your broadcast workflow (npm sbom --sbom-format cyclonedx)`);
+        console.log(`    \u2192 Add SBOM generation to your broadcast workflow`);
+        console.log(`      npm sbom --sbom-format cyclonedx (already in broadcast template)`);
+        if (profileDef?.requiredEvidence?.sbom) {
+          console.log(`      Your profile (${profileId}) requires SBOM.`);
+        }
         break;
       case "provenance.present":
-        console.log(`    - Add provenance generation to your broadcast workflow (SLSA-style statement)`);
+        console.log(`    \u2192 Add provenance generation to your broadcast workflow`);
+        console.log(`      The broadcast template generates SLSA-style provenance automatically.`);
+        if (profileDef?.requiredEvidence?.provenance) {
+          console.log(`      Your profile (${profileId}) requires provenance.`);
+        }
         break;
       case "signature.chain":
-        console.log(`    - Wait for the attestor to run (or trigger: gh workflow run attestor-ci)`);
+        console.log(`    \u2192 Wait for the next attestor cycle (runs every 6 hours)`);
+        console.log(`      Or trigger manually: gh workflow run attestor-ci`);
         break;
       case "hasArtifacts":
-        console.log(`    - Ensure your broadcast workflow hashes real build artifacts`);
+        console.log(`    \u2192 Ensure your broadcast workflow hashes real build artifacts`);
+        console.log(`      Check the "Hash artifacts" step in repomesh-broadcast.yml`);
         break;
       case "noPolicyViolations":
-        console.log(`    - Fix policy violations (run: node policy/scripts/check-policy.mjs --repo ${repo})`);
+        console.log(`    \u2192 Fix policy violations:`);
+        console.log(`      node policy/scripts/check-policy.mjs --repo ${repo}`);
         break;
     }
   }
+
   for (const m of missingAssurance) {
     switch (m.key) {
       case "license.audit":
-        console.log(`    - Run license verifier: node verifiers/license/scripts/verify-license.mjs --repo ${repo} --version ${entry.version}`);
+        if (m.result === "pending") {
+          console.log(`    \u2192 License audit not yet run`);
+          if (m.required) {
+            console.log(`      Your profile (${profileId}) requires this check.`);
+          }
+          console.log(`      Wait for attestor cycle, or run locally:`);
+          console.log(`      node verifiers/license/scripts/verify-license.mjs --repo ${repo} --version ${entry.version}`);
+        } else if (m.result === "fail") {
+          console.log(`    \u2192 License audit failed: copyleft licenses detected`);
+          // Find the attestation for details
+          const att = (entry.attestations || []).find(a => a.kind === "license.audit");
+          if (att?.reason) console.log(`      Reason: ${att.reason}`);
+          console.log(`      Review: verifiers/license/config.json (allowlist/copyleft rules)`);
+          console.log(`      Override: add allowed licenses to repomesh.overrides.json`);
+        }
         break;
       case "security.scan":
-        console.log(`    - Run security verifier: node verifiers/security/scripts/verify-security.mjs --repo ${repo} --version ${entry.version}`);
+        if (m.result === "pending") {
+          console.log(`    \u2192 Security scan not yet run`);
+          if (m.required) {
+            console.log(`      Your profile (${profileId}) requires this check.`);
+          }
+          console.log(`      Wait for attestor cycle, or run locally:`);
+          console.log(`      node verifiers/security/scripts/verify-security.mjs --repo ${repo} --version ${entry.version}`);
+        } else if (m.result === "fail") {
+          console.log(`    \u2192 Security scan failed: high/critical vulnerabilities found`);
+          const att = (entry.attestations || []).find(a => a.kind === "security.scan");
+          if (att?.reason) console.log(`      Reason: ${att.reason}`);
+          console.log(`      To ignore known-safe vulns: add to repomesh.overrides.json with justification`);
+        }
         break;
       case "repro.build":
-        console.log(`    - Reproducibility verifier not yet available (Phase 5+)`);
+        if (m.result === "pending") {
+          console.log(`    \u2192 Reproducible build check not yet available (planned)`);
+          if (m.required) {
+            console.log(`      Your profile (${profileId}) requires this check.`);
+            console.log(`      This will be scored once the repro.build verifier ships.`);
+          }
+        }
         break;
     }
   }
@@ -230,6 +279,16 @@ if (entry.attestations?.length > 0) {
   for (const att of entry.attestations) {
     const mark = att.result === "pass" ? "\u2705" : att.result === "warn" ? "\u26A0\uFE0F" : "\u274C";
     console.log(`    ${mark} ${att.kind}: ${att.reason || att.result}`);
+  }
+}
+
+// Print expected checks summary (profile-aware)
+if (entry.expectedChecks?.length > 0) {
+  const completed = entry.completedChecks || [];
+  const missing = entry.missingChecks || [];
+  console.log(`\n  Check Coverage: ${completed.length}/${entry.expectedChecks.length} expected checks complete`);
+  if (missing.length > 0) {
+    console.log(`  Missing: ${missing.join(", ")}`);
   }
 }
 

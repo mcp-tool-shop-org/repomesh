@@ -9,6 +9,7 @@ RepoMesh turns a collection of repos into a cooperative network. Each repo is a 
 - A **manifest** (`node.json`) declaring what it provides and consumes
 - **Signed events** broadcast to an append-only ledger
 - A **registry** indexing all nodes and capabilities
+- A **profile** defining what "done" means for trust
 
 The network enforces three invariants:
 
@@ -16,32 +17,85 @@ The network enforces three invariants:
 2. **Verifiable provenance** — every release is signed and attested
 3. **Composable contracts** — interfaces are versioned and machine-readable
 
+## Quick Start (1 command + 2 secrets)
+
+```bash
+node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+```
+
+This generates everything you need:
+- `node.json` — your node manifest
+- `repomesh.profile.json` — your chosen profile
+- `.github/workflows/repomesh-broadcast.yml` — release broadcast workflow
+- Ed25519 signing keypair (private key stays local)
+
+Then add two secrets to your repo:
+1. `REPOMESH_SIGNING_KEY` — your private key PEM (printed by init)
+2. `REPOMESH_LEDGER_TOKEN` — GitHub PAT with `contents:write` + `pull-requests:write` on this repo
+
+Cut a release. Trust converges automatically.
+
+### Profiles
+
+| Profile | Evidence | Assurance Checks | Use When |
+|---------|----------|-----------------|----------|
+| `baseline` | Optional | None required | Internal tools, experiments |
+| `open-source` | SBOM + provenance | License audit + security scan | Default for OSS |
+| `regulated` | SBOM + provenance | License + security + reproducibility | Compliance-critical |
+
+### Check Trust
+
+```bash
+node registry/scripts/verify-trust.mjs --repo your-org/your-repo
+```
+
+Shows integrity score, assurance score, profile-aware recommendations.
+
+### Overrides
+
+Per-repo customization without forking verifiers:
+
+```json
+// repomesh.overrides.json
+{
+  "license": { "allowlistAdd": ["WTFPL"] },
+  "security": { "ignoreVulns": [{ "id": "GHSA-xxx", "justification": "Not reachable" }] }
+}
+```
+
 ## Repo Structure
 
 ```
 repomesh/
-  schemas/                  # Source of truth for all schemas
-    node.schema.json        # Node manifest schema
-    event.schema.json       # Event envelope schema
-  ledger/                   # Append-only signed event log
-    events/events.jsonl     # The ledger itself
-    nodes/                  # Registered node manifests
-    scripts/                # Validation + verification tooling
-  attestor/                 # Universal attestor (sbom, provenance, sig chain)
+  profiles/                   # Trust profiles (baseline, open-source, regulated)
+  schemas/                    # Source of truth for all schemas
+    node.schema.json          # Node manifest schema
+    event.schema.json         # Event envelope schema
+    repomesh.profile.schema.json   # Profile selection schema
+    repomesh.overrides.schema.json # Per-repo overrides schema
+  ledger/                     # Append-only signed event log
+    events/events.jsonl       # The ledger itself
+    nodes/                    # Registered node manifests + profiles
+    scripts/                  # Validation + verification tooling
+  attestor/                   # Universal attestor (sbom, provenance, sig chain)
     scripts/attest-release.mjs
-  policy/                   # Network policy checks (semver, hash uniqueness)
+  verifiers/                  # Independent verifier nodes
+    license/                  # License compliance scanner
+    security/                 # Vulnerability scanner (OSV.dev)
+  policy/                     # Network policy checks (semver, hash uniqueness)
     scripts/check-policy.mjs
-  registry/                 # Network index (auto-generated from ledger)
-    nodes.json              # All registered nodes
-    capabilities.json       # Capability → node reverse index
-    trust.json              # Trust scores per release
-    dependencies.json       # Dependency graph + warnings
-  templates/                # Workflow templates for joining
-  tools/                    # Developer UX tools
-    join-node.mjs           # One command to register a node
+  registry/                   # Network index (auto-generated from ledger)
+    nodes.json                # All registered nodes
+    capabilities.json         # Capability -> node reverse index
+    trust.json                # Trust scores per release (integrity + assurance)
+    verifiers.json            # Verifier coverage per release
+    dependencies.json         # Dependency graph + warnings
+  templates/                  # Workflow templates for joining
+  tools/                      # Developer UX tools
+    repomesh.mjs              # CLI entrypoint (init, register-node, keygen)
 ```
 
-## Join the Network (5 minutes)
+## Manual Join (5 minutes)
 
 ### 1. Create your node manifest
 
@@ -85,12 +139,13 @@ Open a PR to this repo adding your node manifest:
 
 ```
 ledger/nodes/<your-org>/<your-repo>/node.json
+ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
 ```
 
 ### 4. Add the broadcast workflow
 
 Copy `templates/repomesh-broadcast.yml` to your repo's `.github/workflows/`.
-Set the `REPOMESH_LEDGER_TOKEN` secret (a PAT with repo scope on this repo).
+Set the `REPOMESH_LEDGER_TOKEN` secret (a fine-grained PAT with contents:write + pull-requests:write on this repo).
 
 Every release will now automatically broadcast a signed `ReleasePublished` event to the ledger.
 
@@ -132,39 +187,31 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 ### Verify a release
 
 ```bash
-cd ledger && node scripts/verify-release.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.1
+node registry/scripts/verify-trust.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.4
 ```
 
 ### Attest a release
 
 ```bash
-node attestor/scripts/attest-release.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.1
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
 ```
 
 Checks: `sbom.present`, `provenance.present`, `signature.chain`
 
+### Run verifiers
+
+```bash
+node verifiers/license/scripts/verify-license.mjs --scan-new
+node verifiers/security/scripts/verify-security.mjs --scan-new
+```
+
 ### Run policy checks
 
 ```bash
 node policy/scripts/check-policy.mjs
-node policy/scripts/check-policy.mjs --repo mcp-tool-shop-org/shipcheck
 ```
 
 Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
-
-### Query trust
-
-`registry/trust.json` is auto-generated and answers: "Is org/repo@version good?"
-
-Each release gets a trust score (0-100) based on: signature (30), SBOM (20), provenance (20), signature chain (15), clean policy (15).
-
-### Join with one command
-
-```bash
-node tools/join-node.mjs --node-json path/to/node.json
-node tools/join-node.mjs --node-json path/to/node.json --pr  # also opens PR
-```
 
 ## License
 

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/profile.schema.json",
+  "title": "RepoMesh Profile",
+  "description": "Defines what 'done' means for a class of repos: required evidence, expected checks, and scoring policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "description", "requiredEvidence", "requiredChecks"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": ["baseline", "open-source", "regulated"],
+      "description": "Profile identifier"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v[0-9]+$",
+      "description": "Profile version (e.g., v1)"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "requiredEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sbom", "provenance"],
+      "properties": {
+        "sbom": { "type": "boolean", "description": "SBOM must be present on release" },
+        "provenance": { "type": "boolean", "description": "Provenance must be present on release" }
+      }
+    },
+    "requiredChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["integrity", "assurance"],
+      "properties": {
+        "integrity": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Integrity checks that must pass (e.g., sbom.present, provenance.present)"
+        },
+        "assurance": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Assurance checks that must complete (e.g., license.audit, security.scan)"
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "securityFailOn": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["critical", "high", "moderate", "low"] },
+          "description": "Severity levels that trigger security.scan fail"
+        },
+        "licenseTreatUnknownAs": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"],
+          "description": "How to treat unknown/missing licenses"
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assuranceWeights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "pass": { "type": "number", "minimum": 0, "maximum": 100 },
+              "warn": { "type": "number", "minimum": 0, "maximum": 100 },
+              "fail": { "type": "number", "minimum": 0, "maximum": 100 }
+            },
+            "required": ["pass", "warn", "fail"]
+          },
+          "description": "Override assurance weights per check type"
+        }
+      }
+    }
+  }
+}

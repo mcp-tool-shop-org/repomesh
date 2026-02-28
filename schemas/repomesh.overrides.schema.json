@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/repomesh.overrides.schema.json",
+  "title": "RepoMesh Overrides",
+  "description": "Per-repo overrides for verifier behavior without forking verifier config.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowlistAdd": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional SPDX license IDs to allow for this repo"
+        },
+        "allowlistRemove": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "SPDX license IDs to disallow even if in global allowlist"
+        },
+        "treatUnknownAs": {
+          "type": "string",
+          "enum": ["pass", "warn", "fail"],
+          "description": "Override how unknown/missing licenses are treated"
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "failOnSeverities": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["critical", "high", "moderate", "low"] },
+          "description": "Severity levels that trigger security.scan fail"
+        },
+        "ignoreVulns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "justification"],
+            "properties": {
+              "id": { "type": "string", "description": "OSV/CVE/GHSA vulnerability ID" },
+              "justification": { "type": "string", "minLength": 10, "description": "Why this vuln is safe to ignore" }
+            }
+          },
+          "description": "Known-safe vulnerabilities to exclude from scoring"
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assuranceWeights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "pass": { "type": "number", "minimum": 0, "maximum": 100 },
+              "warn": { "type": "number", "minimum": 0, "maximum": 100 },
+              "fail": { "type": "number", "minimum": 0, "maximum": 100 }
+            },
+            "required": ["pass", "warn", "fail"]
+          }
+        }
+      }
+    }
+  }
+}

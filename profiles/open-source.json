@@ -1,0 +1,17 @@
+{
+  "id": "open-source",
+  "version": "v1",
+  "description": "Default profile for open-source projects. Requires SBOM, provenance, license audit, and security scan. Copyleft licenses fail; unknown licenses warn.",
+  "requiredEvidence": {
+    "sbom": true,
+    "provenance": true
+  },
+  "requiredChecks": {
+    "integrity": ["signed", "hasArtifacts", "noPolicyViolations", "sbom.present", "provenance.present", "signature.chain"],
+    "assurance": ["license.audit", "security.scan"]
+  },
+  "thresholds": {
+    "securityFailOn": ["critical", "high"],
+    "licenseTreatUnknownAs": "warn"
+  }
+}

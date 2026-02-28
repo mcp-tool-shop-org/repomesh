@@ -35,7 +35,18 @@
     "policyViolations": [],
     "trustScore": 100,
     "integrityScore": 100,
-    "assuranceScore": 70,
+    "assuranceScore": 100,
+    "profileId": "open-source",
+    "expectedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain",
+      "license.audit",
+      "security.scan"
+    ],
     "assuranceBreakdown": {
       "license.audit": {
         "result": "pass",
@@ -46,13 +57,19 @@
         "result": "pass",
         "points": 40,
         "max": 40
-      },
-      "repro.build": {
-        "result": "missing",
-        "points": 0,
-        "max": 30
       }
-    }
+    },
+    "completedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain",
+      "license.audit",
+      "security.scan"
+    ],
+    "missingChecks": []
   },
   {
     "repo": "mcp-tool-shop-org/shipcheck",
@@ -90,7 +107,18 @@
     "policyViolations": [],
     "trustScore": 60,
     "integrityScore": 60,
-    "assuranceScore": 35,
+    "assuranceScore": 50,
+    "profileId": "open-source",
+    "expectedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain",
+      "license.audit",
+      "security.scan"
+    ],
     "assuranceBreakdown": {
       "license.audit": {
         "result": "warn",
@@ -101,12 +129,19 @@
         "result": "warn",
         "points": 20,
         "max": 40
-      },
-      "repro.build": {
-        "result": "missing",
-        "points": 0,
-        "max": 30
       }
-    }
+    },
+    "completedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "signature.chain",
+      "license.audit",
+      "security.scan"
+    ],
+    "missingChecks": [
+      "sbom.present",
+      "provenance.present"
+    ]
   }
 ]

@@ -19,14 +19,28 @@
   ],
   "coverage": {
     "mcp-tool-shop-org/shipcheck": {
-      "1.0.3": [
-        "license.audit",
-        "security.scan"
-      ],
-      "1.0.4": [
-        "license.audit",
-        "security.scan"
-      ]
+      "1.0.3": {
+        "completed": [
+          "license.audit",
+          "security.scan"
+        ],
+        "expected": [
+          "license.audit",
+          "security.scan"
+        ],
+        "missing": []
+      },
+      "1.0.4": {
+        "completed": [
+          "license.audit",
+          "security.scan"
+        ],
+        "expected": [
+          "license.audit",
+          "security.scan"
+        ],
+        "missing": []
+      }
     }
   }
 }

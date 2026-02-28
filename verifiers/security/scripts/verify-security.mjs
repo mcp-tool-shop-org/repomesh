@@ -6,6 +6,8 @@
 //   node verify-security.mjs --scan-new
 //   node verify-security.mjs --scan-new --sign --output /tmp/security.jsonl
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   readEvents,
   findReleaseEvent,
@@ -19,6 +21,17 @@ import {
 import { findSbomUriFromReleaseEvent, fetchCycloneDxComponents } from "../../lib/fetch-sbom.mjs";
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Load per-repo overrides from ledger node snapshot
+function loadSecurityOverrides(repo) {
+  const [org, repoName] = repo.split("/");
+  const p = path.join(process.cwd(), "ledger/nodes", org, repoName, "repomesh.overrides.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(p, "utf8"));
+    return data?.security || null;
+  } catch { return null; }
+}
 
 async function osvQueryBatch(queries) {
   const url = "https://api.osv.dev/v1/querybatch";
@@ -123,6 +136,11 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
     return { result: "warn", reason: "osv unreachable" };
   }
 
+  // Load per-repo overrides
+  const overrides = loadSecurityOverrides(repo);
+  const ignoreIds = new Set((overrides?.ignoreVulns || []).map(v => v.id));
+  const failSeverities = new Set(overrides?.failOnSeverities || ["critical", "high"]);
+
   const results = Array.isArray(osv?.results) ? osv.results : [];
   const counts = { critical: 0, high: 0, moderate: 0, low: 0, unknown: 0 };
   const topCritical = [];
@@ -130,18 +148,24 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
   for (const r of results) {
     const vulns = Array.isArray(r?.vulns) ? r.vulns : [];
     for (const v of vulns) {
+      const vulnId = v?.id || v?.aliases?.[0] || "UNKNOWN";
+      // Skip ignored vulns (with justification required in overrides)
+      if (ignoreIds.has(vulnId)) continue;
+
       const b = severityBucket(v);
       counts[b] = (counts[b] || 0) + 1;
       if (b === "critical" && topCritical.length < 5) {
-        topCritical.push(v?.id || v?.aliases?.[0] || "UNKNOWN");
+        topCritical.push(vulnId);
       }
     }
   }
 
   const total = counts.critical + counts.high + counts.moderate + counts.low + counts.unknown;
   let result = "pass";
-  if (counts.critical > 0 || counts.high > 0) result = "fail";
-  else if (counts.moderate > 0 || counts.low > 0 || counts.unknown > 0) result = "warn";
+  // Use failOnSeverities from overrides (default: critical + high)
+  const hasFail = [...failSeverities].some(sev => (counts[sev] || 0) > 0);
+  if (hasFail) result = "fail";
+  else if (total > 0) result = "warn";
 
   let reason;
   if (result === "pass") {

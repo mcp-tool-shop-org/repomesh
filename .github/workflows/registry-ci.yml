@@ -7,6 +7,7 @@ on:
       - 'ledger/nodes/**'
       - 'ledger/events/**'
       - 'registry/scripts/**'
+      - 'profiles/**'
       - '.github/workflows/registry-ci.yml'
   workflow_dispatch:
 
@@ -26,6 +27,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Validate profile snapshots
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const nodesDir = 'ledger/nodes';
+          const validProfiles = ['baseline', 'open-source', 'regulated'];
+          let errors = 0;
+          if (!fs.existsSync(nodesDir)) process.exit(0);
+          for (const org of fs.readdirSync(nodesDir, { withFileTypes: true }).filter(d => d.isDirectory())) {
+            for (const repo of fs.readdirSync(path.join(nodesDir, org.name), { withFileTypes: true }).filter(d => d.isDirectory())) {
+              const profilePath = path.join(nodesDir, org.name, repo.name, 'repomesh.profile.json');
+              if (!fs.existsSync(profilePath)) continue;
+              try {
+                const p = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+                if (!validProfiles.includes(p.profileId)) {
+                  console.error('Invalid profile ' + p.profileId + ' in ' + profilePath);
+                  errors++;
+                }
+                console.log('  OK ' + org.name + '/' + repo.name + ': ' + p.profileId);
+              } catch (e) {
+                console.error('Parse error in ' + profilePath + ': ' + e.message);
+                errors++;
+              }
+            }
+          }
+          if (errors > 0) { console.error(errors + ' profile validation error(s)'); process.exit(1); }
+          console.log('All profile snapshots valid.');
+          "
 
       - name: Build registry index
         run: node registry/scripts/build-registry.mjs

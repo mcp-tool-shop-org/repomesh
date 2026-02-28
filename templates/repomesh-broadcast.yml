@@ -1,18 +1,24 @@
 # RepoMesh Broadcast — Release → Ledger PR
 # Copy this workflow into your repo's .github/workflows/ to join the network.
 #
-# Prerequisites:
+# Setup (one-time):
+#   node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+#
+# Or manually:
 #   1. Your repo has a node.json at root
 #   2. Your node.json snapshot is registered in repomesh (ledger/nodes/<org>/<repo>/node.json)
 #   3. Generate an ed25519 keypair:
 #      openssl genpkey -algorithm ED25519 -out repomesh-private.pem
 #      openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
 #   4. Store the private key PEM as repo secret: REPOMESH_SIGNING_KEY
-#   5. Store a PAT with repo scope on mcp-tool-shop-org/repomesh as: REPOMESH_LEDGER_TOKEN
+#   5. Store a PAT with contents:write + pull-requests:write on the ledger repo: REPOMESH_LEDGER_TOKEN
 #
 # Configuration (edit these):
 #   REPOMESH_KEY_ID: must match the keyId in your registered node.json maintainer entry
 #   Build/hash steps: adjust for your project's artifact paths
+#
+# Evidence generation (SBOM + provenance) is always on.
+# Profile determines which checks are required, not what evidence is generated.
 
 name: repomesh-broadcast
 

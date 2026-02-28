@@ -1,0 +1,17 @@
+{
+  "id": "baseline",
+  "version": "v1",
+  "description": "Integrity-focused profile. Verifies release authenticity and policy compliance. SBOM and provenance are optional. Assurance checks (license, security) are not required.",
+  "requiredEvidence": {
+    "sbom": false,
+    "provenance": false
+  },
+  "requiredChecks": {
+    "integrity": ["signed", "hasArtifacts", "noPolicyViolations", "signature.chain"],
+    "assurance": []
+  },
+  "thresholds": {
+    "securityFailOn": ["critical", "high"],
+    "licenseTreatUnknownAs": "warn"
+  }
+}

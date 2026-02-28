@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // RepoMesh Verifier Index — Generates registry/verifiers.json
 // Lists attestor nodes, their checks, last run times, and per-release coverage.
+// Phase 6: includes profile-aware expected/completed/missing checks per repo.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +9,7 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const NODES_DIR = path.join(ROOT, "ledger", "nodes");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
+const PROFILES_DIR = path.join(ROOT, "profiles");
 const REGISTRY_DIR = path.join(ROOT, "registry");
 
 function readEvents() {
@@ -35,6 +37,25 @@ function walkNodes() {
     }
   }
   return nodes;
+}
+
+// Load profile selection for a repo
+function loadRepoProfile(repoId) {
+  const [org, repo] = repoId.split("/");
+  const profilePath = path.join(NODES_DIR, org, repo, "repomesh.profile.json");
+  if (!fs.existsSync(profilePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(profilePath, "utf8"));
+  } catch { return null; }
+}
+
+// Load canonical profile definition
+function loadProfileDef(profileId) {
+  const p = path.join(PROFILES_DIR, `${profileId}.json`);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { return null; }
 }
 
 // Known assurance check types
@@ -84,13 +105,34 @@ for (const ev of events) {
   const types = ats.map(a => a?.type).filter(Boolean);
 
   if (!coverage[repo]) coverage[repo] = {};
-  if (!coverage[repo][version]) coverage[repo][version] = [];
+  if (!coverage[repo][version]) coverage[repo][version] = { completed: [], expected: [], missing: [] };
 
   for (const t of types) {
-    if (ASSURANCE_CHECKS.includes(t) && !coverage[repo][version].includes(t)) {
-      coverage[repo][version].push(t);
+    if (ASSURANCE_CHECKS.includes(t) && !coverage[repo][version].completed.includes(t)) {
+      coverage[repo][version].completed.push(t);
     }
   }
+}
+
+// Add expected/missing from profiles
+const reposSeen = new Set();
+for (const ev of events) {
+  if (ev?.type !== "ReleasePublished") continue;
+  const key = `${ev.repo}|${ev.version}`;
+  if (reposSeen.has(key)) continue;
+  reposSeen.add(key);
+
+  if (!coverage[ev.repo]) coverage[ev.repo] = {};
+  if (!coverage[ev.repo][ev.version]) coverage[ev.repo][ev.version] = { completed: [], expected: [], missing: [] };
+
+  const repoProfile = loadRepoProfile(ev.repo);
+  const profileDef = repoProfile?.profileId ? loadProfileDef(repoProfile.profileId) : null;
+  const expected = profileDef?.requiredChecks?.assurance || [];
+
+  coverage[ev.repo][ev.version].expected = expected;
+  coverage[ev.repo][ev.version].missing = expected.filter(
+    c => !coverage[ev.repo][ev.version].completed.includes(c)
+  );
 }
 
 const output = {
@@ -112,4 +154,11 @@ fs.writeFileSync(
 console.log(`Verifier index built: ${output.verifiers.length} verifier(s), ${Object.keys(coverage).length} repo(s) covered.`);
 for (const v of output.verifiers) {
   console.log(`  ${v.id}: checks=[${v.checks.join(", ")}], lastRun=${v.lastRun || "never"}`);
+}
+for (const [repo, versions] of Object.entries(coverage)) {
+  for (const [version, data] of Object.entries(versions)) {
+    if (data.expected.length > 0 && data.missing.length > 0) {
+      console.log(`  ${repo}@${version}: missing ${data.missing.join(", ")}`);
+    }
+  }
 }

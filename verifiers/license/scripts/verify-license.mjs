@@ -25,6 +25,41 @@ function loadConfig() {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
+// Load per-repo overrides from ledger node snapshot
+function loadOverrides(repo) {
+  const [org, repoName] = repo.split("/");
+  const p = path.join(process.cwd(), "ledger/nodes", org, repoName, "repomesh.overrides.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(p, "utf8"));
+    return data?.license || null;
+  } catch { return null; }
+}
+
+// Merge base config with per-repo overrides
+function mergeConfig(cfg, overrides) {
+  if (!overrides) return cfg;
+  const merged = { ...cfg };
+
+  // Merge allowlist additions
+  if (Array.isArray(overrides.allowlistAdd)) {
+    merged.allowlist = [...new Set([...merged.allowlist, ...overrides.allowlistAdd])];
+  }
+
+  // Merge allowlist removals
+  if (Array.isArray(overrides.allowlistRemove)) {
+    const remove = new Set(overrides.allowlistRemove);
+    merged.allowlist = merged.allowlist.filter(l => !remove.has(l));
+  }
+
+  // Override unknown handling (stored for use in classifyLicenses)
+  if (overrides.treatUnknownAs) {
+    merged.treatUnknownAs = overrides.treatUnknownAs;
+  }
+
+  return merged;
+}
+
 function classifyLicenses(components, cfg) {
   const allow = new Set(cfg.allowlist);
   const coprefix = cfg.copyleftPrefixes || [];
@@ -63,7 +98,10 @@ function classifyLicenses(components, cfg) {
 
   let result = "pass";
   if (findings.copyleft.length > 0) result = "fail";
-  else if (findings.unknownOrMissing.length > 0) result = "warn";
+  else if (findings.unknownOrMissing.length > 0) {
+    // Respect treatUnknownAs override from profile/overrides
+    result = cfg.treatUnknownAs || "warn";
+  }
 
   return { result, findings };
 }
@@ -92,7 +130,9 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
     return { result: "warn", reason: "no sbom" };
   }
 
-  const cfg = loadConfig();
+  const baseCfg = loadConfig();
+  const overrides = loadOverrides(repo);
+  const cfg = mergeConfig(baseCfg, overrides);
   const comps = await fetchCycloneDxComponents(sbomUri);
   const { result, findings } = classifyLicenses(comps, cfg);
 

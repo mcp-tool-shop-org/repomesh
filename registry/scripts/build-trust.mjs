@@ -7,12 +7,15 @@
 //   - attestation results (integrity + assurance dimensions)
 //   - policy violations
 //   - computed trust scores (integrityScore, assuranceScore, trustScore)
+//   - profile-aware expected/completed/missing checks
 
 import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
+const NODES_DIR = path.join(ROOT, "ledger", "nodes");
+const PROFILES_DIR = path.join(ROOT, "profiles");
 const REGISTRY_DIR = path.join(ROOT, "registry");
 
 function readEvents() {
@@ -21,6 +24,36 @@ function readEvents() {
     .split("\n")
     .filter((l) => l.trim().length > 0)
     .map((l) => JSON.parse(l));
+}
+
+// Load profile selection for a repo from its node snapshot directory
+function loadRepoProfile(repoId) {
+  const [org, repo] = repoId.split("/");
+  const profilePath = path.join(NODES_DIR, org, repo, "repomesh.profile.json");
+  if (!fs.existsSync(profilePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(profilePath, "utf8"));
+  } catch { return null; }
+}
+
+// Load canonical profile definition
+function loadProfileDef(profileId) {
+  const p = path.join(PROFILES_DIR, `${profileId}.json`);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { return null; }
+}
+
+// Load overrides for a repo from its node snapshot directory
+function loadRepoOverrides(repoId) {
+  const [org, repo] = repoId.split("/");
+  const overridesPath = path.join(NODES_DIR, org, repo, "repomesh.overrides.json");
+  if (!fs.existsSync(overridesPath)) return null;
+  try {
+    const data = JSON.parse(fs.readFileSync(overridesPath, "utf8"));
+    return Object.keys(data).length > 0 ? data : null;
+  } catch { return null; }
 }
 
 // Integrity weights — release authenticity dimension (0-100)
@@ -33,21 +66,35 @@ const INTEGRITY_WEIGHTS = {
   "signature.chain": 15    // attestor re-verified signature chain
 };
 
-// Assurance weights — safety/compliance dimension (0-100)
-// Each key maps to { pass, warn, fail } point values
-const ASSURANCE_WEIGHTS = {
+// Default assurance weights — safety/compliance dimension (0-100)
+const DEFAULT_ASSURANCE_WEIGHTS = {
   "license.audit": { pass: 30, warn: 15, fail: 0 },
   "security.scan": { pass: 40, warn: 20, fail: 0 },
   "repro.build":   { pass: 30, warn: 15, fail: 0 }  // placeholder
 };
 
-// Extract result from attestation URI (repomesh:attestor:<kind>:<result>)
-function attestationResultFromUri(uri) {
-  const u = String(uri || "");
-  if (/:pass\b/.test(u)) return "pass";
-  if (/:warn\b/.test(u)) return "warn";
-  if (/:fail\b/.test(u)) return "fail";
-  return null;
+// Merge profile scoring overrides and repo overrides into assurance weights
+function resolveAssuranceWeights(profileDef, repoOverrides) {
+  const weights = {};
+  for (const [k, v] of Object.entries(DEFAULT_ASSURANCE_WEIGHTS)) {
+    weights[k] = { ...v };
+  }
+
+  // Profile-level scoring overrides
+  if (profileDef?.scoring?.assuranceWeights) {
+    for (const [k, v] of Object.entries(profileDef.scoring.assuranceWeights)) {
+      if (weights[k]) weights[k] = { ...weights[k], ...v };
+    }
+  }
+
+  // Repo-level scoring overrides (highest priority)
+  if (repoOverrides?.scoring?.assuranceWeights) {
+    for (const [k, v] of Object.entries(repoOverrides.scoring.assuranceWeights)) {
+      if (weights[k]) weights[k] = { ...weights[k], ...v };
+    }
+  }
+
+  return weights;
 }
 
 const events = readEvents();
@@ -120,8 +167,23 @@ for (const ev of events) {
   });
 }
 
-// Compute trust scores (both dimensions)
+// Compute trust scores (both dimensions, profile-aware)
 for (const entry of Object.values(releases)) {
+  // Load profile for this repo
+  const repoProfile = loadRepoProfile(entry.repo);
+  const profileId = repoProfile?.profileId || null;
+  const profileDef = profileId ? loadProfileDef(profileId) : null;
+  const repoOverrides = loadRepoOverrides(entry.repo);
+  const assuranceWeights = resolveAssuranceWeights(profileDef, repoOverrides);
+
+  entry.profileId = profileId;
+
+  // --- Expected checks from profile ---
+  const expectedIntegrity = profileDef?.requiredChecks?.integrity || Object.keys(INTEGRITY_WEIGHTS);
+  const expectedAssurance = profileDef?.requiredChecks?.assurance || [];
+
+  entry.expectedChecks = [...expectedIntegrity, ...expectedAssurance];
+
   // --- Integrity Score ---
   let integrityScore = 0;
 
@@ -159,12 +221,28 @@ for (const entry of Object.values(releases)) {
 
   entry.integrityScore = Math.min(integrityScore, 100);
 
-  // --- Assurance Score ---
+  // --- Assurance Score (profile-aware) ---
   let assuranceScore = 0;
   const assuranceBreakdown = {};
 
-  for (const [kind, weights] of Object.entries(ASSURANCE_WEIGHTS)) {
-    // Find the attestation result for this kind
+  // Only score checks relevant to the profile
+  // If no profile, score all known checks (backward compat)
+  const checksToScore = expectedAssurance.length > 0
+    ? expectedAssurance
+    : Object.keys(DEFAULT_ASSURANCE_WEIGHTS);
+
+  // Compute max possible score for normalization
+  let maxPossible = 0;
+  for (const kind of checksToScore) {
+    const weights = assuranceWeights[kind] || DEFAULT_ASSURANCE_WEIGHTS[kind];
+    if (!weights) continue;
+    maxPossible += weights.pass;
+  }
+
+  for (const kind of checksToScore) {
+    const weights = assuranceWeights[kind] || DEFAULT_ASSURANCE_WEIGHTS[kind];
+    if (!weights) continue;
+
     const att = entry.attestations.find((a) => a.kind === kind);
     const result = att?.result || "missing";
     const pts = result !== "missing" ? (weights[result] ?? 0) : 0;
@@ -172,8 +250,49 @@ for (const entry of Object.values(releases)) {
     assuranceScore += pts;
   }
 
-  entry.assuranceScore = Math.min(assuranceScore, 100);
+  // Normalize to 0-100 if using a subset of checks
+  if (maxPossible > 0 && maxPossible !== 100) {
+    entry.assuranceScore = Math.min(Math.round((assuranceScore / maxPossible) * 100), 100);
+  } else {
+    entry.assuranceScore = Math.min(assuranceScore, 100);
+  }
   entry.assuranceBreakdown = assuranceBreakdown;
+
+  // Completed/missing checks
+  const completedChecks = [];
+  const missingChecks = [];
+
+  // Integrity completed/missing
+  for (const check of expectedIntegrity) {
+    let passed = false;
+    if (check === "signed") passed = true;
+    else if (check === "hasArtifacts") passed = entry.artifactCount > 0;
+    else if (check === "noPolicyViolations") passed = entry.policyViolations.length === 0;
+    else if (check === "sbom.present") {
+      passed = entry.attestations.some(a => a.kind === "sbom.present" && a.result === "pass")
+        || (entry.inlineAttestations || []).some(t => t === "sbom" || t === "sbom.present");
+    }
+    else if (check === "provenance.present") {
+      passed = entry.attestations.some(a => a.kind === "provenance.present" && a.result === "pass")
+        || (entry.inlineAttestations || []).includes("provenance");
+    }
+    else if (check === "signature.chain") {
+      passed = entry.attestations.some(a => a.kind === "signature.chain" && a.result === "pass");
+    }
+
+    if (passed) completedChecks.push(check);
+    else missingChecks.push(check);
+  }
+
+  // Assurance completed/missing
+  for (const check of expectedAssurance) {
+    const att = entry.attestations.find(a => a.kind === check);
+    if (att && att.result !== "missing") completedChecks.push(check);
+    else missingChecks.push(check);
+  }
+
+  entry.completedChecks = completedChecks;
+  entry.missingChecks = missingChecks;
 
   // trustScore = integrityScore for backward compatibility
   entry.trustScore = entry.integrityScore;
@@ -200,5 +319,7 @@ for (const entry of output) {
   const aBadge = entry.assuranceScore > 0
     ? (entry.assuranceScore >= 70 ? " \u2705" : entry.assuranceScore >= 30 ? " \u26A0\uFE0F" : " \u274C")
     : "";
-  console.log(`  ${iBadge} ${entry.repo}@${entry.version} \u2014 integrity: ${entry.integrityScore}/100, assurance: ${entry.assuranceScore}/100${aBadge}`);
+  const profile = entry.profileId ? ` [${entry.profileId}]` : "";
+  const missing = entry.missingChecks.length > 0 ? ` (missing: ${entry.missingChecks.join(", ")})` : "";
+  console.log(`  ${iBadge} ${entry.repo}@${entry.version}${profile} \u2014 integrity: ${entry.integrityScore}/100, assurance: ${entry.assuranceScore}/100${aBadge}${missing}`);
 }
