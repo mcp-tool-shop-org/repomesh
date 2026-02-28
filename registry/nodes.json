@@ -18,6 +18,42 @@
     "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
   },
   {
+    "id": "mcp-tool-shop-org/repomesh-license-verifier",
+    "kind": "attestor",
+    "description": "RepoMesh verifier: license audit from SBOM (allowlist/copyleft detection).",
+    "provides": [
+      "license.audit.v1"
+    ],
+    "consumes": [
+      "network.ledger.v1"
+    ],
+    "tags": [
+      "repomesh",
+      "verifier",
+      "license",
+      "compliance"
+    ],
+    "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
+  },
+  {
+    "id": "mcp-tool-shop-org/repomesh-security-verifier",
+    "kind": "attestor",
+    "description": "RepoMesh verifier: dependency vulnerability scan via OSV.dev using SBOM PURLs.",
+    "provides": [
+      "security.scan.v1"
+    ],
+    "consumes": [
+      "network.ledger.v1"
+    ],
+    "tags": [
+      "repomesh",
+      "verifier",
+      "security",
+      "vulnerability"
+    ],
+    "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
+  },
+  {
     "id": "mcp-tool-shop-org/shipcheck",
     "kind": "compute",
     "description": "Product standards for MCP Tool Shop — Ship Gate checklist, error contract, and adoption guides",

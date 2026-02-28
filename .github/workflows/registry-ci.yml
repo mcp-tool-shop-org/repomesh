@@ -36,9 +36,12 @@ jobs:
       - name: Build dependency graph
         run: node registry/scripts/build-dependencies.mjs
 
+      - name: Build verifiers index
+        run: node registry/scripts/build-verifiers.mjs
+
       - name: Commit updated registry
         run: |
           git config user.name "repomesh-bot"
           git config user.email "repomesh-bot@users.noreply.github.com"
-          git add registry/nodes.json registry/capabilities.json registry/trust.json registry/dependencies.json
-          git diff --cached --quiet && echo "No registry changes" || (git commit -m "registry: update index, trust, and dependency graph" && git push)
+          git add registry/nodes.json registry/capabilities.json registry/trust.json registry/dependencies.json registry/verifiers.json
+          git diff --cached --quiet && echo "No registry changes" || (git commit -m "registry: update index, trust, dependencies, and verifiers" && git push)

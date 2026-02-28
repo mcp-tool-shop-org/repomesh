@@ -23,7 +23,26 @@
       }
     ],
     "policyViolations": [],
-    "trustScore": 100
+    "trustScore": 100,
+    "integrityScore": 100,
+    "assuranceScore": 0,
+    "assuranceBreakdown": {
+      "license.audit": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      },
+      "security.scan": {
+        "result": "missing",
+        "points": 0,
+        "max": 40
+      },
+      "repro.build": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/shipcheck",
@@ -49,6 +68,25 @@
       }
     ],
     "policyViolations": [],
-    "trustScore": 60
+    "trustScore": 60,
+    "integrityScore": 60,
+    "assuranceScore": 0,
+    "assuranceBreakdown": {
+      "license.audit": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      },
+      "security.scan": {
+        "result": "missing",
+        "points": 0,
+        "max": 40
+      },
+      "repro.build": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      }
+    }
   }
 ]

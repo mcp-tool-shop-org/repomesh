@@ -4,9 +4,9 @@
 //
 // For each (repo, version), aggregates:
 //   - release event summary
-//   - attestation results
+//   - attestation results (integrity + assurance dimensions)
 //   - policy violations
-//   - computed trust score
+//   - computed trust scores (integrityScore, assuranceScore, trustScore)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,10 +23,8 @@ function readEvents() {
     .map((l) => JSON.parse(l));
 }
 
-// Score weights — target: 80+ for a well-formed release
-// Basic release (signed, artifacts, no violations) = 45
-// + SBOM = 65, + provenance = 85, + full attestor = 100
-const WEIGHTS = {
+// Integrity weights — release authenticity dimension (0-100)
+const INTEGRITY_WEIGHTS = {
   signed: 15,              // signature verified at ledger ingress
   hasArtifacts: 15,        // release has real artifact hashes
   noPolicyViolations: 15,  // clean policy check
@@ -34,6 +32,23 @@ const WEIGHTS = {
   "provenance.present": 20,// build provenance on release event
   "signature.chain": 15    // attestor re-verified signature chain
 };
+
+// Assurance weights — safety/compliance dimension (0-100)
+// Each key maps to { pass, warn, fail } point values
+const ASSURANCE_WEIGHTS = {
+  "license.audit": { pass: 30, warn: 15, fail: 0 },
+  "security.scan": { pass: 40, warn: 20, fail: 0 },
+  "repro.build":   { pass: 30, warn: 15, fail: 0 }  // placeholder
+};
+
+// Extract result from attestation URI (repomesh:attestor:<kind>:<result>)
+function attestationResultFromUri(uri) {
+  const u = String(uri || "");
+  if (/:pass\b/.test(u)) return "pass";
+  if (/:warn\b/.test(u)) return "warn";
+  if (/:fail\b/.test(u)) return "fail";
+  return null;
+}
 
 const events = readEvents();
 
@@ -51,27 +66,33 @@ for (const ev of events) {
     inlineAttestations: (ev.attestations || []).map((a) => a.type),
     attestations: [],
     policyViolations: [],
-    trustScore: 0
+    trustScore: 0,
+    integrityScore: 0,
+    assuranceScore: 0
   };
 }
 
-// Index attestations
+// Index attestations from ALL AttestationPublished events
 for (const ev of events) {
   if (ev.type !== "AttestationPublished") continue;
   const key = `${ev.repo}@${ev.version}`;
   if (!releases[key]) continue;
 
-  // Parse attestation results from the notes field
+  // Parse attestation results from the notes field (supports pass/warn/fail)
   const notes = ev.notes || "";
   const lines = notes.split("\n").filter(Boolean);
   for (const line of lines) {
-    const match = line.match(/^([^:]+):\s*(pass|fail)\s*—\s*(.+)$/);
+    const match = line.match(/^([^:]+):\s*(pass|warn|fail)\s*\u2014\s*(.+)$/);
     if (match) {
-      releases[key].attestations.push({
-        kind: match[1].trim(),
-        result: match[2],
-        reason: match[3].trim()
-      });
+      const kind = match[1].trim();
+      // Avoid duplicates from multiple parsing methods
+      if (!releases[key].attestations.some((a) => a.kind === kind)) {
+        releases[key].attestations.push({
+          kind,
+          result: match[2],
+          reason: match[3].trim()
+        });
+      }
     }
   }
 
@@ -99,46 +120,63 @@ for (const ev of events) {
   });
 }
 
-// Compute trust scores
+// Compute trust scores (both dimensions)
 for (const entry of Object.values(releases)) {
-  let score = 0;
+  // --- Integrity Score ---
+  let integrityScore = 0;
 
   // Being in the ledger at all means signature was verified
-  score += WEIGHTS.signed;
+  integrityScore += INTEGRITY_WEIGHTS.signed;
 
   // Has real artifacts (non-placeholder hashes)
-  const hasReal = entry.artifactCount > 0;
-  if (hasReal) {
-    score += WEIGHTS.hasArtifacts;
+  if (entry.artifactCount > 0) {
+    integrityScore += INTEGRITY_WEIGHTS.hasArtifacts;
   }
 
   // No policy violations bonus
   if (entry.policyViolations.length === 0) {
-    score += WEIGHTS.noPolicyViolations;
+    integrityScore += INTEGRITY_WEIGHTS.noPolicyViolations;
   }
 
   // Check attestation results (from AttestationPublished events)
   for (const att of entry.attestations) {
-    if (att.result === "pass" && WEIGHTS[att.kind] !== undefined) {
-      score += WEIGHTS[att.kind];
+    if (att.result === "pass" && INTEGRITY_WEIGHTS[att.kind] !== undefined) {
+      integrityScore += INTEGRITY_WEIGHTS[att.kind];
     }
   }
 
   // Also check inline attestations on the release event itself
-  // (SBOM/provenance declared at emission time)
   if (entry.inlineAttestations) {
     for (const type of entry.inlineAttestations) {
-      const key = type === "sbom" ? "sbom.present" : type === "provenance" ? "provenance.present" : null;
-      if (key && WEIGHTS[key] !== undefined) {
-        // Only credit if not already credited from AttestationPublished
-        if (!entry.attestations.some((a) => a.kind === key && a.result === "pass")) {
-          score += WEIGHTS[key];
+      const k = type === "sbom" ? "sbom.present" : type === "provenance" ? "provenance.present" : null;
+      if (k && INTEGRITY_WEIGHTS[k] !== undefined) {
+        if (!entry.attestations.some((a) => a.kind === k && a.result === "pass")) {
+          integrityScore += INTEGRITY_WEIGHTS[k];
         }
       }
     }
   }
 
-  entry.trustScore = Math.min(score, 100);
+  entry.integrityScore = Math.min(integrityScore, 100);
+
+  // --- Assurance Score ---
+  let assuranceScore = 0;
+  const assuranceBreakdown = {};
+
+  for (const [kind, weights] of Object.entries(ASSURANCE_WEIGHTS)) {
+    // Find the attestation result for this kind
+    const att = entry.attestations.find((a) => a.kind === kind);
+    const result = att?.result || "missing";
+    const pts = result !== "missing" ? (weights[result] ?? 0) : 0;
+    assuranceBreakdown[kind] = { result, points: pts, max: weights.pass };
+    assuranceScore += pts;
+  }
+
+  entry.assuranceScore = Math.min(assuranceScore, 100);
+  entry.assuranceBreakdown = assuranceBreakdown;
+
+  // trustScore = integrityScore for backward compatibility
+  entry.trustScore = entry.integrityScore;
 }
 
 // Write output (strip internal fields)
@@ -158,6 +196,9 @@ fs.writeFileSync(
 
 console.log(`Trust index built: ${output.length} release(s).`);
 for (const entry of output) {
-  const badge = entry.trustScore >= 70 ? "\u2705" : entry.trustScore >= 40 ? "\u26A0\uFE0F" : "\u274C";
-  console.log(`  ${badge} ${entry.repo}@${entry.version} — score: ${entry.trustScore}/100`);
+  const iBadge = entry.integrityScore >= 70 ? "\u2705" : entry.integrityScore >= 40 ? "\u26A0\uFE0F" : "\u274C";
+  const aBadge = entry.assuranceScore > 0
+    ? (entry.assuranceScore >= 70 ? " \u2705" : entry.assuranceScore >= 30 ? " \u26A0\uFE0F" : " \u274C")
+    : "";
+  console.log(`  ${iBadge} ${entry.repo}@${entry.version} \u2014 integrity: ${entry.integrityScore}/100, assurance: ${entry.assuranceScore}/100${aBadge}`);
 }

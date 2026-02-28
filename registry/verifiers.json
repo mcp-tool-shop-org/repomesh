@@ -1,0 +1,26 @@
+{
+  "verifiers": [
+    {
+      "id": "mcp-tool-shop-org/repomesh-license-verifier",
+      "description": "RepoMesh verifier: license audit from SBOM (allowlist/copyleft detection).",
+      "checks": [
+        "license.audit"
+      ],
+      "lastRun": null
+    },
+    {
+      "id": "mcp-tool-shop-org/repomesh-security-verifier",
+      "description": "RepoMesh verifier: dependency vulnerability scan via OSV.dev using SBOM PURLs.",
+      "checks": [
+        "security.scan"
+      ],
+      "lastRun": null
+    }
+  ],
+  "coverage": {
+    "mcp-tool-shop-org/shipcheck": {
+      "1.0.3": [],
+      "1.0.4": []
+    }
+  }
+}

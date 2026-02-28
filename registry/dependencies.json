@@ -6,6 +6,30 @@
       "consumes": []
     },
     {
+      "id": "mcp-tool-shop-org/repomesh-license-verifier",
+      "kind": "attestor",
+      "consumes": [
+        {
+          "capability": "network.ledger.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-shop-org/repomesh-security-verifier",
+      "kind": "attestor",
+      "consumes": [
+        {
+          "capability": "network.ledger.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mcp-tool-shop-org/shipcheck",
       "kind": "compute",
       "consumes": []
@@ -13,8 +37,8 @@
   ],
   "warnings": [],
   "stats": {
-    "totalNodes": 2,
-    "totalCapabilities": 5,
+    "totalNodes": 4,
+    "totalCapabilities": 7,
     "unmetDependencies": 0,
     "roleRedundancies": 0
   }

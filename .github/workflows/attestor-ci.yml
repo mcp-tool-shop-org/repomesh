@@ -32,6 +32,22 @@ jobs:
           mkdir -p /tmp/repomesh-ci
           node attestor/scripts/attest-release.mjs --scan-new --sign --output /tmp/repomesh-ci/attestations.jsonl || true
 
+      # Run license verifier
+      - name: Run license verifier
+        env:
+          REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+          REPOMESH_KEY_ID: ci-repomesh-2026
+        run: |
+          node verifiers/license/scripts/verify-license.mjs --scan-new --sign --output /tmp/repomesh-ci/license.jsonl || true
+
+      # Run security verifier
+      - name: Run security verifier
+        env:
+          REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+          REPOMESH_KEY_ID: ci-repomesh-2026
+        run: |
+          node verifiers/security/scripts/verify-security.mjs --scan-new --sign --output /tmp/repomesh-ci/security.jsonl || true
+
       # Run policy checks
       - name: Run policy checks
         env:
@@ -45,12 +61,16 @@ jobs:
         id: check
         run: |
           ATTESTATIONS=$(wc -l < /tmp/repomesh-ci/attestations.jsonl 2>/dev/null || echo 0)
+          LICENSE=$(wc -l < /tmp/repomesh-ci/license.jsonl 2>/dev/null || echo 0)
+          SECURITY=$(wc -l < /tmp/repomesh-ci/security.jsonl 2>/dev/null || echo 0)
           VIOLATIONS=$(wc -l < /tmp/repomesh-ci/violations.jsonl 2>/dev/null || echo 0)
-          TOTAL=$((ATTESTATIONS + VIOLATIONS))
+          TOTAL=$((ATTESTATIONS + LICENSE + SECURITY + VIOLATIONS))
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "attestations=$ATTESTATIONS" >> "$GITHUB_OUTPUT"
+          echo "license=$LICENSE" >> "$GITHUB_OUTPUT"
+          echo "security=$SECURITY" >> "$GITHUB_OUTPUT"
           echo "violations=$VIOLATIONS" >> "$GITHUB_OUTPUT"
-          echo "Attestations: $ATTESTATIONS, Violations: $VIOLATIONS, Total: $TOTAL"
+          echo "Attestations: $ATTESTATIONS, License: $LICENSE, Security: $SECURITY, Violations: $VIOLATIONS, Total: $TOTAL"
 
       # Append events and open PR
       - name: Append events to ledger via PR
@@ -70,24 +90,36 @@ jobs:
             cat /tmp/repomesh-ci/attestations.jsonl >> ledger/events/events.jsonl
           fi
 
+          # Append license verifier events
+          if [ -s /tmp/repomesh-ci/license.jsonl ]; then
+            cat /tmp/repomesh-ci/license.jsonl >> ledger/events/events.jsonl
+          fi
+
+          # Append security verifier events
+          if [ -s /tmp/repomesh-ci/security.jsonl ]; then
+            cat /tmp/repomesh-ci/security.jsonl >> ledger/events/events.jsonl
+          fi
+
           # Append violation events
           if [ -s /tmp/repomesh-ci/violations.jsonl ]; then
             cat /tmp/repomesh-ci/violations.jsonl >> ledger/events/events.jsonl
           fi
 
           git add ledger/events/events.jsonl
-          git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.violations }} violation(s)"
+          git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.violations }} violation(s)"
           git push origin "$BRANCH"
 
           gh pr create \
             --head "$BRANCH" \
-            --title "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.violations }} violation(s)" \
+            --title "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security" \
             --body "$(cat <<'EOF'
           ## RepoMesh Attestor Run
 
           **Attestations:** ${{ steps.check.outputs.attestations }}
+          **License Audits:** ${{ steps.check.outputs.license }}
+          **Security Scans:** ${{ steps.check.outputs.security }}
           **Policy Violations:** ${{ steps.check.outputs.violations }}
 
-          Automated attestor + policy scan. Ledger CI will verify schema and signatures.
+          Automated attestor + verifier + policy scan. Ledger CI will verify schema and signatures.
           EOF
           )"

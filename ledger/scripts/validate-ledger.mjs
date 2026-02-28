@@ -186,10 +186,26 @@ for (let idx = 0; idx < newLines.length; idx++) {
     fail(`Event schema failed at line ${lineNo}: ${ajv.errorsText(validateEvent.errors)}`);
   }
 
-  // Uniqueness: (repo, version, type) must be unique across entire ledger
-  const key = `${ev.repo}|${ev.version}|${ev.type}`;
+  // Uniqueness: for AttestationPublished, key includes sorted attestation types
+  // so multiple independent verifiers can attest different dimensions.
+  // All other event types use (repo, version, type).
+  function attestationTypesKey(e) {
+    const list = Array.isArray(e.attestations) ? e.attestations : [];
+    const types = list
+      .map(a => (a && typeof a.type === "string" ? a.type.trim() : ""))
+      .filter(Boolean)
+      .sort();
+    return types.join("+") || "none";
+  }
+
+  let key;
+  if (ev.type === "AttestationPublished") {
+    key = `${ev.repo}|${ev.version}|AttestationPublished|${attestationTypesKey(ev)}`;
+  } else {
+    key = `${ev.repo}|${ev.version}|${ev.type}`;
+  }
   if (seen.has(key)) {
-    fail(`Duplicate event at line ${lineNo}: (${ev.repo}, ${ev.version}, ${ev.type}) already exists.`);
+    fail(`Duplicate event at line ${lineNo}: key="${key}" already exists.`);
   }
   seen.add(key);
 

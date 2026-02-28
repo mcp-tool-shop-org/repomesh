@@ -8,6 +8,12 @@
   "network.schema.v1": [
     "mcp-tool-shop-org/repomesh"
   ],
+  "license.audit.v1": [
+    "mcp-tool-shop-org/repomesh-license-verifier"
+  ],
+  "security.scan.v1": [
+    "mcp-tool-shop-org/repomesh-security-verifier"
+  ],
   "release.qa.v1": [
     "mcp-tool-shop-org/shipcheck"
   ],
