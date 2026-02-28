@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "mcp-tool-shop-org/repomesh",
+    "kind": "registry",
+    "description": "Syntropic repo network — ledger, registry, and schemas for distributed repo coordination",
+    "provides": [
+      "network.registry.v1",
+      "network.ledger.v1",
+      "network.schema.v1"
+    ],
+    "consumes": [],
+    "tags": [
+      "repomesh",
+      "network",
+      "ledger",
+      "registry"
+    ],
+    "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
+  },
+  {
+    "id": "mcp-tool-shop-org/shipcheck",
+    "kind": "compute",
+    "description": "Product standards for MCP Tool Shop — Ship Gate checklist, error contract, and adoption guides",
+    "provides": [
+      "release.qa.v1",
+      "product.standards.v1"
+    ],
+    "consumes": [],
+    "tags": [
+      "mcp",
+      "tooling",
+      "quality",
+      "shipcheck"
+    ],
+    "homepage": "https://mcp-tool-shop-org.github.io/shipcheck/"
+  }
+]

@@ -1,1 +1,17 @@
-{}
+{
+  "network.registry.v1": [
+    "mcp-tool-shop-org/repomesh"
+  ],
+  "network.ledger.v1": [
+    "mcp-tool-shop-org/repomesh"
+  ],
+  "network.schema.v1": [
+    "mcp-tool-shop-org/repomesh"
+  ],
+  "release.qa.v1": [
+    "mcp-tool-shop-org/shipcheck"
+  ],
+  "product.standards.v1": [
+    "mcp-tool-shop-org/shipcheck"
+  ]
+}
