@@ -1,10 +1,27 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { merkleRootHex, merkleManifest } from "./merkle.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
+const MANIFESTS_DIR = path.join(import.meta.dirname, "..", "manifests");
+const CONFIG_PATH = path.join(import.meta.dirname, "..", "config.json");
+
+function canonicalize(value) {
+  return JSON.stringify(sortKeys(value));
+}
+function sortKeys(v) {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") {
+    return Object.keys(v).sort().reduce((o, k) => { o[k] = sortKeys(v[k]); return o; }, {});
+  }
+  return v;
+}
+function sha256hex(str) {
+  return crypto.createHash("sha256").update(str, "utf8").digest("hex");
+}
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
@@ -67,9 +84,48 @@ const lastAnchorForPrev = findLastAnchor(events);
 const prev = extractPrevRoot(lastAnchorForPrev?.event) || null;
 const range = [leaves[0], leaves[leaves.length - 1]];
 
-const manifest = merkleManifest(leaves);
-const output = { partitionId, partitionStart: partition[0]?.timestamp, partitionEnd: partition[partition.length-1]?.timestamp, eventCount: partition.length, prev, range, ...manifest };
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+const root = merkleRootHex(leaves);
+
+// Build manifest base (without manifestHash)
+const manifestBase = {
+  v: 1,
+  algo: "sha256-merkle-v1",
+  partitionId,
+  network: config.network,
+  prev,
+  range,
+  count: leaves.length,
+  root,
+};
+
+// Compute manifestHash = sha256(canonicalize(manifestBase))
+const manifestHash = sha256hex(canonicalize(manifestBase));
+
+// Full manifest with hash
+const manifest = { ...manifestBase, manifestHash };
+
+// Write manifest to manifests/<partitionId>.json
+fs.mkdirSync(MANIFESTS_DIR, { recursive: true });
+const safeId = partitionId.replace(/[^a-zA-Z0-9._-]/g, "-");
+const manifestPath = path.join(MANIFESTS_DIR, `${safeId}.json`);
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+
+// Write partition-root.json (backward compat + downstream scripts)
+const output = {
+  partitionId,
+  partitionStart: partition[0]?.timestamp,
+  partitionEnd: partition[partition.length - 1]?.timestamp,
+  eventCount: partition.length,
+  prev,
+  range,
+  algo: "sha256-merkle-v1",
+  leafEncoding: "canonicalHash:hex(32)",
+  leafCount: leaves.length,
+  root,
+  manifestHash,
+  manifestPath: `anchor/xrpl/manifests/${safeId}.json`,
+};
+fs.writeFileSync(path.join(import.meta.dirname, "..", "partition-root.json"), JSON.stringify(output, null, 2) + "\n", "utf8");
 
 console.log(JSON.stringify(output, null, 2));
-const outPath = path.join(import.meta.dirname, "..", "partition-root.json");
-fs.writeFileSync(outPath, JSON.stringify(output, null, 2) + "\n", "utf8");

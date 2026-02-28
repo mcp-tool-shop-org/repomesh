@@ -5,10 +5,19 @@ import xrpl from "xrpl";
 
 function stringToHex(s) { return Buffer.from(s, "utf8").toString("hex").toUpperCase(); }
 
-function buildAnchorMemo({ partitionId, network, rootHex, count, prev }) {
-  const dataObj = { v: 1, p: partitionId, n: network, r: rootHex, c: count, ...(prev ? { prev } : {}) };
+function buildAnchorMemo({ partitionId, network, rootHex, manifestHash, count, prev, range }) {
+  const dataObj = {
+    v: 1,
+    p: partitionId,
+    n: network,
+    r: rootHex,
+    h: manifestHash,
+    c: count,
+    pv: prev || "0",
+    rg: range ? `${range[0]}..${range[1]}` : "0",
+  };
   const memoData = JSON.stringify(dataObj);
-  if (Buffer.byteLength(memoData, "utf8") > 700) throw new Error("MemoData too large");
+  if (Buffer.byteLength(memoData, "utf8") > 700) throw new Error(`MemoData too large: ${Buffer.byteLength(memoData)} bytes`);
   return { Memo: {
     MemoType: stringToHex("repomesh-anchor-v1"),
     MemoFormat: stringToHex("application/json"),
@@ -34,12 +43,28 @@ async function main() {
     const wallet = xrpl.Wallet.fromSeed(SEED);
     const tx = {
       TransactionType: "Payment", Account: wallet.address, Destination: wallet.address, Amount: "1",
-      Memos: [buildAnchorMemo({ partitionId: rootData.partitionId, network: config.network, rootHex: rootData.root, count: rootData.eventCount, prev: rootData.prev })],
+      Memos: [buildAnchorMemo({
+        partitionId: rootData.partitionId,
+        network: config.network,
+        rootHex: rootData.root,
+        manifestHash: rootData.manifestHash,
+        count: rootData.eventCount,
+        prev: rootData.prev,
+        range: rootData.range,
+      })],
     };
     const result = await client.submitAndWait(tx, { wallet });
     const txHash = result?.result?.hash || result?.result?.tx_json?.hash;
-    const output = { ok: (result?.result?.meta?.TransactionResult || result?.result?.engine_result) === "tesSUCCESS",
-      network: config.network, partitionId: rootData.partitionId, root: rootData.root, eventCount: rootData.eventCount, txHash, walletAddress: wallet.address };
+    const output = {
+      ok: (result?.result?.meta?.TransactionResult || result?.result?.engine_result) === "tesSUCCESS",
+      network: config.network,
+      partitionId: rootData.partitionId,
+      root: rootData.root,
+      manifestHash: rootData.manifestHash,
+      eventCount: rootData.eventCount,
+      txHash,
+      walletAddress: wallet.address,
+    };
     console.log(JSON.stringify(output, null, 2));
     fs.writeFileSync(path.join(import.meta.dirname, "..", "anchor-result.json"), JSON.stringify(output, null, 2) + "\n", "utf8");
   } finally { await client.disconnect(); }
