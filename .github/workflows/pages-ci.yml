@@ -47,6 +47,7 @@ jobs:
       - name: Build registry explorer
         run: |
           node pages/build-pages.mjs
+          mkdir -p site/public
           cp -r pages/out/* site/public/
 
       # Build Astro landing page (includes registry explorer as static assets)
