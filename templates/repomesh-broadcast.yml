@@ -155,6 +155,7 @@ jobs:
 
           gh pr create \
             --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
+            --head "$BRANCH" \
             --title "event: ${{ github.repository }}@${VERSION}" \
             --body "$(cat <<'EOF'
           ## RepoMesh Broadcast
