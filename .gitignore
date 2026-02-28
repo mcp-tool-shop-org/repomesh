@@ -1,2 +1,4 @@
 node_modules/
 *.pem
+anchor/xrpl/partition-root.json
+anchor/xrpl/anchor-result.json

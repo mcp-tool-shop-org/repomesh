@@ -1,0 +1,66 @@
+name: anchor-xrpl
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install XRPL dependencies
+        run: cd anchor/xrpl && npm ci
+      - name: Compute partition root
+        run: node anchor/xrpl/scripts/compute-root.mjs --since-last
+      - name: Post anchor to XRPL
+        env:
+          XRPL_SEED: ${{ secrets.XRPL_SEED }}
+        run: node anchor/xrpl/scripts/post-anchor.mjs
+      - name: Emit anchor event
+        env:
+          REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+          REPOMESH_KEY_ID: ci-repomesh-2026
+        run: |
+          mkdir -p /tmp/repomesh-ci
+          node anchor/xrpl/scripts/emit-anchor-event.mjs --sign --output /tmp/repomesh-ci/anchor.jsonl
+      - name: Check for anchor event
+        id: check
+        run: |
+          ANCHOR=$(wc -l < /tmp/repomesh-ci/anchor.jsonl 2>/dev/null || echo 0)
+          echo "anchor=$ANCHOR" >> "$GITHUB_OUTPUT"
+      - name: Append anchor event to ledger via PR
+        if: steps.check.outputs.anchor != '0'
+        env:
+          GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+        run: |
+          BRANCH="anchor/$(date -u +%Y%m%d-%H%M%S)"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git config user.name "repomesh-bot"
+          git config user.email "repomesh-bot@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          cat /tmp/repomesh-ci/anchor.jsonl >> ledger/events/events.jsonl
+          git add ledger/events/events.jsonl
+          git commit -m "anchor: XRPL partition $(date -u +%Y-%m-%d)"
+          git push origin "$BRANCH"
+          gh pr create \
+            --head "$BRANCH" \
+            --title "anchor: XRPL partition $(date -u +%Y-%m-%d)" \
+            --body "$(cat <<'EOF'
+          ## RepoMesh XRPL Anchor
+          Merkle root of ledger partition anchored to XRPL testnet.
+          Ledger CI will verify schema and signatures.
+          EOF
+          )"
