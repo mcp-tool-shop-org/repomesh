@@ -211,9 +211,10 @@ if (doSign) {
   }
 }
 
-// Build and optionally sign violation events
+// Build and optionally sign violation events (errors only — warnings are logged but not ledgered)
 const violationEvents = [];
 for (const v of violations) {
+  if (v.severity !== "error") continue;
   let ev = buildViolationEvent(v);
   if (doSign) {
     ev = signEvent(ev, signingKey, signingKeyId);
