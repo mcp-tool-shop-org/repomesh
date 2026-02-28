@@ -1,0 +1,42 @@
+name: ledger-ci
+
+on:
+  pull_request:
+    paths:
+      - 'ledger/**'
+      - 'schemas/**'
+      - '.github/workflows/ledger-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install ledger deps
+        working-directory: ledger
+        run: npm ci || npm install
+
+      - name: Extract base ledger from main
+        run: |
+          git show origin/main:ledger/events/events.jsonl > /tmp/base-events.jsonl 2>/dev/null || touch /tmp/base-events.jsonl
+
+      - name: Validate append-only + schema + signature + uniqueness
+        working-directory: ledger
+        env:
+          BASE_LEDGER: /tmp/base-events.jsonl
+          HEAD_LEDGER: events/events.jsonl
+        run: npm run validate:ledger

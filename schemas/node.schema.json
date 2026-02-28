@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/node.schema.json",
+  "title": "RepoMesh Node Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "provides", "consumes", "interfaces", "invariants", "maintainers"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+      "description": "org/repo"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["registry", "attestor", "policy", "oracle", "compute", "settlement", "governance", "identity"]
+    },
+    "description": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "homepage": { "type": "string", "format": "uri" },
+    "provides": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/capability" },
+      "uniqueItems": true
+    },
+    "consumes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capability" },
+      "uniqueItems": true,
+      "default": []
+    },
+    "interfaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/interface" }
+    },
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deterministicBuild", "signedReleases", "semver", "changelog"],
+      "properties": {
+        "deterministicBuild": { "type": "boolean" },
+        "signedReleases": { "type": "boolean" },
+        "semver": { "type": "boolean" },
+        "changelog": { "type": "boolean" }
+      }
+    },
+    "maintainers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/maintainer" }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "uniqueItems": true,
+      "default": []
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)*\\.v[0-9]+$",
+      "description": "Namespaced capability ending with .vN (e.g., build.provenance.v1)"
+    },
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "schemaPath"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "version": { "type": "string", "pattern": "^v[0-9]+$" },
+        "schemaPath": { "type": "string", "pattern": "^(\\./)?[A-Za-z0-9_./-]+\\.json$" },
+        "stability": { "type": "string", "enum": ["experimental", "stable"], "default": "stable" }
+      }
+    },
+    "maintainer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "publicKey"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "publicKey": {
+          "type": "string",
+          "description": "Public key for signing events (ed25519). PEM format.",
+          "minLength": 32,
+          "maxLength": 200
+        },
+        "contact": { "type": "string", "maxLength": 120 }
+      }
+    }
+  }
+}

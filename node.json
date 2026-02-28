@@ -1,0 +1,30 @@
+{
+  "id": "mcp-tool-shop-org/repomesh",
+  "kind": "registry",
+  "description": "Syntropic repo network — ledger, registry, and schemas for distributed repo coordination",
+  "homepage": "https://github.com/mcp-tool-shop-org/repomesh",
+  "provides": [
+    "network.registry.v1",
+    "network.ledger.v1",
+    "network.schema.v1"
+  ],
+  "consumes": [],
+  "interfaces": [
+    { "name": "node-manifest", "version": "v1", "schemaPath": "./schemas/node.schema.json", "stability": "stable" },
+    { "name": "event-envelope", "version": "v1", "schemaPath": "./schemas/event.schema.json", "stability": "stable" }
+  ],
+  "invariants": {
+    "deterministicBuild": false,
+    "signedReleases": false,
+    "semver": true,
+    "changelog": true
+  },
+  "maintainers": [
+    {
+      "name": "mcp-tool-shop",
+      "publicKey": "PASTE_PUBLIC_KEY_PEM_HERE",
+      "contact": "64996768+mcp-tool-shop@users.noreply.github.com"
+    }
+  ],
+  "tags": ["repomesh", "network", "ledger", "registry"]
+}

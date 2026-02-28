@@ -1,0 +1,136 @@
+# RepoMesh Broadcast — Release → Ledger PR
+# Copy this workflow into any repo that wants to be a network node.
+#
+# Prerequisites:
+#   1. Your repo has a node.json at root
+#   2. Your node.json is registered in repomesh (ledger/nodes/<org>/<repo>/node.json)
+#   3. You have an ed25519 keypair:
+#      openssl genpkey -algorithm ED25519 -out repomesh-private.pem
+#      openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+#   4. Store the private key as repo secret: REPOMESH_SIGNING_KEY
+#   5. Store a PAT with repo scope on mcp-tool-shop-org/repomesh as: REPOMESH_LEDGER_TOKEN
+
+name: repomesh-broadcast
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Build your project (adjust as needed)
+      - run: npm ci
+      - run: npm run build
+
+      # Hash release artifacts (adjust paths)
+      - name: Hash artifacts
+        run: |
+          mkdir -p /tmp/repomesh
+          if ls dist/*.tgz 1>/dev/null 2>&1; then
+            sha256sum dist/*.tgz | tee /tmp/repomesh/artifact-hashes.txt
+          else
+            echo "no-artifact  none" > /tmp/repomesh/artifact-hashes.txt
+          fi
+
+      # Generate + sign the event
+      - name: Create signed event
+        env:
+          REPO_ID: ${{ github.repository }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+        run: |
+          cat > /tmp/repomesh/build-event.mjs << 'SCRIPT'
+          import fs from "node:fs";
+          import crypto from "node:crypto";
+
+          function canonicalize(v) {
+            if (Array.isArray(v)) return v.map(canonicalize);
+            if (v && typeof v === "object") {
+              const out = {};
+              for (const k of Object.keys(v).sort()) out[k] = canonicalize(v[k]);
+              return out;
+            }
+            return v;
+          }
+
+          const repo = process.env.REPO_ID;
+          const version = process.env.VERSION.replace(/^v/, "");
+          const commit = process.env.COMMIT;
+
+          const artifacts = fs.readFileSync("/tmp/repomesh/artifact-hashes.txt", "utf8")
+            .trim().split("\n").filter(Boolean)
+            .map(line => {
+              const [sha, file] = line.trim().split(/\s+/, 2);
+              return {
+                name: file.split("/").pop(),
+                sha256: sha,
+                uri: `https://github.com/${repo}/releases/tag/v${version}`
+              };
+            });
+
+          const ev = {
+            type: "ReleasePublished",
+            repo,
+            version,
+            commit,
+            timestamp: new Date().toISOString(),
+            artifacts,
+            attestations: [],
+            signature: { alg: "ed25519", keyId: "ci", value: "", canonicalHash: "" }
+          };
+
+          // Compute canonical hash (without signature)
+          const stripped = JSON.parse(JSON.stringify(ev));
+          delete stripped.signature;
+          const canonical = JSON.stringify(canonicalize(stripped));
+          const hash = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+
+          // Sign
+          const privKey = crypto.createPrivateKey(process.env.SIGNING_KEY);
+          const sig = crypto.sign(null, Buffer.from(hash, "hex"), privKey);
+
+          ev.signature.value = sig.toString("base64");
+          ev.signature.canonicalHash = hash;
+
+          fs.writeFileSync("/tmp/repomesh/event.json", JSON.stringify(ev));
+          console.log("Event created:", ev.type, ev.repo, ev.version);
+          SCRIPT
+
+          node /tmp/repomesh/build-event.mjs
+
+      # Open PR to repomesh ledger
+      - name: Append to ledger via PR
+        env:
+          GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+        run: |
+          BRANCH="broadcast/${{ github.repository_owner }}/${{ github.event.repository.name }}-${{ github.ref_name }}"
+          LEDGER_REPO="mcp-tool-shop-org/repomesh"
+
+          # Clone ledger repo
+          gh repo clone "$LEDGER_REPO" /tmp/repomesh-ledger -- --depth 1
+          cd /tmp/repomesh-ledger
+
+          # Create branch
+          git checkout -b "$BRANCH"
+
+          # Append event line
+          cat /tmp/repomesh/event.json >> ledger/events/events.jsonl
+          echo "" >> ledger/events/events.jsonl
+
+          # Commit + push + PR
+          git add ledger/events/events.jsonl
+          git commit -m "broadcast: ${{ github.repository }}@${{ github.ref_name }}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --repo "$LEDGER_REPO" \
+            --title "broadcast: ${{ github.repository }}@${{ github.ref_name }}" \
+            --body "Automated ReleasePublished event from ${{ github.repository }} release ${{ github.ref_name }}."
