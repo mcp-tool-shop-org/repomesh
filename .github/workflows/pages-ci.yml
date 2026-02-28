@@ -44,6 +44,12 @@ jobs:
       - name: Build snippets
         run: node registry/scripts/build-snippets.mjs
 
+      - name: Build metrics
+        run: node pages/build-metrics.mjs
+
+      - name: Build timeline
+        run: node pages/build-timeline.mjs
+
       - name: Build registry explorer
         run: |
           node pages/build-pages.mjs

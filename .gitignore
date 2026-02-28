@@ -4,6 +4,8 @@ anchor/xrpl/partition-root.json
 anchor/xrpl/anchor-result.json
 pages/out/
 registry/.event-cache.json
+registry/metrics.json
+registry/timeline.json
 site/.astro/
 site/dist/
 site/node_modules/

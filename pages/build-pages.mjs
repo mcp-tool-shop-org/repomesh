@@ -19,6 +19,10 @@ const trust = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "trust.json"), 
 const verifiers = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "verifiers.json"), "utf8"));
 const anchorsPath = path.join(REGISTRY_DIR, "anchors.json");
 const anchors = fs.existsSync(anchorsPath) ? JSON.parse(fs.readFileSync(anchorsPath, "utf8")) : { partitions: [], releaseAnchors: {} };
+const metricsPath = path.join(REGISTRY_DIR, "metrics.json");
+const metrics = fs.existsSync(metricsPath) ? JSON.parse(fs.readFileSync(metricsPath, "utf8")) : { history: [], current: {}, deltas: {}, latestRelease: null };
+const timelinePath = path.join(REGISTRY_DIR, "timeline.json");
+const timeline = fs.existsSync(timelinePath) ? JSON.parse(fs.readFileSync(timelinePath, "utf8")) : { events: [] };
 
 // --- Helpers ---
 
@@ -58,7 +62,7 @@ function layout(title, body, breadcrumbs) {
   <nav>
     <a href="${BASE}/">Home</a>
     <a href="${BASE}/anchors/">Anchors</a>
-    <a href="${BASE}/health/">Health</a>
+    <a href="${BASE}/health/">Dashboard</a>
     <a href="https://github.com/mcp-tool-shop-org/repomesh">GitHub</a>
     <a href="${BASE}/docs/verification.html">Docs</a>
   </nav>
@@ -166,73 +170,176 @@ const anchorsDir = path.join(OUT_DIR, "anchors");
 fs.mkdirSync(anchorsDir, { recursive: true });
 fs.writeFileSync(path.join(anchorsDir, "index.html"), layout("Anchors", anchorsBody, `<a href="${BASE}/">Home</a> / Anchors`), "utf8");
 
-// --- Health page ---
-let healthBody = `<h2>Network Health</h2>
-<p style="color:var(--text-muted);margin-bottom:1rem">Operational transparency: verifier status, pending attestations, and anchor coverage.</p>`;
+// --- Dashboard (Health) page ---
 
-// Verifier status
-healthBody += `<h3>Verifier Status</h3>`;
-healthBody += `<table><tr><th>Verifier</th><th>Checks</th><th>Last Run</th><th>Status</th></tr>`;
+function trustRingSvg(label, score, color, size = 120) {
+  const r = (size - 8) / 2;
+  const c = size / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (score / 100) * circ;
+  return `<svg class="trust-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
+  <circle class="ring-fill" cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+    stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}"
+    stroke-linecap="round" transform="rotate(-90 ${c} ${c})"
+    style="--ring-target:${offset.toFixed(1)}"/>
+  <text x="${c}" y="${c - 6}" text-anchor="middle" fill="var(--text)" font-size="22" font-weight="700">${score}</text>
+  <text x="${c}" y="${c + 14}" text-anchor="middle" fill="var(--text-muted)" font-size="11">${esc(label)}</text>
+</svg>`;
+}
+
+function sparklineSvg(history, key, w = 80, h = 24) {
+  const vals = history.map(s => s[key] ?? 0);
+  if (vals.length < 2) return "";
+  const max = Math.max(...vals, 1);
+  const min = Math.min(...vals, 0);
+  const range = max - min || 1;
+  const pts = vals.map((v, i) =>
+    `${(i / (vals.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`
+  ).join(" ");
+  return `<svg class="sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+}
+
+function deltaLabel(d) {
+  if (d > 0) return `<span class="delta delta-up">+${d}</span>`;
+  if (d < 0) return `<span class="delta delta-down">${d}</span>`;
+  return `<span class="delta">&mdash;</span>`;
+}
+
+const cur = metrics.current || {};
+const del = metrics.deltas || {};
+const hist = metrics.history || [];
+const latestRelease = metrics.latestRelease;
+
+let healthBody = `<div class="dash-subtitle">Updated on every push. Cryptographically anchored on XRPL.</div>`;
+
+// Hero: Latest Release with trust rings
+if (latestRelease) {
+  const intColor = latestRelease.integrity >= 80 ? "var(--green)" : latestRelease.integrity >= 50 ? "var(--yellow)" : "var(--red)";
+  const assColor = latestRelease.assurance >= 80 ? "var(--green)" : latestRelease.assurance >= 50 ? "var(--yellow)" : "var(--red)";
+  const anchoredBadge = latestRelease.anchored
+    ? `<span class="score score-green">Anchored on XRPL</span>`
+    : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)">Pending anchor</span>`;
+
+  healthBody += `<div class="dash-hero">
+  <div class="hero-rings">
+    ${trustRingSvg("Integrity", latestRelease.integrity, intColor)}
+    ${trustRingSvg("Assurance", latestRelease.assurance, assColor)}
+  </div>
+  <div class="hero-meta">
+    <div class="hero-title">${esc(latestRelease.repo)}@${esc(latestRelease.version)}</div>
+    <div class="card-meta">${latestRelease.timestamp} &middot; ${esc(latestRelease.commit?.slice(0, 7))}</div>
+    <div class="badge-row" style="margin-top:0.5rem">${anchoredBadge}</div>
+    <div class="hero-cta">
+      ${copyBlock(`node tools/repomesh.mjs verify-release --repo ${latestRelease.repo} --version ${latestRelease.version}${latestRelease.anchored ? " --anchored" : ""}`)}
+    </div>
+  </div>
+</div>`;
+}
+
+// Stat Cards
+const statDefs = [
+  { label: "Nodes", value: cur.nodes ?? 0, delta: del.nodes, key: "nodes" },
+  { label: "Repos", value: cur.repos ?? 0, delta: del.repos, key: "repos" },
+  { label: "Releases", value: cur.releases ?? 0, delta: del.releases, key: "releases" },
+  { label: "Verifiers", value: cur.verifiers ?? 0, delta: del.verifiers, key: "verifiers" },
+  { label: "Partitions", value: cur.partitions ?? 0, delta: del.partitions, key: "partitions" },
+  { label: "Anchored", value: cur.anchored ?? 0, delta: del.anchored, key: "anchored" },
+  { label: "Avg Integrity", value: cur.avgIntegrity ?? 0, delta: del.avgIntegrity, key: "avgIntegrity" },
+  { label: "Avg Assurance", value: cur.avgAssurance ?? 0, delta: del.avgAssurance, key: "avgAssurance" },
+];
+
+healthBody += `<div class="stat-grid">`;
+for (const s of statDefs) {
+  healthBody += `<div class="stat-card">
+  <div class="stat-label">${s.label}</div>
+  <div class="stat-value">${s.value}</div>
+  <div class="stat-footer">${deltaLabel(s.delta)}${sparklineSvg(hist, s.key)}</div>
+</div>`;
+}
+healthBody += `</div>`;
+
+// Timeline Strip
+const timelineEvents = timeline.events || [];
+if (timelineEvents.length > 0) {
+  healthBody += `<h3 style="margin-top:2rem">Network Timeline</h3>`;
+  healthBody += `<div class="timeline-strip">`;
+  for (const ev of timelineEvents) {
+    const pillClass = ev.type === "anchor" ? "pill-anchor" : "pill-release";
+    const shortLabel = ev.type === "anchor"
+      ? "Anchor"
+      : `${ev.repo.split("/")[1]}@${ev.version}`;
+    const detail = ev.type === "anchor"
+      ? `data-detail="Partition: ${esc(ev.partitionId)}&#10;Root: ${esc(ev.root)}&#10;ManifestHash: ${esc(ev.manifestHash)}&#10;Events: ${ev.count}&#10;TX: ${ev.txHash || "local"}&#10;Network: ${ev.network}"`
+      : `data-detail="Repo: ${esc(ev.repo)}&#10;Version: ${esc(ev.version)}&#10;Commit: ${esc(ev.commit?.slice(0, 12))}&#10;Integrity: ${ev.integrity}/100&#10;Assurance: ${ev.assurance}/100&#10;Anchored: ${ev.anchored ? "Yes" : "No"}"`;
+    healthBody += `<button class="timeline-pill ${pillClass}" ${detail}><span class="pill-dot"></span>${esc(shortLabel)}</button>`;
+  }
+  healthBody += `</div>`;
+  healthBody += `<div id="timeline-detail" class="timeline-detail" hidden></div>`;
+}
+
+// Explore Tiles
+healthBody += `<h3 style="margin-top:2rem">Explore</h3>`;
+healthBody += `<div class="explore-grid">
+  <a class="explore-tile" href="${BASE}/">
+    <div class="tile-icon">T</div>
+    <div class="tile-label">Trust Index</div>
+    <div class="tile-desc">Browse all repos and trust scores</div>
+  </a>
+  <a class="explore-tile" href="${BASE}/anchors/">
+    <div class="tile-icon">A</div>
+    <div class="tile-label">Anchor Explorer</div>
+    <div class="tile-desc">Full anchor chain and XRPL verification</div>
+  </a>
+  <a class="explore-tile" href="${BASE}/docs/verification.html">
+    <div class="tile-icon">D</div>
+    <div class="tile-label">Docs</div>
+    <div class="tile-desc">Verification guide and CLI reference</div>
+  </a>
+  <a class="explore-tile" href="https://github.com/mcp-tool-shop-org/repomesh">
+    <div class="tile-icon">G</div>
+    <div class="tile-label">GitHub</div>
+    <div class="tile-desc">Source code, issues, and contributions</div>
+  </a>
+</div>`;
+
+// Verifier Status (compact grid)
+healthBody += `<h3 style="margin-top:2rem">Verifier Status</h3>`;
+healthBody += `<div class="verifier-grid">`;
 for (const v of verifiers.verifiers) {
   const lastRun = v.lastRun ? new Date(v.lastRun) : null;
   const ageHours = lastRun ? Math.round((Date.now() - lastRun.getTime()) / (1000 * 60 * 60)) : null;
   let status, statusClass;
-  if (!lastRun) { status = "Never run"; statusClass = "score-red"; }
+  if (!lastRun) { status = "Never"; statusClass = "score-red"; }
   else if (ageHours <= 24) { status = `${ageHours}h ago`; statusClass = "score-green"; }
   else if (ageHours <= 168) { status = `${Math.round(ageHours / 24)}d ago`; statusClass = "score-yellow"; }
   else { status = `${Math.round(ageHours / 24)}d ago`; statusClass = "score-red"; }
-
-  healthBody += `<tr>
-  <td>${esc(v.id)}</td>
-  <td>${v.checks.join(", ") || "anchor"}</td>
-  <td>${v.lastRun || "—"}</td>
-  <td><span class="score ${statusClass}">${status}</span></td>
-</tr>`;
+  const checks = v.checks.length > 0 ? v.checks.map(c => `<span class="tag">${esc(c)}</span>`).join("") : '<span class="tag">anchor</span>';
+  healthBody += `<div class="verifier-card">
+  <div class="card-title" style="font-size:0.85rem">${esc(v.id.split("/").pop())}</div>
+  <div style="margin:0.25rem 0">${checks}</div>
+  <span class="score ${statusClass}" style="font-size:0.75rem">${status}</span>
+</div>`;
 }
-healthBody += `</table>`;
+healthBody += `</div>`;
 
-// Pending attestations (releases missing expected checks)
-healthBody += `<h3>Pending Attestations</h3>`;
+// Pending Attestations
 const pending = trust.filter(e => e.missingChecks && e.missingChecks.length > 0);
-if (pending.length === 0) {
-  healthBody += `<p style="color:var(--green)">All releases have complete attestations.</p>`;
-} else {
-  healthBody += `<table><tr><th>Release</th><th>Missing Checks</th></tr>`;
+if (pending.length > 0) {
+  healthBody += `<h3 style="margin-top:2rem">Pending Attestations</h3>`;
   for (const e of pending) {
-    healthBody += `<tr><td>${esc(e.repo)}@${esc(e.version)}</td><td>${e.missingChecks.map(c => `<span class="tag">${esc(c)}</span>`).join("")}</td></tr>`;
+    healthBody += `<div class="card" style="padding:0.5rem 0.75rem">
+  <span style="font-weight:600;font-size:0.85rem">${esc(e.repo)}@${esc(e.version)}</span>
+  ${e.missingChecks.map(c => `<span class="tag" style="background:rgba(248,81,73,0.1);color:var(--red)">${esc(c)}</span>`).join("")}
+</div>`;
   }
-  healthBody += `</table>`;
+} else {
+  healthBody += `<div style="margin-top:1rem;color:var(--green);font-size:0.85rem">All releases have complete attestations.</div>`;
 }
-
-// Anchor lag
-healthBody += `<h3>Anchor Coverage</h3>`;
-const totalReleases = trust.length;
-const anchoredReleases = trust.filter(e => {
-  const k = `${e.repo}@${e.version}`;
-  return !!anchors.releaseAnchors?.[k];
-}).length;
-const anchorPct = totalReleases > 0 ? Math.round((anchoredReleases / totalReleases) * 100) : 0;
-const anchorClass = anchorPct >= 80 ? "score-green" : anchorPct >= 50 ? "score-yellow" : "score-red";
-healthBody += `<div class="card">
-  <div class="card-title">Anchor Coverage</div>
-  <div class="badge-row">
-    <span class="score ${anchorClass}">${anchoredReleases}/${totalReleases} releases anchored (${anchorPct}%)</span>
-  </div>
-  <div class="card-meta" style="margin-top:0.25rem">Partitions: ${anchors.partitions.length} &middot; Latest: ${anchors.partitions.length > 0 ? esc(anchors.partitions[anchors.partitions.length - 1].partitionId) : "none"}</div>
-</div>`;
-
-// Network stats
-healthBody += `<h3>Network Stats</h3>`;
-healthBody += `<div class="card">
-  <div class="card-meta">Nodes: <strong>${nodes.length}</strong></div>
-  <div class="card-meta">Releases tracked: <strong>${totalReleases}</strong></div>
-  <div class="card-meta">Verifiers: <strong>${verifiers.verifiers.length}</strong></div>
-  <div class="card-meta">Partitions: <strong>${anchors.partitions.length}</strong></div>
-</div>`;
 
 const healthDir = path.join(OUT_DIR, "health");
 fs.mkdirSync(healthDir, { recursive: true });
-fs.writeFileSync(path.join(healthDir, "index.html"), layout("Health", healthBody, `<a href="${BASE}/">Home</a> / Health`), "utf8");
+fs.writeFileSync(path.join(healthDir, "index.html"), layout("Network Dashboard", healthBody, `<a href="${BASE}/">Home</a> / Dashboard`), "utf8");
 
 // --- Repo pages ---
 for (const node of nodes) {
