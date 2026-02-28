@@ -258,6 +258,10 @@ node policy/scripts/check-policy.mjs
 
 Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
 
+## Security & Threat Model
+
+RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process.
+
 ## License
 
 MIT

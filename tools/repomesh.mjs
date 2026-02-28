@@ -185,6 +185,12 @@ function parseArgs(argv) {
 }
 
 main().catch(e => {
-  console.error(e);
-  process.exit(1);
+  if (process.argv.includes("--debug")) {
+    console.error(e);
+  } else {
+    console.error(`Error: ${e.message || e}`);
+    if (e.hint) console.error(`Hint: ${e.hint}`);
+    console.error("Run with --debug for full stack trace.");
+  }
+  process.exit(2);
 });
