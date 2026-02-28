@@ -23,6 +23,12 @@
         "security.scan"
       ],
       "lastRun": "2026-02-28T05:59:59.059Z"
+    },
+    {
+      "id": "mcp-tool-shop-org/repomesh-xrpl-anchor",
+      "description": "XRPL anchor node — posts Merkle roots of ledger partitions to XRP Ledger for public finality",
+      "checks": [],
+      "lastRun": null
     }
   ],
   "coverage": {
