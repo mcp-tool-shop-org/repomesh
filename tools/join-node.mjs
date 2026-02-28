@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -40,7 +40,7 @@ if (!fs.existsSync(nodeJsonPath)) {
 const nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
 const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, "utf8"));
 
-const ajv = new Ajv({ allErrors: true, strict: false });
+const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 const validate = ajv.compile(schema);
 
