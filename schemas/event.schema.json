@@ -61,7 +61,7 @@
       "additionalProperties": false,
       "required": ["type", "uri"],
       "properties": {
-        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor"] },
+        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute"] },
         "uri": { "type": "string", "minLength": 1, "maxLength": 600 }
       }
     }

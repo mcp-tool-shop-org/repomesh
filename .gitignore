@@ -3,3 +3,4 @@ node_modules/
 anchor/xrpl/partition-root.json
 anchor/xrpl/anchor-result.json
 pages/out/
+registry/.event-cache.json

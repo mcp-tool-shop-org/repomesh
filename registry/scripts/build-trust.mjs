@@ -17,6 +17,7 @@ const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const NODES_DIR = path.join(ROOT, "ledger", "nodes");
 const PROFILES_DIR = path.join(ROOT, "profiles");
 const REGISTRY_DIR = path.join(ROOT, "registry");
+const POLICY_PATH = path.join(ROOT, "verifier.policy.json");
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
@@ -73,6 +74,74 @@ const DEFAULT_ASSURANCE_WEIGHTS = {
   "repro.build":   { pass: 30, warn: 15, fail: 0 }  // placeholder
 };
 
+// Load verifier policy
+function loadVerifierPolicy() {
+  if (!fs.existsSync(POLICY_PATH)) return null;
+  try { return JSON.parse(fs.readFileSync(POLICY_PATH, "utf8")); } catch { return null; }
+}
+
+// Identify signing node for a keyId
+function findSignerNode(keyId) {
+  if (!fs.existsSync(NODES_DIR)) return null;
+  for (const org of fs.readdirSync(NODES_DIR, { withFileTypes: true }).filter(d => d.isDirectory())) {
+    const orgDir = path.join(NODES_DIR, org.name);
+    for (const repo of fs.readdirSync(orgDir, { withFileTypes: true }).filter(d => d.isDirectory())) {
+      const nodePath = path.join(orgDir, repo.name, "node.json");
+      if (!fs.existsSync(nodePath)) continue;
+      const node = JSON.parse(fs.readFileSync(nodePath, "utf8"));
+      if ((node.maintainers || []).some(m => m.keyId === keyId)) return node.id;
+    }
+  }
+  return null;
+}
+
+// Resolve consensus from multiple attestations for a single check kind
+function resolveConsensus(sources, checkPolicy) {
+  if (sources.length === 0) return { consensus: "missing", sources };
+
+  // Filter to trusted set if policy requires it
+  let filtered = sources;
+  if (checkPolicy?.mode === "trusted-set" && checkPolicy.trustedNodes?.length > 0) {
+    filtered = sources.filter(s => checkPolicy.trustedNodes.includes(s.node));
+  }
+  if (filtered.length === 0) return { consensus: "untrusted", sources };
+
+  const results = filtered.map(s => s.result);
+  const policy = checkPolicy?.conflictPolicy || "fail-wins";
+
+  if (results.every(r => r === results[0])) {
+    // Unanimous
+    return { consensus: results[0], sources };
+  }
+
+  // Disagreement
+  if (policy === "fail-wins") {
+    if (results.includes("fail")) return { consensus: "fail", sources };
+    if (results.includes("warn")) return { consensus: "warn", sources };
+    return { consensus: "mixed", sources };
+  }
+
+  if (policy === "majority") {
+    const counts = {};
+    for (const r of results) counts[r] = (counts[r] || 0) + 1;
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 1 && sorted[0][1] === sorted[1][1]) {
+      // Tie — go safer
+      const order = ["fail", "warn", "pass"];
+      for (const r of order) { if (counts[r]) return { consensus: r, sources }; }
+    }
+    return { consensus: sorted[0][0], sources };
+  }
+
+  if (policy === "quorum-pass") {
+    const quorum = checkPolicy?.quorum || 1;
+    const passCount = results.filter(r => r === "pass").length;
+    return { consensus: passCount >= quorum ? "pass" : "fail", sources };
+  }
+
+  return { consensus: results[0], sources };
+}
+
 // Merge profile scoring overrides and repo overrides into assurance weights
 function resolveAssuranceWeights(profileDef, repoOverrides) {
   const weights = {};
@@ -98,6 +167,7 @@ function resolveAssuranceWeights(profileDef, repoOverrides) {
 }
 
 const events = readEvents();
+const verifierPolicy = loadVerifierPolicy();
 
 // Index releases
 const releases = {};
@@ -111,48 +181,98 @@ for (const ev of events) {
     timestamp: ev.timestamp,
     artifactCount: ev.artifacts?.length || 0,
     inlineAttestations: (ev.attestations || []).map((a) => a.type),
-    attestations: [],
+    attestations: [],       // resolved (one per check kind, backward compat)
+    attestationSources: {}, // all sources per check kind (new: multi-attestor)
     policyViolations: [],
+    disputes: [],
     trustScore: 0,
     integrityScore: 0,
     assuranceScore: 0
   };
 }
 
-// Index attestations from ALL AttestationPublished events
+// Collect ALL attestation sources per (release, check kind)
+const rawSources = {}; // key -> { kind -> [{result, reason, node, timestamp}] }
 for (const ev of events) {
   if (ev.type !== "AttestationPublished") continue;
   const key = `${ev.repo}@${ev.version}`;
   if (!releases[key]) continue;
 
-  // Parse attestation results from the notes field (supports pass/warn/fail)
+  const signerNode = findSignerNode(ev.signature?.keyId) || "unknown";
+
+  // Parse from notes
   const notes = ev.notes || "";
-  const lines = notes.split("\n").filter(Boolean);
-  for (const line of lines) {
+  const noteLines = notes.split("\n").filter(Boolean);
+  for (const line of noteLines) {
     const match = line.match(/^([^:]+):\s*(pass|warn|fail)\s*\u2014\s*(.+)$/);
     if (match) {
       const kind = match[1].trim();
-      // Avoid duplicates from multiple parsing methods
-      if (!releases[key].attestations.some((a) => a.kind === kind)) {
-        releases[key].attestations.push({
-          kind,
-          result: match[2],
-          reason: match[3].trim()
+      if (!rawSources[key]) rawSources[key] = {};
+      if (!rawSources[key][kind]) rawSources[key][kind] = [];
+      // Deduplicate by (kind, node)
+      if (!rawSources[key][kind].some(s => s.node === signerNode)) {
+        rawSources[key][kind].push({
+          result: match[2], reason: match[3].trim(),
+          node: signerNode, timestamp: ev.timestamp,
         });
       }
     }
   }
 
-  // Also check attestation URIs for inline results
+  // Also check attestation URIs
   for (const att of ev.attestations || []) {
     const uriMatch = att.uri?.match(/^repomesh:attestor:([^:]+):(\w+)$/);
     if (uriMatch) {
       const kind = uriMatch[1];
       const result = uriMatch[2];
-      // Avoid duplicates
-      if (!releases[key].attestations.some((a) => a.kind === kind)) {
-        releases[key].attestations.push({ kind, result, reason: "" });
+      if (!rawSources[key]) rawSources[key] = {};
+      if (!rawSources[key][kind]) rawSources[key][kind] = [];
+      if (!rawSources[key][kind].some(s => s.node === signerNode)) {
+        rawSources[key][kind].push({
+          result, reason: "",
+          node: signerNode, timestamp: ev.timestamp,
+        });
       }
+    }
+  }
+}
+
+// Index dispute events
+for (const ev of events) {
+  if (ev.type !== "AttestationPublished") continue;
+  if (!(ev.attestations || []).some(a => a.type === "attestation.dispute")) continue;
+  const key = `${ev.repo}@${ev.version}`;
+  if (!releases[key]) continue;
+  const signerNode = findSignerNode(ev.signature?.keyId) || "unknown";
+  releases[key].disputes.push({
+    disputedHash: ev.notes?.match(/disputed:([0-9a-f]{64})/)?.[1] || null,
+    reason: ev.notes || "",
+    node: signerNode,
+    timestamp: ev.timestamp,
+  });
+}
+
+// Resolve consensus and populate backward-compatible attestations
+for (const [key, kindMap] of Object.entries(rawSources)) {
+  if (!releases[key]) continue;
+  releases[key].attestationSources = {};
+
+  for (const [kind, sources] of Object.entries(kindMap)) {
+    const checkPolicy = verifierPolicy?.checks?.[kind] || null;
+    const resolved = resolveConsensus(sources, checkPolicy);
+
+    releases[key].attestationSources[kind] = {
+      consensus: resolved.consensus,
+      sources: resolved.sources,
+    };
+
+    // Backward compat: single attestation entry per kind
+    if (!releases[key].attestations.some(a => a.kind === kind)) {
+      releases[key].attestations.push({
+        kind,
+        result: resolved.consensus === "mixed" ? "warn" : resolved.consensus,
+        reason: sources[0]?.reason || "",
+      });
     }
   }
 }
@@ -301,6 +421,18 @@ for (const entry of Object.values(releases)) {
 // Write output (strip internal fields)
 const output = Object.values(releases)
   .map(({ inlineAttestations, ...rest }) => rest)
+  .map((entry) => {
+    // Build assurance consensus summary
+    const assuranceConsensus = {};
+    for (const [kind, data] of Object.entries(entry.attestationSources || {})) {
+      assuranceConsensus[kind] = {
+        consensus: data.consensus,
+        sourceCount: data.sources.length,
+        sources: data.sources.map(s => ({ node: s.node, result: s.result })),
+      };
+    }
+    return { ...entry, assuranceConsensus };
+  })
   .sort((a, b) => {
     const cmp = a.repo.localeCompare(b.repo);
     if (cmp !== 0) return cmp;

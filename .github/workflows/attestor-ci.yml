@@ -82,9 +82,22 @@ jobs:
           echo "violations=$VIOLATIONS" >> "$GITHUB_OUTPUT"
           echo "Attestations: $ATTESTATIONS, License: $LICENSE, Security: $SECURITY, Repro: $REPRO, Violations: $VIOLATIONS, Total: $TOTAL"
 
+      # Rate limit: skip if an attestor PR is already open
+      - name: Check for existing attestor PR
+        if: steps.check.outputs.total != '0'
+        id: rate
+        env:
+          GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+        run: |
+          OPEN=$(gh pr list --search "attestor/" --state open --json number --jq 'length' 2>/dev/null || echo 0)
+          echo "open=$OPEN" >> "$GITHUB_OUTPUT"
+          if [ "$OPEN" -gt "0" ]; then
+            echo "Attestor PR already open — skipping to avoid PR pile-up."
+          fi
+
       # Append events and open PR
       - name: Append events to ledger via PR
-        if: steps.check.outputs.total != '0'
+        if: steps.check.outputs.total != '0' && steps.rate.outputs.open == '0'
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
         run: |

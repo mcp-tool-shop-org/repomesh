@@ -32,7 +32,65 @@
         "reason": "No dependencies in SBOM; zero attack surface."
       }
     ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes SBOM attestation",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:10:39.417Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes build provenance",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:10:39.417Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:10:39.417Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "All 0 component licenses are in the allowlist",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:59:58.843Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "No dependencies in SBOM; zero attack surface.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:59:59.059Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
+    "disputes": [],
     "trustScore": 100,
     "integrityScore": 100,
     "assuranceScore": 100,
@@ -69,7 +127,59 @@
       "license.audit",
       "security.scan"
     ],
-    "missingChecks": []
+    "missingChecks": [],
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/shipcheck",
@@ -104,7 +214,65 @@
         "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan."
       }
     ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "fail",
+        "sources": [
+          {
+            "result": "fail",
+            "reason": "No SBOM attestation found in release event",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T04:52:09.468Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "fail",
+        "sources": [
+          {
+            "result": "fail",
+            "reason": "No build provenance attestation found in release event",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T04:52:09.468Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T04:52:09.468Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "warn",
+        "sources": [
+          {
+            "result": "warn",
+            "reason": "SBOM missing from ReleasePublished attestations; cannot audit licenses.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:59:58.510Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "warn",
+        "sources": [
+          {
+            "result": "warn",
+            "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-02-28T05:59:58.941Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
+    "disputes": [],
     "trustScore": 60,
     "integrityScore": 60,
     "assuranceScore": 50,
@@ -142,6 +310,58 @@
     "missingChecks": [
       "sbom.present",
       "provenance.present"
-    ]
+    ],
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "fail",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "fail"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "fail",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "fail"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "warn",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "warn"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "warn",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "warn"
+          }
+        ]
+      }
+    }
   }
 ]

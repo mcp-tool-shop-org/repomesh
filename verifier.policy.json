@@ -1,0 +1,66 @@
+{
+  "v": 1,
+  "description": "Verifier registration policy — defines which checks are open, which are trusted-set, and quorum thresholds.",
+  "checks": {
+    "license.audit": {
+      "mode": "trusted-set",
+      "trustedNodes": [
+        "mcp-tool-shop-org/repomesh",
+        "mcp-tool-shop-org/repomesh-license-verifier"
+      ],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    },
+    "security.scan": {
+      "mode": "trusted-set",
+      "trustedNodes": [
+        "mcp-tool-shop-org/repomesh",
+        "mcp-tool-shop-org/repomesh-security-verifier"
+      ],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    },
+    "repro.build": {
+      "mode": "open",
+      "trustedNodes": [],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    },
+    "sbom.present": {
+      "mode": "trusted-set",
+      "trustedNodes": [
+        "mcp-tool-shop-org/repomesh"
+      ],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    },
+    "provenance.present": {
+      "mode": "trusted-set",
+      "trustedNodes": [
+        "mcp-tool-shop-org/repomesh"
+      ],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    },
+    "signature.chain": {
+      "mode": "trusted-set",
+      "trustedNodes": [
+        "mcp-tool-shop-org/repomesh"
+      ],
+      "quorum": 1,
+      "conflictPolicy": "fail-wins"
+    }
+  },
+  "conflictPolicies": {
+    "fail-wins": "If any trusted verifier says fail, the consensus is fail. Mixed pass/warn yields warn.",
+    "majority": "Majority result wins. Ties go to the safer (lower) result.",
+    "quorum-pass": "Requires quorum-count pass results; anything else yields fail."
+  },
+  "profileOverrides": {
+    "regulated": {
+      "license.audit": { "conflictPolicy": "fail-wins", "quorum": 1 },
+      "security.scan": { "conflictPolicy": "fail-wins", "quorum": 1 },
+      "repro.build": { "conflictPolicy": "fail-wins", "quorum": 1 }
+    }
+  }
+}

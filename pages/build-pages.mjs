@@ -58,6 +58,7 @@ function layout(title, body, breadcrumbs) {
   <nav>
     <a href="${BASE}/">Home</a>
     <a href="${BASE}/anchors/">Anchors</a>
+    <a href="${BASE}/health/">Health</a>
     <a href="https://github.com/mcp-tool-shop-org/repomesh">GitHub</a>
     <a href="${BASE}/docs/verification.html">Docs</a>
   </nav>
@@ -164,6 +165,74 @@ anchorsBody += copyBlock(`git clone https://github.com/mcp-tool-shop-org/repomes
 const anchorsDir = path.join(OUT_DIR, "anchors");
 fs.mkdirSync(anchorsDir, { recursive: true });
 fs.writeFileSync(path.join(anchorsDir, "index.html"), layout("Anchors", anchorsBody, `<a href="${BASE}/">Home</a> / Anchors`), "utf8");
+
+// --- Health page ---
+let healthBody = `<h2>Network Health</h2>
+<p style="color:var(--text-muted);margin-bottom:1rem">Operational transparency: verifier status, pending attestations, and anchor coverage.</p>`;
+
+// Verifier status
+healthBody += `<h3>Verifier Status</h3>`;
+healthBody += `<table><tr><th>Verifier</th><th>Checks</th><th>Last Run</th><th>Status</th></tr>`;
+for (const v of verifiers.verifiers) {
+  const lastRun = v.lastRun ? new Date(v.lastRun) : null;
+  const ageHours = lastRun ? Math.round((Date.now() - lastRun.getTime()) / (1000 * 60 * 60)) : null;
+  let status, statusClass;
+  if (!lastRun) { status = "Never run"; statusClass = "score-red"; }
+  else if (ageHours <= 24) { status = `${ageHours}h ago`; statusClass = "score-green"; }
+  else if (ageHours <= 168) { status = `${Math.round(ageHours / 24)}d ago`; statusClass = "score-yellow"; }
+  else { status = `${Math.round(ageHours / 24)}d ago`; statusClass = "score-red"; }
+
+  healthBody += `<tr>
+  <td>${esc(v.id)}</td>
+  <td>${v.checks.join(", ") || "anchor"}</td>
+  <td>${v.lastRun || "—"}</td>
+  <td><span class="score ${statusClass}">${status}</span></td>
+</tr>`;
+}
+healthBody += `</table>`;
+
+// Pending attestations (releases missing expected checks)
+healthBody += `<h3>Pending Attestations</h3>`;
+const pending = trust.filter(e => e.missingChecks && e.missingChecks.length > 0);
+if (pending.length === 0) {
+  healthBody += `<p style="color:var(--green)">All releases have complete attestations.</p>`;
+} else {
+  healthBody += `<table><tr><th>Release</th><th>Missing Checks</th></tr>`;
+  for (const e of pending) {
+    healthBody += `<tr><td>${esc(e.repo)}@${esc(e.version)}</td><td>${e.missingChecks.map(c => `<span class="tag">${esc(c)}</span>`).join("")}</td></tr>`;
+  }
+  healthBody += `</table>`;
+}
+
+// Anchor lag
+healthBody += `<h3>Anchor Coverage</h3>`;
+const totalReleases = trust.length;
+const anchoredReleases = trust.filter(e => {
+  const k = `${e.repo}@${e.version}`;
+  return !!anchors.releaseAnchors?.[k];
+}).length;
+const anchorPct = totalReleases > 0 ? Math.round((anchoredReleases / totalReleases) * 100) : 0;
+const anchorClass = anchorPct >= 80 ? "score-green" : anchorPct >= 50 ? "score-yellow" : "score-red";
+healthBody += `<div class="card">
+  <div class="card-title">Anchor Coverage</div>
+  <div class="badge-row">
+    <span class="score ${anchorClass}">${anchoredReleases}/${totalReleases} releases anchored (${anchorPct}%)</span>
+  </div>
+  <div class="card-meta" style="margin-top:0.25rem">Partitions: ${anchors.partitions.length} &middot; Latest: ${anchors.partitions.length > 0 ? esc(anchors.partitions[anchors.partitions.length - 1].partitionId) : "none"}</div>
+</div>`;
+
+// Network stats
+healthBody += `<h3>Network Stats</h3>`;
+healthBody += `<div class="card">
+  <div class="card-meta">Nodes: <strong>${nodes.length}</strong></div>
+  <div class="card-meta">Releases tracked: <strong>${totalReleases}</strong></div>
+  <div class="card-meta">Verifiers: <strong>${verifiers.verifiers.length}</strong></div>
+  <div class="card-meta">Partitions: <strong>${anchors.partitions.length}</strong></div>
+</div>`;
+
+const healthDir = path.join(OUT_DIR, "health");
+fs.mkdirSync(healthDir, { recursive: true });
+fs.writeFileSync(path.join(healthDir, "index.html"), layout("Health", healthBody, `<a href="${BASE}/">Home</a> / Health`), "utf8");
 
 // --- Repo pages ---
 for (const node of nodes) {
