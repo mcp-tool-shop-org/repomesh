@@ -13,9 +13,9 @@ export const config: SiteConfig = {
     badge: 'Open source',
     headline: 'Trust infrastructure',
     headlineAccent: 'for repo networks.',
-    description: 'Append-only ledger, signed events, multi-dimensional trust scoring, and XRPL anchoring. Every release is verifiable. Every attestation is signed. Every score is earned.<br><a href="repos/" style="color:var(--color-accent);text-decoration:underline">Browse Trust Index</a> · <a href="health/" style="color:var(--color-accent);text-decoration:underline">Network Health</a> · <a href="anchors/" style="color:var(--color-accent);text-decoration:underline">Anchor Explorer</a>',
+    description: 'Append-only ledger, signed events, multi-dimensional trust scoring, and XRPL anchoring. Every release is verifiable. Every attestation is signed. Every score is earned.<br><a href="repos/" style="color:var(--color-accent);text-decoration:underline">Browse Trust Index</a> · <a href="health/" style="color:var(--color-accent);text-decoration:underline">Dashboard</a> · <a href="anchors/" style="color:var(--color-accent);text-decoration:underline">Anchor Explorer</a>',
     primaryCta: { href: '#quick-start', label: 'Get started' },
-    secondaryCta: { href: '#network', label: 'Live network' },
+    secondaryCta: { href: 'health/', label: 'Live dashboard' },
     previews: [
       { label: 'Join', code: 'node tools/repomesh.mjs init --repo your-org/your-repo' },
       { label: 'Verify', code: 'node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.0 --anchored' },
