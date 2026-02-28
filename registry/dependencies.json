@@ -18,7 +18,31 @@
       ]
     },
     {
+      "id": "mcp-tool-shop-org/repomesh-repro-verifier",
+      "kind": "attestor",
+      "consumes": [
+        {
+          "capability": "network.ledger.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mcp-tool-shop-org/repomesh-security-verifier",
+      "kind": "attestor",
+      "consumes": [
+        {
+          "capability": "network.ledger.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mcp-tool-shop-org/repomesh-xrpl-anchor",
       "kind": "attestor",
       "consumes": [
         {
@@ -37,8 +61,8 @@
   ],
   "warnings": [],
   "stats": {
-    "totalNodes": 4,
-    "totalCapabilities": 7,
+    "totalNodes": 6,
+    "totalCapabilities": 9,
     "unmetDependencies": 0,
     "roleRedundancies": 0
   }
