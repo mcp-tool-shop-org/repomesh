@@ -1,0 +1,6 @@
+{
+  "network": "testnet",
+  "rippledUrl": "wss://s.altnet.rippletest.net:51233",
+  "mode": "since-last",
+  "memoFormatVersion": "repomesh-anchor-v1"
+}

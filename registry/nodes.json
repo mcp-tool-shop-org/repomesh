@@ -71,6 +71,24 @@
     "homepage": "https://github.com/mcp-tool-shop-org/repomesh"
   },
   {
+    "id": "mcp-tool-shop-org/repomesh-xrpl-anchor",
+    "kind": "attestor",
+    "description": "XRPL anchor node — posts Merkle roots of ledger partitions to XRP Ledger for public finality",
+    "provides": [
+      "ledger.anchor.v1"
+    ],
+    "consumes": [
+      "network.ledger.v1"
+    ],
+    "tags": [
+      "repomesh",
+      "anchor",
+      "xrpl",
+      "finality"
+    ],
+    "homepage": ""
+  },
+  {
     "id": "mcp-tool-shop-org/shipcheck",
     "kind": "compute",
     "description": "Product standards for MCP Tool Shop — Ship Gate checklist, error contract, and adoption guides",

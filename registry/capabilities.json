@@ -17,6 +17,9 @@
   "security.scan.v1": [
     "mcp-tool-shop-org/repomesh-security-verifier"
   ],
+  "ledger.anchor.v1": [
+    "mcp-tool-shop-org/repomesh-xrpl-anchor"
+  ],
   "release.qa.v1": [
     "mcp-tool-shop-org/shipcheck"
   ],
