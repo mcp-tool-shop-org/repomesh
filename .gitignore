@@ -11,3 +11,4 @@ site/dist/
 site/node_modules/
 .polyglot-cache.json
 site/src/stats.json
+packages/*/dist/

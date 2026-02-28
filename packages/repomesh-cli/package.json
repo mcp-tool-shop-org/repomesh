@@ -1,0 +1,51 @@
+{
+  "name": "@mcptoolshop/repomesh",
+  "version": "1.0.0",
+  "description": "Trust infrastructure for repo networks — verify releases, check anchors, and onboard repos from anywhere.",
+  "type": "module",
+  "bin": {
+    "repomesh": "dist/cli.mjs"
+  },
+  "files": [
+    "dist/",
+    "schemas/",
+    "profiles/",
+    "templates/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepublishOnly": "npm run build",
+    "test": "node dist/cli.mjs --help"
+  },
+  "keywords": [
+    "trust",
+    "verification",
+    "supply-chain",
+    "xrpl",
+    "ledger",
+    "attestation",
+    "sbom",
+    "provenance",
+    "mcp-tool-shop"
+  ],
+  "author": "mcp-tool-shop",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/repomesh.git",
+    "directory": "packages/repomesh-cli"
+  },
+  "homepage": "https://mcp-tool-shop-org.github.io/repomesh/",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "xrpl": "^4.1.0"
+  }
+}

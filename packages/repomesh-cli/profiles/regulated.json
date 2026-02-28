@@ -1,0 +1,24 @@
+{
+  "id": "regulated",
+  "version": "v1",
+  "description": "Strict profile for regulated environments. Requires all evidence, all assurance checks including reproducible builds. Unknown licenses treated as fail. Moderate vulnerabilities trigger fail.",
+  "requiredEvidence": {
+    "sbom": true,
+    "provenance": true
+  },
+  "requiredChecks": {
+    "integrity": ["signed", "hasArtifacts", "noPolicyViolations", "sbom.present", "provenance.present", "signature.chain"],
+    "assurance": ["license.audit", "security.scan", "repro.build"]
+  },
+  "thresholds": {
+    "securityFailOn": ["critical", "high", "moderate"],
+    "licenseTreatUnknownAs": "fail"
+  },
+  "scoring": {
+    "assuranceWeights": {
+      "license.audit": { "pass": 30, "warn": 10, "fail": 0 },
+      "security.scan": { "pass": 40, "warn": 10, "fail": 0 },
+      "repro.build":   { "pass": 30, "warn": 10, "fail": 0 }
+    }
+  }
+}

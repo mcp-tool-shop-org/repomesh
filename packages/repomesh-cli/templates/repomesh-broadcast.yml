@@ -1,0 +1,252 @@
+# RepoMesh Broadcast — Release → Ledger PR
+# Copy this workflow into your repo's .github/workflows/ to join the network.
+#
+# Setup (one-time):
+#   node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+#
+# Or manually:
+#   1. Your repo has a node.json at root
+#   2. Your node.json snapshot is registered in repomesh (ledger/nodes/<org>/<repo>/node.json)
+#   3. Generate an ed25519 keypair:
+#      openssl genpkey -algorithm ED25519 -out repomesh-private.pem
+#      openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+#   4. Store the private key PEM as repo secret: REPOMESH_SIGNING_KEY
+#   5. Store a PAT with contents:write + pull-requests:write on the ledger repo: REPOMESH_LEDGER_TOKEN
+#
+# Configuration (edit these):
+#   REPOMESH_KEY_ID: must match the keyId in your registered node.json maintainer entry
+#   Build/hash steps: adjust for your project's artifact paths
+#
+# Evidence generation (SBOM + provenance) is always on.
+# Profile determines which checks are required, not what evidence is generated.
+
+name: repomesh-broadcast
+
+on:
+  release:
+    types: [published]
+
+# ---- EDIT THESE ----
+env:
+  REPOMESH_KEY_ID: "ci-yourrepo-2026"  # Must match keyId in your node.json
+  REPOMESH_LEDGER_REPO: "mcp-tool-shop-org/repomesh"
+
+jobs:
+  broadcast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Build your project (adjust as needed)
+      - run: npm ci
+      - run: npm run build
+
+      # Hash release artifacts (adjust dist path for your project)
+      - name: Hash artifacts
+        run: |
+          mkdir -p /tmp/repomesh
+          if compgen -G "dist/*.tgz" > /dev/null; then
+            sha256sum dist/*.tgz > /tmp/repomesh/artifact-hashes.txt
+          elif compgen -G "dist/*.js" > /dev/null; then
+            sha256sum dist/*.js > /tmp/repomesh/artifact-hashes.txt
+          else
+            # Fallback: hash package.json as a minimal artifact
+            sha256sum package.json > /tmp/repomesh/artifact-hashes.txt
+          fi
+          cat /tmp/repomesh/artifact-hashes.txt
+
+      # Generate SBOM (npm built-in, CycloneDX format)
+      - name: Generate SBOM
+        run: |
+          npm sbom --sbom-format cyclonedx > /tmp/repomesh/sbom.json 2>/dev/null || echo '{"bomFormat":"CycloneDX","specVersion":"1.4","components":[]}' > /tmp/repomesh/sbom.json
+          sha256sum /tmp/repomesh/sbom.json | awk '{print $1}' > /tmp/repomesh/sbom-hash.txt
+          echo "SBOM generated ($(wc -c < /tmp/repomesh/sbom.json) bytes)"
+
+      # Generate provenance statement (SLSA-style)
+      - name: Generate provenance
+        env:
+          REPO_ID: ${{ github.repository }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          cat > /tmp/repomesh/provenance.json << PROVEOF
+          {
+            "_type": "https://slsa.dev/provenance/v1",
+            "subject": {
+              "repo": "${REPO_ID}",
+              "version": "${VERSION}",
+              "commit": "${COMMIT}"
+            },
+            "buildDefinition": {
+              "buildType": "https://github.com/actions/runner",
+              "externalParameters": {
+                "workflow": ".github/workflows/repomesh-broadcast.yml",
+                "trigger": "release:published"
+              }
+            },
+            "runDetails": {
+              "builder": {
+                "id": "https://github.com/actions/runner/${RUNNER_OS}/${RUNNER_ARCH}"
+              },
+              "metadata": {
+                "invocationId": "https://github.com/${REPO_ID}/actions/runs/${{ github.run_id }}",
+                "startedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              }
+            }
+          }
+          PROVEOF
+          sha256sum /tmp/repomesh/provenance.json | awk '{print $1}' > /tmp/repomesh/provenance-hash.txt
+          echo "Provenance generated"
+
+      # Upload SBOM + provenance as release assets
+      - name: Upload attestation assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
+          gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
+
+      # Generate + sign the event (with SBOM + provenance attestations)
+      - name: Create signed event
+        env:
+          REPO_ID: ${{ github.repository }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
+          KEY_ID: ${{ env.REPOMESH_KEY_ID }}
+        run: |
+          cat > /tmp/repomesh/build-event.mjs << 'SCRIPT'
+          import fs from "node:fs";
+          import crypto from "node:crypto";
+
+          function canonicalize(v) {
+            if (Array.isArray(v)) return v.map(canonicalize);
+            if (v && typeof v === "object") {
+              const out = {};
+              for (const k of Object.keys(v).sort()) out[k] = canonicalize(v[k]);
+              return out;
+            }
+            return v;
+          }
+
+          const repo = process.env.REPO_ID;
+          const version = process.env.VERSION.replace(/^v/, "");
+          const commit = process.env.COMMIT;
+          const keyId = process.env.KEY_ID;
+
+          if (!process.env.SIGNING_KEY) {
+            console.error("REPOMESH_SIGNING_KEY secret is not set.");
+            process.exit(1);
+          }
+
+          const artifacts = fs.readFileSync("/tmp/repomesh/artifact-hashes.txt", "utf8")
+            .trim().split("\n").filter(Boolean)
+            .map(line => {
+              const [sha, ...rest] = line.trim().split(/\s+/);
+              const file = rest.join(" ");
+              return {
+                name: file.split("/").pop(),
+                sha256: sha,
+                uri: `https://github.com/${repo}/releases/tag/v${version}`
+              };
+            });
+
+          // Build attestations from generated SBOM + provenance
+          const attestations = [];
+          const releaseUrl = `https://github.com/${repo}/releases/download/v${version}`;
+
+          try {
+            fs.accessSync("/tmp/repomesh/sbom.json");
+            attestations.push({
+              type: "sbom",
+              uri: `${releaseUrl}/sbom.json`
+            });
+          } catch {}
+
+          try {
+            fs.accessSync("/tmp/repomesh/provenance.json");
+            attestations.push({
+              type: "provenance",
+              uri: `${releaseUrl}/provenance.json`
+            });
+          } catch {}
+
+          const ev = {
+            type: "ReleasePublished",
+            repo,
+            version,
+            commit,
+            timestamp: new Date().toISOString(),
+            artifacts,
+            attestations,
+            signature: { alg: "ed25519", keyId, value: "", canonicalHash: "" }
+          };
+
+          // Compute canonical hash (signature excluded)
+          const stripped = JSON.parse(JSON.stringify(ev));
+          delete stripped.signature;
+          const canonical = JSON.stringify(canonicalize(stripped));
+          const hash = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+
+          // Sign the canonical hash
+          const privKey = crypto.createPrivateKey(process.env.SIGNING_KEY);
+          const sig = crypto.sign(null, Buffer.from(hash, "hex"), privKey);
+
+          ev.signature.value = sig.toString("base64");
+          ev.signature.canonicalHash = hash;
+
+          fs.writeFileSync("/tmp/repomesh/event.json", JSON.stringify(ev));
+          console.log(`Event: ${ev.type} ${ev.repo}@${ev.version} (keyId: ${keyId})`);
+          console.log(`Attestations: ${attestations.map(a => a.type).join(", ") || "none"}`);
+          SCRIPT
+
+          node /tmp/repomesh/build-event.mjs
+
+      # Open PR to repomesh ledger
+      - name: Append to ledger via PR
+        env:
+          GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+        run: |
+          REPO_SLUG="${{ github.event.repository.name }}"
+          VERSION="${{ github.ref_name }}"
+          BRANCH="event/${REPO_SLUG}/${VERSION}"
+
+          gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
+          cd /tmp/repomesh-ledger
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ env.REPOMESH_LEDGER_REPO }}.git"
+          git config user.name "repomesh-bot"
+          git config user.email "repomesh-bot@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+
+          cat /tmp/repomesh/event.json >> ledger/events/events.jsonl
+          printf '\n' >> ledger/events/events.jsonl
+
+          git add ledger/events/events.jsonl
+          git commit -m "event: ${{ github.repository }}@${VERSION}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
+            --head "$BRANCH" \
+            --title "event: ${{ github.repository }}@${VERSION}" \
+            --body "$(cat <<'EOF'
+          ## RepoMesh Broadcast
+
+          **Repo:** ${{ github.repository }}
+          **Version:** ${{ github.ref_name }}
+          **Commit:** ${{ github.sha }}
+          **Type:** ReleasePublished
+
+          Automated event from release workflow. Ledger CI will verify schema, signature, and append-only rules.
+          EOF
+          )"

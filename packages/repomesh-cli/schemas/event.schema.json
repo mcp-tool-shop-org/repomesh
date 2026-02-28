@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/event.schema.json",
+  "title": "RepoMesh Event Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "repo", "version", "commit", "timestamp", "artifacts", "attestations", "signature"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "ReleasePublished",
+        "AttestationPublished",
+        "BreakingChangeDetected",
+        "HealthCheckFailed",
+        "DependencyVulnFound",
+        "InterfaceUpdated",
+        "PolicyViolation"
+      ]
+    },
+    "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][A-Za-z0-9.-]+)?$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-fA-F]{7,40}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "attestations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/attestation" },
+      "default": []
+    },
+    "notes": { "type": "string", "maxLength": 2000 },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "keyId", "value", "canonicalHash"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["ed25519"] },
+        "keyId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "value": { "type": "string", "minLength": 32, "maxLength": 400 },
+        "canonicalHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sha256", "uri"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 600 }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "uri"],
+      "properties": {
+        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute"] },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 600 }
+      }
+    }
+  }
+}
