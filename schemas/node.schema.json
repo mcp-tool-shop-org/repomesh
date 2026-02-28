@@ -77,14 +77,19 @@
     "maintainer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "publicKey"],
+      "required": ["name", "keyId", "publicKey"],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "keyId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,118}[a-z0-9]$",
+          "description": "Stable key identifier for signature matching (e.g., mike-2026-01, ci-shipcheck)."
+        },
         "publicKey": {
           "type": "string",
           "description": "Public key for signing events (ed25519). PEM format.",
           "minLength": 32,
-          "maxLength": 200
+          "maxLength": 600
         },
         "contact": { "type": "string", "maxLength": 120 }
       }

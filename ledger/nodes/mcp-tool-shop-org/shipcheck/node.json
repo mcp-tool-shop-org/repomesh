@@ -1,0 +1,29 @@
+{
+  "id": "mcp-tool-shop-org/shipcheck",
+  "kind": "compute",
+  "description": "Product standards for MCP Tool Shop — Ship Gate checklist, error contract, and adoption guides",
+  "homepage": "https://mcp-tool-shop-org.github.io/shipcheck/",
+  "provides": [
+    "release.qa.v1",
+    "product.standards.v1"
+  ],
+  "consumes": [],
+  "interfaces": [
+    { "name": "shipcheck-cli", "version": "v1", "schemaPath": "./schemas/cli.v1.json", "stability": "stable" }
+  ],
+  "invariants": {
+    "deterministicBuild": true,
+    "signedReleases": true,
+    "semver": true,
+    "changelog": true
+  },
+  "maintainers": [
+    {
+      "name": "mcp-tool-shop",
+      "keyId": "ci-shipcheck-2026",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZkRv53r2lR1hklQDSiFS8t7JpQxyKjfusYSP7idbDBg=\n-----END PUBLIC KEY-----",
+      "contact": "64996768+mcp-tool-shop@users.noreply.github.com"
+    }
+  ],
+  "tags": ["mcp", "tooling", "quality", "shipcheck"]
+}

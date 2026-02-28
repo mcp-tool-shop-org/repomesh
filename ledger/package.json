@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "validate:ledger": "node scripts/validate-ledger.mjs"
+    "validate:ledger": "node scripts/validate-ledger.mjs",
+    "verify:release": "node scripts/verify-release.mjs"
   },
   "dependencies": {
     "ajv": "^8.17.1",

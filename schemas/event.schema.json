@@ -10,6 +10,7 @@
       "type": "string",
       "enum": [
         "ReleasePublished",
+        "AttestationPublished",
         "BreakingChangeDetected",
         "HealthCheckFailed",
         "DependencyVulnFound",
@@ -60,7 +61,7 @@
       "additionalProperties": false,
       "required": ["type", "uri"],
       "properties": {
-        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report"] },
+        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "repro.build", "policy.check"] },
         "uri": { "type": "string", "minLength": 1, "maxLength": 600 }
       }
     }

@@ -67,19 +67,24 @@ function findNodeManifest(repoId) {
 
 function extractPublicKey(nodeManifest, keyId) {
   const maints = nodeManifest.maintainers || [];
-  const m =
-    maints.find((x) => x.name === keyId) ||
-    maints.find((x) => x.keyId === keyId) ||
-    maints[0];
+  const m = maints.find((x) => x.keyId === keyId);
 
-  if (!m?.publicKey) {
-    fail(`No publicKey found in node.json for ${nodeManifest.id} (keyId: ${keyId})`);
+  if (!m) {
+    const available = maints.map((x) => x.keyId).filter(Boolean).join(", ") || "(none)";
+    fail(
+      `No maintainer with keyId="${keyId}" in node.json for ${nodeManifest.id}. ` +
+      `Available keyIds: ${available}`
+    );
+  }
+
+  if (!m.publicKey) {
+    fail(`Maintainer "${keyId}" in ${nodeManifest.id} has no publicKey.`);
   }
 
   const pk = String(m.publicKey).trim();
   if (!pk.includes("BEGIN PUBLIC KEY")) {
     fail(
-      `Public key for ${nodeManifest.id} must be PEM format (BEGIN PUBLIC KEY). ` +
+      `Public key for ${nodeManifest.id} (keyId: ${keyId}) must be PEM format (BEGIN PUBLIC KEY). ` +
       `Update ledger/nodes/${nodeManifest.id}/node.json.`
     );
   }
