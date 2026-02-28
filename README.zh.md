@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.ja.md">日本語</a> | <a href="README.pt-BR.md">Português (BR)</a> | <a href="README.zh.md">中文</a>
+  <a href="README.md">English</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.ja.md">日本語</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -14,60 +14,60 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Syntropic repo network — append-only ledger, node manifests, and scoring for distributed repo coordination.
+Syntropic 代码仓库网络：仅追加的账本、节点配置和评分，用于分布式代码仓库协调。
 
-## What is this?
+## 这是什么？
 
-RepoMesh turns a collection of repos into a cooperative network. Each repo is a **node** with:
+RepoMesh 将一组代码仓库转换为一个协作网络。每个代码仓库是一个**节点**，具有：
 
-- A **manifest** (`node.json`) declaring what it provides and consumes
-- **Signed events** broadcast to an append-only ledger
-- A **registry** indexing all nodes and capabilities
-- A **profile** defining what "done" means for trust
+- 一个**配置清单** (`node.json`)，声明其提供的功能和所依赖的功能。
+- **签名事件**，广播到仅追加的账本。
+- 一个**注册表**，索引所有节点和功能。
+- 一个**配置**，定义“完成”在信任方面意味着什么。
 
-The network enforces three invariants:
+该网络强制执行三个不变性：
 
-1. **Deterministic outputs** — same inputs, same artifacts
-2. **Verifiable provenance** — every release is signed and attested
-3. **Composable contracts** — interfaces are versioned and machine-readable
+1. **确定性输出**：相同的输入，相同的构建产物。
+2. **可验证的溯源**：每个**发布**都经过签名和验证。
+3. **可组合的合约**：接口的版本控制，并且是机器可读的。
 
-## Quick Start (1 command + 2 secrets)
+## 快速开始（1 个命令 + 2 个密钥）
 
 ```bash
 node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
 ```
 
-This generates everything you need:
-- `node.json` — your node manifest
-- `repomesh.profile.json` — your chosen profile
-- `.github/workflows/repomesh-broadcast.yml` — release broadcast workflow
-- Ed25519 signing keypair (private key stays local)
+这会生成您所需的一切：
+- `node.json` — 您的节点配置。
+- `repomesh.profile.json` — 您选择的配置。
+- `.github/workflows/repomesh-broadcast.yml` — **发布**广播工作流程。
+- Ed25519 签名密钥对（私钥保存在本地）。
 
-Then add two secrets to your repo:
-1. `REPOMESH_SIGNING_KEY` — your private key PEM (printed by init)
-2. `REPOMESH_LEDGER_TOKEN` — GitHub PAT with `contents:write` + `pull-requests:write` on this repo
+然后，将两个密钥添加到您的代码仓库：
+1. `REPOMESH_SIGNING_KEY` — 您的私钥 PEM（由 `init` 命令打印）。
+2. `REPOMESH_LEDGER_TOKEN` — 具有 `contents:write` + `pull-requests:write` 权限的 GitHub PAT（个人访问令牌），针对此代码仓库。
 
-Cut a release. Trust converges automatically.
+进行**发布**。信任会自动收敛。
 
-### Profiles
+### 配置
 
-| Profile | Evidence | Assurance Checks | Use When |
+| 配置 | 证据 | 信任检查 | 使用场景 |
 |---------|----------|-----------------|----------|
-| `baseline` | Optional | None required | Internal tools, experiments |
-| `open-source` | SBOM + provenance | License audit + security scan | Default for OSS |
-| `regulated` | SBOM + provenance | License + security + reproducibility | Compliance-critical |
+| `baseline` | 可选 | 无需任何 | 内部工具，实验 |
+| `open-source` | SBOM + 溯源 | 许可证审计 + 安全扫描 | 默认配置（适用于开源项目） |
+| `regulated` | SBOM + 溯源 | 许可证 + 安全 + 可重现性 | 合规性至关重要 |
 
-### Check Trust
+### 检查信任
 
 ```bash
 node registry/scripts/verify-trust.mjs --repo your-org/your-repo
 ```
 
-Shows integrity score, assurance score, profile-aware recommendations.
+显示完整性评分、信任评分，以及基于配置的建议。
 
-### Overrides
+### 覆盖
 
-Per-repo customization without forking verifiers:
+在不进行分支的情况下，对每个代码仓库进行自定义：
 
 ```json
 // repomesh.overrides.json
@@ -77,7 +77,7 @@ Per-repo customization without forking verifiers:
 }
 ```
 
-## Repo Structure
+## 代码仓库结构
 
 ```
 repomesh/
@@ -108,11 +108,11 @@ repomesh/
   templates/                  # Workflow templates for joining
 ```
 
-## Manual Join (5 minutes)
+## 手动加入（5 分钟）
 
-### 1. Create your node manifest
+### 1. 创建您的节点配置
 
-Add `node.json` to your repo root:
+将 `node.json` 添加到您的代码仓库的根目录：
 
 ```json
 {
@@ -136,90 +136,90 @@ Add `node.json` to your repo root:
 }
 ```
 
-### 2. Generate a signing keypair
+### 2. 生成签名密钥对
 
 ```bash
 openssl genpkey -algorithm ED25519 -out repomesh-private.pem
 openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
 ```
 
-Put the public key PEM in your `node.json` maintainers entry.
-Store the private key as a GitHub repo secret (`REPOMESH_SIGNING_KEY`).
+将公钥 PEM 放入您的 `node.json` 的 maintainers 字段。
+将私钥作为 GitHub 代码仓库的密钥存储 (`REPOMESH_SIGNING_KEY`)。
 
-### 3. Register with the network
+### 3. 注册到网络
 
-Open a PR to this repo adding your node manifest:
+向此代码仓库提交一个拉取请求，添加您的节点配置：
 
 ```
 ledger/nodes/<your-org>/<your-repo>/node.json
 ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
 ```
 
-### 4. Add the broadcast workflow
+### 4. 添加广播工作流程
 
-Copy `templates/repomesh-broadcast.yml` to your repo's `.github/workflows/`.
-Set the `REPOMESH_LEDGER_TOKEN` secret (a fine-grained PAT with contents:write + pull-requests:write on this repo).
+将 `templates/repomesh-broadcast.yml` 复制到您的代码仓库的 `.github/workflows/` 目录。
+设置 `REPOMESH_LEDGER_TOKEN` 密钥（一个具有 `contents:write` + `pull-requests:write` 权限的细粒度 PAT，针对此代码仓库）。
 
-Every release will now automatically broadcast a signed `ReleasePublished` event to the ledger.
+现在，每个**发布**都会自动将一个经过签名的 `ReleasePublished` 事件广播到账本。
 
-## Ledger Rules
+## 账本规则
 
-- **Append-only** — existing lines are immutable
-- **Schema-valid** — every event validates against `schemas/event.schema.json`
-- **Signature-valid** — every event is signed by a registered node maintainer
-- **Unique** — no duplicate `(repo, version, type)` entries
-- **Timestamp-sane** — not more than 1 hour in the future or 1 year in the past
+- **仅追加**：现有条目是不可变的。
+- **符合模式**：每个事件都必须验证 `schemas/event.schema.json`。
+- **签名有效**：每个事件都由已注册的节点维护者进行签名。
+- **唯一性**：没有重复的 `(代码仓库, 版本, 类型)` 条目。
+- **时间戳合理**：时间戳不能晚于 1 小时，也不能早于 1 年。
 
-## Event Types
+## 事件类型
 
-| Type | When |
+| 类型 | 触发条件 |
 |------|------|
-| `ReleasePublished` | A new version is released |
-| `AttestationPublished` | An attestor verifies a release |
-| `BreakingChangeDetected` | A breaking change is introduced |
-| `HealthCheckFailed` | A node fails its own health checks |
-| `DependencyVulnFound` | A vulnerability is found in dependencies |
-| `InterfaceUpdated` | An interface schema changes |
-| `PolicyViolation` | A network policy is violated |
+| `ReleasePublished` | 发布新版本 |
+| `AttestationPublished` | 验证者验证**发布** |
+| `BreakingChangeDetected` | 引入破坏性变更 |
+| `HealthCheckFailed` | 节点自身健康检查失败 |
+| `DependencyVulnFound` | 在依赖项中发现漏洞 |
+| `InterfaceUpdated` | 接口模式发生变化 |
+| `PolicyViolation` | 违反网络策略 |
 
-## Node Kinds
+## 节点类型
 
-| Kind | Role |
+| 类型 | 角色 |
 |------|------|
-| `registry` | Indexes nodes and capabilities |
-| `attestor` | Verifies claims (builds, compliance) |
-| `policy` | Enforces rules (scoring, gating) |
-| `oracle` | Provides external data |
-| `compute` | Does work (transforms, builds) |
-| `settlement` | Finalizes state |
-| `governance` | Makes decisions |
-| `identity` | Issues/verifies credentials |
+| `registry` | 索引节点和功能。 |
+| `attestor` | 验证声明（构建、合规性） |
+| `policy` | 执行规则（评分、权限控制） |
+| `oracle` | 提供外部数据 |
+| `compute` | 执行任务（转换、构建） |
+| `settlement` | 完成状态 |
+| `governance` | 做出决策 |
+| `identity` | 颁发/验证凭证 |
 
-## Public Verification
+## 公开验证
 
-Anyone can verify a release with one command:
+任何人都可以使用一个命令验证一个发布版本：
 
 ```bash
 git clone https://github.com/mcp-tool-shop-org/repomesh.git && cd repomesh
 node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-This checks:
-1. Release event exists and signature is valid (Ed25519)
-2. All attestations present and signed (SBOM, provenance, license, security)
-3. Release is included in an XRPL-anchored Merkle partition
+此操作会检查以下内容：
+1. 发布事件是否存在，并且签名有效（Ed25519）。
+2. 所有证明信息都存在并且已签名（SBOM、来源、许可证、安全信息）。
+3. 发布版本包含在 XRPL 锚定的 Merkle 分区中。
 
-For CI gates, use `--json`:
+对于 CI 权限控制，请使用 `--json`。
 
 ```bash
 node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --json
 ```
 
-See [docs/verification.md](docs/verification.md) for the full verification guide, threat model, and key concepts.
+请参阅 [docs/verification.md](docs/verification.md)，以获取完整的验证指南、威胁模型和关键概念。
 
-### Trust Badges
+### 信任徽章
 
-Repos can embed trust badges from the registry:
+仓库可以嵌入来自注册表的信任徽章。
 
 ```markdown
 [![Integrity](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/integrity.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
@@ -227,41 +227,41 @@ Repos can embed trust badges from the registry:
 [![Anchored](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/anchored.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
 ```
 
-## Trust & Verification
+## 信任与验证
 
-### Verify a release
+### 验证发布版本
 
 ```bash
 node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-### Attest a release
+### 证明发布版本
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
 ```
 
-Checks: `sbom.present`, `provenance.present`, `signature.chain`
+检查内容：`sbom.present`、`provenance.present`、`signature.chain`
 
-### Run verifiers
+### 运行验证器
 
 ```bash
 node verifiers/license/scripts/verify-license.mjs --scan-new
 node verifiers/security/scripts/verify-security.mjs --scan-new
 ```
 
-### Run policy checks
+### 运行策略检查
 
 ```bash
 node policy/scripts/check-policy.mjs
 ```
 
-Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
+检查内容：语义版本号递增性、工件哈希唯一性、必需的功能。
 
-## License
+## 许可证
 
 MIT
 
 ---
 
-Built by <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>
+由 <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a> 构建。

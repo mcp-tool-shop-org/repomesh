@@ -8,6 +8,7 @@ on:
       - 'anchor/xrpl/manifests/**'
       - 'pages/**'
       - 'docs/**'
+      - 'site/**'
       - '.github/workflows/pages-ci.yml'
   workflow_dispatch:
 
@@ -33,6 +34,7 @@ jobs:
         with:
           node-version: 22
 
+      # Build registry explorer into Astro public dir
       - name: Build anchor index
         run: node registry/scripts/build-anchors.mjs
 
@@ -42,13 +44,24 @@ jobs:
       - name: Build snippets
         run: node registry/scripts/build-snippets.mjs
 
-      - name: Build pages
-        run: node pages/build-pages.mjs
+      - name: Build registry explorer
+        run: |
+          node pages/build-pages.mjs
+          cp -r pages/out/* site/public/
+
+      # Build Astro landing page (includes registry explorer as static assets)
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build site
+        working-directory: site
+        run: npm run build
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: pages/out
+          path: site/dist
 
       - name: Deploy to GitHub Pages
         id: deployment

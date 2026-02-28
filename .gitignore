@@ -4,3 +4,7 @@ anchor/xrpl/partition-root.json
 anchor/xrpl/anchor-result.json
 pages/out/
 registry/.event-cache.json
+site/.astro/
+site/dist/
+site/node_modules/
+.polyglot-cache.json
