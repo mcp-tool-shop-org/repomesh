@@ -30,16 +30,22 @@ jobs:
       - name: Build registry index
         run: node registry/scripts/build-registry.mjs
 
+      - name: Build trust index
+        run: node registry/scripts/build-trust.mjs
+
+      - name: Build dependency graph
+        run: node registry/scripts/build-dependencies.mjs
+
       - name: Check for changes
         id: diff
         run: |
-          git diff --quiet registry/nodes.json registry/capabilities.json && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --quiet registry/ && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit updated registry
         if: steps.diff.outputs.changed == 'true'
         run: |
           git config user.name "repomesh-bot"
           git config user.email "repomesh-bot@users.noreply.github.com"
-          git add registry/nodes.json registry/capabilities.json
-          git commit -m "registry: update index from ledger/nodes"
+          git add registry/
+          git commit -m "registry: update index, trust, and dependency graph"
           git push

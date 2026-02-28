@@ -20,17 +20,25 @@ The network enforces three invariants:
 
 ```
 repomesh/
-  schemas/              # Source of truth for all schemas
-    node.schema.json    # Node manifest schema
-    event.schema.json   # Event envelope schema
-  ledger/               # Append-only signed event log
-    events/events.jsonl # The ledger itself
-    nodes/              # Registered node manifests
-    scripts/            # Validation tooling
-  registry/             # Network index (generated from ledger)
-    nodes.json          # All registered nodes
-    capabilities.json   # Capability → node reverse index
-  templates/            # Workflow templates for joining the network
+  schemas/                  # Source of truth for all schemas
+    node.schema.json        # Node manifest schema
+    event.schema.json       # Event envelope schema
+  ledger/                   # Append-only signed event log
+    events/events.jsonl     # The ledger itself
+    nodes/                  # Registered node manifests
+    scripts/                # Validation + verification tooling
+  attestor/                 # Universal attestor (sbom, provenance, sig chain)
+    scripts/attest-release.mjs
+  policy/                   # Network policy checks (semver, hash uniqueness)
+    scripts/check-policy.mjs
+  registry/                 # Network index (auto-generated from ledger)
+    nodes.json              # All registered nodes
+    capabilities.json       # Capability → node reverse index
+    trust.json              # Trust scores per release
+    dependencies.json       # Dependency graph + warnings
+  templates/                # Workflow templates for joining
+  tools/                    # Developer UX tools
+    join-node.mjs           # One command to register a node
 ```
 
 ## Join the Network (5 minutes)
@@ -56,7 +64,7 @@ Add `node.json` to your repo root:
     "changelog": true
   },
   "maintainers": [
-    { "name": "your-name", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
+    { "name": "your-name", "keyId": "ci-yourrepo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
   ]
 }
 ```
@@ -99,6 +107,7 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 | Type | When |
 |------|------|
 | `ReleasePublished` | A new version is released |
+| `AttestationPublished` | An attestor verifies a release |
 | `BreakingChangeDetected` | A breaking change is introduced |
 | `HealthCheckFailed` | A node fails its own health checks |
 | `DependencyVulnFound` | A vulnerability is found in dependencies |
@@ -117,6 +126,45 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 | `settlement` | Finalizes state |
 | `governance` | Makes decisions |
 | `identity` | Issues/verifies credentials |
+
+## Trust & Verification
+
+### Verify a release
+
+```bash
+cd ledger && node scripts/verify-release.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.1
+```
+
+### Attest a release
+
+```bash
+node attestor/scripts/attest-release.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.1
+node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
+```
+
+Checks: `sbom.present`, `provenance.present`, `signature.chain`
+
+### Run policy checks
+
+```bash
+node policy/scripts/check-policy.mjs
+node policy/scripts/check-policy.mjs --repo mcp-tool-shop-org/shipcheck
+```
+
+Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
+
+### Query trust
+
+`registry/trust.json` is auto-generated and answers: "Is org/repo@version good?"
+
+Each release gets a trust score (0-100) based on: signature (30), SBOM (20), provenance (20), signature chain (15), clean policy (15).
+
+### Join with one command
+
+```bash
+node tools/join-node.mjs --node-json path/to/node.json
+node tools/join-node.mjs --node-json path/to/node.json --pr  # also opens PR
+```
 
 ## License
 
