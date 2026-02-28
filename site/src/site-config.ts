@@ -1,4 +1,5 @@
 import type { SiteConfig } from '@mcptoolshop/site-theme';
+import stats from './stats.json';
 
 export const config: SiteConfig = {
   title: 'RepoMesh',
@@ -12,9 +13,9 @@ export const config: SiteConfig = {
     badge: 'Open source',
     headline: 'Trust infrastructure',
     headlineAccent: 'for repo networks.',
-    description: 'Append-only ledger, signed events, multi-dimensional trust scoring, and XRPL anchoring. Every release is verifiable. Every attestation is signed. Every score is earned.',
+    description: 'Append-only ledger, signed events, multi-dimensional trust scoring, and XRPL anchoring. Every release is verifiable. Every attestation is signed. Every score is earned.<br><a href="repos/" style="color:var(--color-accent);text-decoration:underline">Browse Trust Index</a> · <a href="health/" style="color:var(--color-accent);text-decoration:underline">Network Health</a> · <a href="anchors/" style="color:var(--color-accent);text-decoration:underline">Anchor Explorer</a>',
     primaryCta: { href: '#quick-start', label: 'Get started' },
-    secondaryCta: { href: '#how-it-works', label: 'How it works' },
+    secondaryCta: { href: '#network', label: 'Live network' },
     previews: [
       { label: 'Join', code: 'node tools/repomesh.mjs init --repo your-org/your-repo' },
       { label: 'Verify', code: 'node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.0 --anchored' },
@@ -79,14 +80,19 @@ gh release create v1.0.0 --generate-notes`,
       ],
     },
     {
-      kind: 'features',
+      kind: 'data-table',
       id: 'network',
-      title: 'Network',
-      subtitle: 'A growing ecosystem of verifiable repos.',
-      features: [
-        { title: 'Trust Index', desc: 'Browse all registered repos, their scores, and verification status at the live Trust Index.' },
-        { title: 'Network Health', desc: 'Monitor verifier uptime, pending attestations, and anchor coverage in real time.' },
-        { title: 'Open Protocol', desc: 'Anyone can run a verifier node. Consensus scoring keeps the network honest.' },
+      title: 'Live Network',
+      subtitle: 'Real-time stats from the registry, updated on every push.',
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Registered nodes', String(stats.nodeCount)],
+        ['Tracked repos', String(stats.repoCount)],
+        ['Verified releases', String(stats.releaseCount)],
+        ['Independent verifiers', String(stats.verifierCount)],
+        ['XRPL partitions', String(stats.partitionCount)],
+        ['Anchor coverage', `${stats.anchorCoverage}%`],
+        ['Latest release', stats.latestRelease ? `${stats.latestRelease.repo}@${stats.latestRelease.version} — Integrity ${stats.latestRelease.integrity}/100, Assurance ${stats.latestRelease.assurance}/100` : 'None'],
       ],
     },
   ],

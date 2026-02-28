@@ -50,6 +50,10 @@ jobs:
           mkdir -p site/public
           cp -r pages/out/* site/public/
 
+      # Build live stats for Astro landing page
+      - name: Build stats
+        run: node pages/build-stats.mjs
+
       # Build Astro landing page (includes registry explorer as static assets)
       - name: Install site dependencies
         working-directory: site
