@@ -1,0 +1,21 @@
+{
+  "graph": [
+    {
+      "id": "mcp-tool-shop-org/repomesh",
+      "kind": "registry",
+      "consumes": []
+    },
+    {
+      "id": "mcp-tool-shop-org/shipcheck",
+      "kind": "compute",
+      "consumes": []
+    }
+  ],
+  "warnings": [],
+  "stats": {
+    "totalNodes": 2,
+    "totalCapabilities": 5,
+    "unmetDependencies": 0,
+    "roleRedundancies": 0
+  }
+}
