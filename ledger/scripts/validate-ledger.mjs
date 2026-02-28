@@ -91,6 +91,33 @@ function extractPublicKey(nodeManifest, keyId) {
   return pk;
 }
 
+function findKeyAcrossNodes(keyId) {
+  // Search all registered nodes for a maintainer with the given keyId
+  if (!fs.existsSync(NODES_DIR)) return null;
+  const orgs = fs.readdirSync(NODES_DIR, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+
+  for (const org of orgs) {
+    const orgDir = path.join(NODES_DIR, org);
+    const repos = fs.readdirSync(orgDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+
+    for (const repo of repos) {
+      const manifestPath = path.join(orgDir, repo, "node.json");
+      if (!fs.existsSync(manifestPath)) continue;
+      const manifest = loadJson(manifestPath);
+      const m = (manifest.maintainers || []).find((x) => x.keyId === keyId);
+      if (m?.publicKey) {
+        const pk = String(m.publicKey).trim();
+        if (pk.includes("BEGIN PUBLIC KEY")) return pk;
+      }
+    }
+  }
+  return null;
+}
+
 function verifyEd25519(pubKeyPem, msgHex, sigB64) {
   const msg = Buffer.from(msgHex, "hex");
   const sig = Buffer.from(sigB64, "base64");
@@ -188,14 +215,31 @@ for (let idx = 0; idx < newLines.length; idx++) {
     );
   }
 
-  // Load + validate node manifest
+  // Load + validate node manifest for the event's repo
   const node = findNodeManifest(ev.repo);
   if (!validateNode(node)) {
     fail(`node.json schema failed for ${ev.repo}: ${ajv.errorsText(validateNode.errors)}`);
   }
 
   // Signature verification
-  const pubKeyPem = extractPublicKey(node, ev.signature.keyId);
+  // For ReleasePublished: signer must be a maintainer of the event's repo
+  // For AttestationPublished/PolicyViolation: signer can be any registered node
+  //   (attestors and policy nodes sign events about other repos)
+  let pubKeyPem;
+  const isThirdPartySigned = ["AttestationPublished", "PolicyViolation"].includes(ev.type);
+
+  if (isThirdPartySigned) {
+    pubKeyPem = findKeyAcrossNodes(ev.signature.keyId);
+    if (!pubKeyPem) {
+      fail(
+        `No registered node has keyId="${ev.signature.keyId}" for ${ev.type} at line ${lineNo}. ` +
+        `The signing key must belong to a registered network node.`
+      );
+    }
+  } else {
+    pubKeyPem = extractPublicKey(node, ev.signature.keyId);
+  }
+
   const ok = verifyEd25519(pubKeyPem, ev.signature.canonicalHash, ev.signature.value);
   if (!ok) {
     fail(`Signature verification failed at line ${lineNo} for ${ev.repo} (keyId=${ev.signature.keyId}).`);
