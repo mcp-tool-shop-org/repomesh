@@ -23,6 +23,19 @@ function findLastAnchor(events) {
   return null;
 }
 
+function extractPrevRoot(anchorEvent) {
+  if (!anchorEvent) return null;
+  const notes = anchorEvent.notes || "";
+  try {
+    const jsonMatch = notes.match(/\n(\{.*\})$/s);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      return parsed.merkleRoot || null;
+    }
+  } catch {}
+  return null;
+}
+
 const args = process.argv.slice(2);
 const mode = args.includes("--all") ? "all" : args.includes("--date") ? "date" : "since-last";
 const dateArg = args.includes("--date") ? args[args.indexOf("--date") + 1] : null;
@@ -50,8 +63,12 @@ if (partition.length === 0) {
 const leaves = partition.map(ev => ev.signature?.canonicalHash).filter(h => typeof h === "string" && /^[0-9a-fA-F]{64}$/.test(h));
 if (leaves.length === 0) { console.error("No valid canonical hashes."); process.exit(1); }
 
+const lastAnchorForPrev = findLastAnchor(events);
+const prev = extractPrevRoot(lastAnchorForPrev?.event) || null;
+const range = [leaves[0], leaves[leaves.length - 1]];
+
 const manifest = merkleManifest(leaves);
-const output = { partitionId, partitionStart: partition[0]?.timestamp, partitionEnd: partition[partition.length-1]?.timestamp, eventCount: partition.length, ...manifest };
+const output = { partitionId, partitionStart: partition[0]?.timestamp, partitionEnd: partition[partition.length-1]?.timestamp, eventCount: partition.length, prev, range, ...manifest };
 
 console.log(JSON.stringify(output, null, 2));
 const outPath = path.join(import.meta.dirname, "..", "partition-root.json");

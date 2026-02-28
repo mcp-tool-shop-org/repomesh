@@ -17,7 +17,7 @@ const rootData = JSON.parse(fs.readFileSync(path.join(anchorDir, "partition-root
 
 if (!result.ok) { console.error("Anchor tx failed. Not emitting."); process.exit(1); }
 
-const notes = `ledger.anchor: pass \u2014 Partition anchored to XRPL ${result.network}\n${JSON.stringify({ txHash: result.txHash, network: result.network, walletAddress: result.walletAddress, partitionId: rootData.partitionId, partitionStart: rootData.partitionStart, partitionEnd: rootData.partitionEnd, eventCount: rootData.eventCount, merkleRoot: rootData.root, algo: rootData.algo })}`;
+const notes = `ledger.anchor: pass \u2014 Partition anchored to XRPL ${result.network}\n${JSON.stringify({ txHash: result.txHash, network: result.network, walletAddress: result.walletAddress, partitionId: rootData.partitionId, partitionStart: rootData.partitionStart, partitionEnd: rootData.partitionEnd, eventCount: rootData.eventCount, merkleRoot: rootData.root, algo: rootData.algo, prev: rootData.prev || null, range: rootData.range || null })}`;
 
 const artifacts = [{ name: `anchor-${rootData.partitionId}.json`, sha256: rootData.root, uri: `https://testnet.xrpl.org/transactions/${result.txHash}` }];
 

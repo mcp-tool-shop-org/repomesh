@@ -5,8 +5,8 @@ import xrpl from "xrpl";
 
 function stringToHex(s) { return Buffer.from(s, "utf8").toString("hex").toUpperCase(); }
 
-function buildAnchorMemo({ partitionId, network, rootHex, count }) {
-  const dataObj = { v: 1, p: partitionId, n: network, r: rootHex, c: count };
+function buildAnchorMemo({ partitionId, network, rootHex, count, prev }) {
+  const dataObj = { v: 1, p: partitionId, n: network, r: rootHex, c: count, ...(prev ? { prev } : {}) };
   const memoData = JSON.stringify(dataObj);
   if (Buffer.byteLength(memoData, "utf8") > 700) throw new Error("MemoData too large");
   return { Memo: {
@@ -34,7 +34,7 @@ async function main() {
     const wallet = xrpl.Wallet.fromSeed(SEED);
     const tx = {
       TransactionType: "Payment", Account: wallet.address, Destination: wallet.address, Amount: "1",
-      Memos: [buildAnchorMemo({ partitionId: rootData.partitionId, network: config.network, rootHex: rootData.root, count: rootData.eventCount })],
+      Memos: [buildAnchorMemo({ partitionId: rootData.partitionId, network: config.network, rootHex: rootData.root, count: rootData.eventCount, prev: rootData.prev })],
     };
     const result = await client.submitAndWait(tx, { wallet });
     const txHash = result?.result?.hash || result?.result?.tx_json?.hash;
