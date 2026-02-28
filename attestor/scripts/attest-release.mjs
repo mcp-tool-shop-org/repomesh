@@ -5,6 +5,8 @@
 // Usage:
 //   node attest-release.mjs --repo org/repo --version 1.2.3
 //   node attest-release.mjs --scan-new   (process all unattested releases)
+//   node attest-release.mjs --scan-new --sign --output /tmp/attestations.jsonl
+//     (sign with REPOMESH_SIGNING_KEY env + REPOMESH_KEY_ID env, write to file)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -70,7 +72,6 @@ function checkProvenancePresent(releaseEvent) {
 }
 
 function checkSignatureChain(releaseEvent) {
-  // Verify: signature matches a registered node key
   const node = findNodeManifest(releaseEvent.repo);
   if (!node) {
     return {
@@ -91,7 +92,6 @@ function checkSignatureChain(releaseEvent) {
     };
   }
 
-  // Re-verify the signature
   try {
     const stripped = JSON.parse(JSON.stringify(releaseEvent));
     delete stripped.signature;
@@ -127,6 +127,24 @@ function checkSignatureChain(releaseEvent) {
   }
 }
 
+// --- signing ---
+
+function signEvent(ev, signingKeyPem, keyId) {
+  ev.signature = { alg: "ed25519", keyId, value: "", canonicalHash: "" };
+
+  const stripped = JSON.parse(JSON.stringify(ev));
+  delete stripped.signature;
+  const canonical = JSON.stringify(canonicalize(stripped));
+  const hash = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+
+  const privKey = crypto.createPrivateKey(signingKeyPem);
+  const sig = crypto.sign(null, Buffer.from(hash, "hex"), privKey);
+
+  ev.signature.value = sig.toString("base64");
+  ev.signature.canonicalHash = hash;
+  return ev;
+}
+
 // --- build attestation event ---
 
 function buildAttestationEvent(releaseEvent, checks) {
@@ -142,7 +160,6 @@ function buildAttestationEvent(releaseEvent, checks) {
       uri: `repomesh:attestor:${c.kind}:${c.result}`
     })),
     notes: checks.map((c) => `${c.kind}: ${c.result} — ${c.reason}`).join("\n"),
-    // Signature placeholder — caller signs this
     signature: { alg: "ed25519", keyId: "UNSIGNED", value: "UNSIGNED", canonicalHash: "UNSIGNED" }
   };
 }
@@ -151,8 +168,11 @@ function buildAttestationEvent(releaseEvent, checks) {
 
 const args = process.argv.slice(2);
 const scanNew = args.includes("--scan-new");
+const doSign = args.includes("--sign");
 const repoIdx = args.indexOf("--repo");
 const versionIdx = args.indexOf("--version");
+const outputIdx = args.indexOf("--output");
+const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
 
 const events = readEvents();
 
@@ -167,7 +187,6 @@ for (const ev of events) {
 let targets = [];
 
 if (scanNew) {
-  // Find all ReleasePublished events not yet attested
   targets = events.filter(
     (ev) => ev.type === "ReleasePublished" && !attested.has(`${ev.repo}|${ev.version}`)
   );
@@ -190,7 +209,20 @@ if (scanNew) {
   console.error("Usage:");
   console.error("  node attest-release.mjs --repo <org/repo> --version <semver>");
   console.error("  node attest-release.mjs --scan-new");
+  console.error("  node attest-release.mjs --scan-new --sign --output <path>");
   process.exit(1);
+}
+
+// Resolve signing key if --sign
+let signingKey = null;
+let signingKeyId = null;
+if (doSign) {
+  signingKey = process.env.REPOMESH_SIGNING_KEY;
+  signingKeyId = process.env.REPOMESH_KEY_ID;
+  if (!signingKey || !signingKeyId) {
+    console.error("--sign requires REPOMESH_SIGNING_KEY and REPOMESH_KEY_ID env vars.");
+    process.exit(1);
+  }
 }
 
 const results = [];
@@ -209,14 +241,25 @@ for (const release of targets) {
     console.log(`  ${mark} ${c.kind}: ${c.reason}`);
   }
 
-  const attestEvent = buildAttestationEvent(release, checks);
+  let attestEvent = buildAttestationEvent(release, checks);
+
+  if (doSign) {
+    attestEvent = signEvent(attestEvent, signingKey, signingKeyId);
+    console.log(`  Signed with keyId: ${signingKeyId}`);
+  }
+
   results.push(attestEvent);
 }
 
-// Output all attestation events as JSONL to stdout
-console.log("\n--- Attestation events (JSONL) ---");
-for (const ev of results) {
-  console.log(JSON.stringify(ev));
+// Output
+if (outputPath) {
+  const lines = results.map((ev) => JSON.stringify(ev)).join("\n") + "\n";
+  fs.writeFileSync(outputPath, lines, "utf8");
+  console.log(`\n${results.length} attestation(s) written to ${outputPath}`);
+} else {
+  console.log("\n--- Attestation events (JSONL) ---");
+  for (const ev of results) {
+    console.log(JSON.stringify(ev));
+  }
+  console.log(`\n${results.length} attestation(s) generated.${doSign ? "" : " Sign and append to ledger to publish."}`);
 }
-
-console.log(`\n${results.length} attestation(s) generated. Sign and append to ledger to publish.`);

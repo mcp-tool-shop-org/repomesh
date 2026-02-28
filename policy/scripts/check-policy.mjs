@@ -5,13 +5,26 @@
 // Usage:
 //   node check-policy.mjs              (check all events)
 //   node check-policy.mjs --repo org/repo  (check one repo)
+//   node check-policy.mjs --sign --output /tmp/violations.jsonl
+//     (sign violations with REPOMESH_SIGNING_KEY + REPOMESH_KEY_ID, write to file)
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const NODES_DIR = path.join(ROOT, "ledger", "nodes");
+
+function canonicalize(v) {
+  if (Array.isArray(v)) return v.map(canonicalize);
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = canonicalize(v[k]);
+    return out;
+  }
+  return v;
+}
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
@@ -38,12 +51,24 @@ function compareSemver(a, b) {
   return 0;
 }
 
+function signEvent(ev, signingKeyPem, keyId) {
+  ev.signature = { alg: "ed25519", keyId, value: "", canonicalHash: "" };
+  const stripped = JSON.parse(JSON.stringify(ev));
+  delete stripped.signature;
+  const canonical = JSON.stringify(canonicalize(stripped));
+  const hash = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  const privKey = crypto.createPrivateKey(signingKeyPem);
+  const sig = crypto.sign(null, Buffer.from(hash, "hex"), privKey);
+  ev.signature.value = sig.toString("base64");
+  ev.signature.canonicalHash = hash;
+  return ev;
+}
+
 // --- policy checks ---
 
 const violations = [];
 
 function checkSemverMonotonicity(events) {
-  // Group releases by repo, check versions are monotonically increasing by timestamp
   const byRepo = {};
   for (const ev of events) {
     if (ev.type !== "ReleasePublished") continue;
@@ -52,19 +77,19 @@ function checkSemverMonotonicity(events) {
   }
 
   for (const [repo, releases] of Object.entries(byRepo)) {
-    // Sort by timestamp
     releases.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     for (let i = 1; i < releases.length; i++) {
       const prev = releases[i - 1];
       const curr = releases[i];
-      // Strip semver pre-release/build metadata for comparison
       const prevClean = prev.version.split(/[-+]/)[0];
       const currClean = curr.version.split(/[-+]/)[0];
       if (compareSemver(currClean, prevClean) <= 0) {
         violations.push({
           type: "semver.monotonicity",
           repo,
+          version: curr.version,
+          commit: curr.commit,
           detail: `Version ${curr.version} is not greater than ${prev.version} (published later at ${curr.timestamp})`,
           severity: "error"
         });
@@ -74,13 +99,12 @@ function checkSemverMonotonicity(events) {
 }
 
 function checkArtifactHashUniqueness(events) {
-  // No two different releases should claim the same artifact hash
-  const hashMap = {}; // sha256 → { repo, version }
+  const hashMap = {};
 
   for (const ev of events) {
     if (ev.type !== "ReleasePublished") continue;
     for (const art of ev.artifacts || []) {
-      if (art.sha256 === "0".repeat(64)) continue; // skip placeholder hashes
+      if (art.sha256 === "0".repeat(64)) continue;
       const key = art.sha256;
       if (hashMap[key]) {
         const existing = hashMap[key];
@@ -88,6 +112,8 @@ function checkArtifactHashUniqueness(events) {
           violations.push({
             type: "artifact.hash.collision",
             repo: ev.repo,
+            version: ev.version,
+            commit: ev.commit,
             detail: `Artifact "${art.name}" (${key.slice(0, 12)}...) collides with ${existing.repo}@${existing.version}`,
             severity: "warning"
           });
@@ -100,7 +126,6 @@ function checkArtifactHashUniqueness(events) {
 }
 
 function checkRegistryNodeCapabilities(events) {
-  // Registry nodes must provide at least one discovery/registry capability
   for (const ev of events) {
     if (ev.type !== "ReleasePublished") continue;
     const node = findNodeManifest(ev.repo);
@@ -113,6 +138,8 @@ function checkRegistryNodeCapabilities(events) {
       violations.push({
         type: "registry.capability.missing",
         repo: ev.repo,
+        version: ev.version,
+        commit: ev.commit,
         detail: `Registry node "${ev.repo}" has no registry/discovery capability in provides[]`,
         severity: "warning"
       });
@@ -120,10 +147,31 @@ function checkRegistryNodeCapabilities(events) {
   }
 }
 
+// --- build PolicyViolation event ---
+
+function buildViolationEvent(v) {
+  return {
+    type: "PolicyViolation",
+    repo: v.repo,
+    version: v.version || "0.0.0",
+    commit: v.commit || "0000000",
+    timestamp: new Date().toISOString(),
+    artifacts: [],
+    attestations: [
+      { type: "policy.check", uri: `repomesh:policy:${v.type}:${v.severity}` }
+    ],
+    notes: `[${v.type}] ${v.detail}`,
+    signature: { alg: "ed25519", keyId: "UNSIGNED", value: "UNSIGNED", canonicalHash: "UNSIGNED" }
+  };
+}
+
 // --- main ---
 
 const args = process.argv.slice(2);
 const repoFilter = args.indexOf("--repo") !== -1 ? args[args.indexOf("--repo") + 1] : null;
+const doSign = args.includes("--sign");
+const outputIdx = args.indexOf("--output");
+const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
 
 let events = readEvents();
 if (repoFilter) {
@@ -138,6 +186,9 @@ checkRegistryNodeCapabilities(events);
 
 if (violations.length === 0) {
   console.log("\u2705 No policy violations found.");
+  if (outputPath) {
+    fs.writeFileSync(outputPath, "", "utf8");
+  }
   process.exit(0);
 }
 
@@ -148,10 +199,37 @@ for (const v of violations) {
   console.log(`  ${v.detail}\n`);
 }
 
-// Output as JSONL for machine consumption
-console.log("--- Violations (JSONL) ---");
+// Resolve signing key if --sign
+let signingKey = null;
+let signingKeyId = null;
+if (doSign) {
+  signingKey = process.env.REPOMESH_SIGNING_KEY;
+  signingKeyId = process.env.REPOMESH_KEY_ID;
+  if (!signingKey || !signingKeyId) {
+    console.error("--sign requires REPOMESH_SIGNING_KEY and REPOMESH_KEY_ID env vars.");
+    process.exit(1);
+  }
+}
+
+// Build and optionally sign violation events
+const violationEvents = [];
 for (const v of violations) {
-  console.log(JSON.stringify(v));
+  let ev = buildViolationEvent(v);
+  if (doSign) {
+    ev = signEvent(ev, signingKey, signingKeyId);
+  }
+  violationEvents.push(ev);
+}
+
+if (outputPath) {
+  const lines = violationEvents.map((ev) => JSON.stringify(ev)).join("\n") + "\n";
+  fs.writeFileSync(outputPath, lines, "utf8");
+  console.log(`${violationEvents.length} violation event(s) written to ${outputPath}`);
+} else {
+  console.log("--- Violations (JSONL) ---");
+  for (const v of violations) {
+    console.log(JSON.stringify(v));
+  }
 }
 
 const errors = violations.filter((v) => v.severity === "error");

@@ -28,6 +28,8 @@ env:
 jobs:
   broadcast:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +55,61 @@ jobs:
           fi
           cat /tmp/repomesh/artifact-hashes.txt
 
-      # Generate + sign the event
+      # Generate SBOM (npm built-in, CycloneDX format)
+      - name: Generate SBOM
+        run: |
+          npm sbom --sbom-format cyclonedx > /tmp/repomesh/sbom.json 2>/dev/null || echo '{"bomFormat":"CycloneDX","specVersion":"1.4","components":[]}' > /tmp/repomesh/sbom.json
+          sha256sum /tmp/repomesh/sbom.json | awk '{print $1}' > /tmp/repomesh/sbom-hash.txt
+          echo "SBOM generated ($(wc -c < /tmp/repomesh/sbom.json) bytes)"
+
+      # Generate provenance statement (SLSA-style)
+      - name: Generate provenance
+        env:
+          REPO_ID: ${{ github.repository }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+        run: |
+          cat > /tmp/repomesh/provenance.json << PROVEOF
+          {
+            "_type": "https://slsa.dev/provenance/v1",
+            "subject": {
+              "repo": "${REPO_ID}",
+              "version": "${VERSION}",
+              "commit": "${COMMIT}"
+            },
+            "buildDefinition": {
+              "buildType": "https://github.com/actions/runner",
+              "externalParameters": {
+                "workflow": ".github/workflows/repomesh-broadcast.yml",
+                "trigger": "release:published"
+              }
+            },
+            "runDetails": {
+              "builder": {
+                "id": "https://github.com/actions/runner/${RUNNER_OS}/${RUNNER_ARCH}"
+              },
+              "metadata": {
+                "invocationId": "https://github.com/${REPO_ID}/actions/runs/${{ github.run_id }}",
+                "startedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              }
+            }
+          }
+          PROVEOF
+          sha256sum /tmp/repomesh/provenance.json | awk '{print $1}' > /tmp/repomesh/provenance-hash.txt
+          echo "Provenance generated"
+
+      # Upload SBOM + provenance as release assets
+      - name: Upload attestation assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
+          gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
+
+      # Generate + sign the event (with SBOM + provenance attestations)
       - name: Create signed event
         env:
           REPO_ID: ${{ github.repository }}
@@ -98,6 +154,26 @@ jobs:
               };
             });
 
+          // Build attestations from generated SBOM + provenance
+          const attestations = [];
+          const releaseUrl = `https://github.com/${repo}/releases/download/v${version}`;
+
+          try {
+            fs.accessSync("/tmp/repomesh/sbom.json");
+            attestations.push({
+              type: "sbom",
+              uri: `${releaseUrl}/sbom.json`
+            });
+          } catch {}
+
+          try {
+            fs.accessSync("/tmp/repomesh/provenance.json");
+            attestations.push({
+              type: "provenance",
+              uri: `${releaseUrl}/provenance.json`
+            });
+          } catch {}
+
           const ev = {
             type: "ReleasePublished",
             repo,
@@ -105,7 +181,7 @@ jobs:
             commit,
             timestamp: new Date().toISOString(),
             artifacts,
-            attestations: [],
+            attestations,
             signature: { alg: "ed25519", keyId, value: "", canonicalHash: "" }
           };
 
@@ -124,6 +200,7 @@ jobs:
 
           fs.writeFileSync("/tmp/repomesh/event.json", JSON.stringify(ev));
           console.log(`Event: ${ev.type} ${ev.repo}@${ev.version} (keyId: ${keyId})`);
+          console.log(`Attestations: ${attestations.map(a => a.type).join(", ") || "none"}`);
           SCRIPT
 
           node /tmp/repomesh/build-event.mjs
@@ -145,7 +222,6 @@ jobs:
           git config user.email "repomesh-bot@users.noreply.github.com"
           git checkout -b "$BRANCH"
 
-          # Append event (single JSON line, no trailing newline duplication)
           cat /tmp/repomesh/event.json >> ledger/events/events.jsonl
           printf '\n' >> ledger/events/events.jsonl
 
