@@ -140,6 +140,7 @@ jobs:
           gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
           cd /tmp/repomesh-ledger
 
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ env.REPOMESH_LEDGER_REPO }}.git"
           git config user.name "repomesh-bot"
           git config user.email "repomesh-bot@users.noreply.github.com"
           git checkout -b "$BRANCH"
