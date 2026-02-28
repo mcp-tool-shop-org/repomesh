@@ -1,0 +1,274 @@
+#!/usr/bin/env node
+// RepoMesh Pages Generator — Builds static HTML site from registry artifacts.
+// Output: pages/out/
+
+import fs from "node:fs";
+import path from "node:path";
+
+const ROOT = path.resolve(import.meta.dirname, "..");
+const REGISTRY_DIR = path.join(ROOT, "registry");
+const OUT_DIR = path.join(import.meta.dirname, "out");
+const ASSETS_DIR = path.join(import.meta.dirname, "assets");
+
+// Base path for GitHub Pages (matches repo name)
+const BASE = "/repomesh";
+
+// Load data
+const nodes = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "nodes.json"), "utf8"));
+const trust = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "trust.json"), "utf8"));
+const verifiers = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "verifiers.json"), "utf8"));
+const anchorsPath = path.join(REGISTRY_DIR, "anchors.json");
+const anchors = fs.existsSync(anchorsPath) ? JSON.parse(fs.readFileSync(anchorsPath, "utf8")) : { partitions: [], releaseAnchors: {} };
+
+// --- Helpers ---
+
+function scoreClass(score) {
+  if (score >= 80) return "score-green";
+  if (score >= 50) return "score-yellow";
+  return "score-red";
+}
+
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function shortHash(h) {
+  return h ? h.slice(0, 12) + "..." : "—";
+}
+
+function copyBlock(cmd) {
+  return `<div class="copy-wrap"><button class="copy-btn">Copy</button><pre>${esc(cmd)}</pre></div>`;
+}
+
+function layout(title, body, breadcrumbs) {
+  const bc = breadcrumbs ? `<div style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-muted)">${breadcrumbs}</div>` : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title)} — RepoMesh</title>
+<link rel="stylesheet" href="${BASE}/assets/style.css">
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>RepoMesh</h1>
+  <p>Syntropic repo network — public trust index</p>
+  <nav>
+    <a href="${BASE}/">Home</a>
+    <a href="${BASE}/anchors/">Anchors</a>
+    <a href="https://github.com/mcp-tool-shop-org/repomesh">GitHub</a>
+    <a href="${BASE}/docs/verification.html">Docs</a>
+  </nav>
+</header>
+${bc}
+${body}
+<footer>Built by <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a></footer>
+</div>
+<script src="${BASE}/assets/main.js"></script>
+</body>
+</html>`;
+}
+
+// --- Build output dir ---
+fs.rmSync(OUT_DIR, { recursive: true, force: true });
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+// Copy assets
+const outAssets = path.join(OUT_DIR, "assets");
+fs.mkdirSync(outAssets, { recursive: true });
+for (const f of fs.readdirSync(ASSETS_DIR)) {
+  fs.copyFileSync(path.join(ASSETS_DIR, f), path.join(outAssets, f));
+}
+
+// .nojekyll
+fs.writeFileSync(path.join(OUT_DIR, ".nojekyll"), "", "utf8");
+
+// --- Home page ---
+let homeBody = "";
+
+// Latest releases
+homeBody += `<h2>Latest Verified Releases</h2>`;
+const byRepo = {};
+for (const entry of trust) {
+  if (!byRepo[entry.repo] || new Date(entry.timestamp) > new Date(byRepo[entry.repo].timestamp)) {
+    byRepo[entry.repo] = entry;
+  }
+}
+for (const [repo, entry] of Object.entries(byRepo)) {
+  const [org, name] = repo.split("/");
+  const anchorKey = `${repo}@${entry.version}`;
+  const isAnchored = !!anchors.releaseAnchors?.[anchorKey];
+  const anchorLabel = isAnchored ? `<span class="score score-green">Anchored</span>` : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)">Not anchored</span>`;
+
+  homeBody += `<div class="card">
+  <div class="card-title"><a href="${BASE}/repos/${org}/${name}/">${esc(repo)}</a> @ ${esc(entry.version)}</div>
+  <div class="card-meta">${entry.timestamp} &middot; commit ${esc(entry.commit?.slice(0, 7))}</div>
+  <div class="badge-row" style="margin-top:0.5rem">
+    <span class="score ${scoreClass(entry.integrityScore)}">Integrity ${entry.integrityScore}/100</span>
+    <span class="score ${scoreClass(entry.assuranceScore)}">Assurance ${entry.assuranceScore}/100</span>
+    ${anchorLabel}
+  </div>
+</div>`;
+}
+
+// Verifier status
+homeBody += `<h2>Verifiers</h2>`;
+for (const v of verifiers.verifiers) {
+  const checks = v.checks.length > 0 ? v.checks.map(c => `<span class="tag">${esc(c)}</span>`).join("") : '<span class="tag">anchor</span>';
+  homeBody += `<div class="card">
+  <div class="card-title">${esc(v.id)}</div>
+  <div class="card-meta">${esc(v.description)}</div>
+  <div style="margin-top:0.25rem">${checks}</div>
+  <div class="card-meta">Last run: ${v.lastRun || "never"}</div>
+</div>`;
+}
+
+// Latest anchors (top 3)
+homeBody += `<h2>Latest Anchors</h2>`;
+const sortedPartitions = [...anchors.partitions].reverse();
+for (const p of sortedPartitions.slice(0, 3)) {
+  homeBody += `<div class="card">
+  <div class="card-title">Partition: ${esc(p.partitionId)}</div>
+  <div class="card-meta">Network: ${esc(p.network)} &middot; Events: ${p.count} &middot; TX: ${p.txHash ? esc(p.txHash.slice(0, 16)) + "..." : "local"}</div>
+  <div class="hash">Root: ${esc(p.root)}</div>
+  <div class="hash">ManifestHash: ${esc(p.manifestHash)}</div>
+</div>`;
+}
+homeBody += `<p style="margin-top:0.5rem"><a href="${BASE}/anchors/">View full anchor chain &rarr;</a></p>`;
+
+fs.writeFileSync(path.join(OUT_DIR, "index.html"), layout("Home", homeBody), "utf8");
+
+// --- Anchors page ---
+let anchorsBody = `<h2>Anchor Chain</h2>
+<p style="color:var(--text-muted);margin-bottom:1rem">Each anchor binds a ledger partition's Merkle root to the XRP Ledger. Anchors form a linked list via the <code>prev</code> field.</p>`;
+
+anchorsBody += `<table>
+<tr><th>Partition</th><th>Count</th><th>Root</th><th>ManifestHash</th><th>Prev</th><th>TX</th></tr>`;
+for (const p of anchors.partitions) {
+  anchorsBody += `<tr>
+  <td>${esc(p.partitionId)}</td>
+  <td>${p.count}</td>
+  <td class="hash">${shortHash(p.root)}</td>
+  <td class="hash">${shortHash(p.manifestHash)}</td>
+  <td class="hash">${shortHash(p.prev)}</td>
+  <td>${p.txHash ? esc(p.txHash.slice(0, 12)) + "..." : "local"}</td>
+</tr>`;
+}
+anchorsBody += `</table>`;
+
+anchorsBody += `<h3>Verify an Anchor</h3>`;
+anchorsBody += copyBlock(`git clone https://github.com/mcp-tool-shop-org/repomesh.git && cd repomesh\nnode anchor/xrpl/scripts/verify-anchor.mjs --tx <TX_HASH>`);
+
+const anchorsDir = path.join(OUT_DIR, "anchors");
+fs.mkdirSync(anchorsDir, { recursive: true });
+fs.writeFileSync(path.join(anchorsDir, "index.html"), layout("Anchors", anchorsBody, `<a href="${BASE}/">Home</a> / Anchors`), "utf8");
+
+// --- Repo pages ---
+for (const node of nodes) {
+  const [org, name] = node.id.split("/");
+  const repoDir = path.join(OUT_DIR, "repos", org, name);
+  fs.mkdirSync(repoDir, { recursive: true });
+
+  let body = "";
+  body += `<h2>${esc(node.id)}</h2>`;
+  body += `<div class="card">
+  <div class="card-meta">Kind: <strong>${esc(node.kind)}</strong></div>
+  <div class="card-meta">${esc(node.description)}</div>
+  <div style="margin-top:0.5rem">${(node.provides || []).map(c => `<span class="tag">${esc(c)}</span>`).join("")}</div>
+  ${(node.tags || []).length > 0 ? `<div style="margin-top:0.25rem">${node.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+</div>`;
+
+  // Releases for this repo
+  const repoReleases = trust.filter(e => e.repo === node.id);
+  if (repoReleases.length > 0) {
+    body += `<h3>Releases</h3>`;
+    for (const entry of repoReleases) {
+      const anchorKey = `${entry.repo}@${entry.version}`;
+      const isAnchored = !!anchors.releaseAnchors?.[anchorKey];
+      const anchorLabel = isAnchored ? `<span class="score score-green">Anchored</span>` : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)">Pending</span>`;
+
+      body += `<div class="card">
+  <div class="card-title">v${esc(entry.version)}</div>
+  <div class="card-meta">${entry.timestamp} &middot; commit ${esc(entry.commit?.slice(0, 7))}</div>
+  <div class="badge-row" style="margin-top:0.5rem">
+    <span class="score ${scoreClass(entry.integrityScore)}">Integrity ${entry.integrityScore}/100</span>
+    <span class="score ${scoreClass(entry.assuranceScore)}">Assurance ${entry.assuranceScore}/100</span>
+    ${anchorLabel}
+  </div>`;
+
+      // Attestation breakdown
+      if (entry.attestations.length > 0) {
+        body += `<table style="margin-top:0.5rem"><tr><th>Check</th><th>Result</th></tr>`;
+        for (const att of entry.attestations) {
+          const cls = att.result === "pass" ? "score-green" : att.result === "warn" ? "score-yellow" : "score-red";
+          body += `<tr><td>${esc(att.kind)}</td><td><span class="score ${cls}">${esc(att.result)}</span></td></tr>`;
+        }
+        body += `</table>`;
+      }
+
+      body += `</div>`;
+    }
+
+    // Verify commands
+    const latest = repoReleases[0];
+    const latestAnchorKey = `${latest.repo}@${latest.version}`;
+    const latestAnchored = !!anchors.releaseAnchors?.[latestAnchorKey];
+
+    body += `<h3>Verify</h3>`;
+    const cmd = `node tools/repomesh.mjs verify-release --repo ${node.id} --version ${latest.version}${latestAnchored ? " --anchored" : ""}`;
+    body += copyBlock(cmd);
+
+    // Badge embed
+    const badgeBase = `https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/${org}/${name}`;
+    body += `<h3>Badges</h3>`;
+    body += `<div class="badge-row">
+  <img src="${badgeBase}/integrity.svg" alt="Integrity">
+  <img src="${badgeBase}/assurance.svg" alt="Assurance">
+  <img src="${badgeBase}/anchored.svg" alt="Anchored">
+</div>`;
+    body += copyBlock(`[![Integrity](${badgeBase}/integrity.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/${org}/${name}/)\n[![Assurance](${badgeBase}/assurance.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/${org}/${name}/)\n[![Anchored](${badgeBase}/anchored.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/${org}/${name}/)`);
+  }
+
+  fs.writeFileSync(path.join(repoDir, "index.html"), layout(node.id, body, `<a href="${BASE}/">Home</a> / <a href="${BASE}/repos/${org}/${name}/">${esc(node.id)}</a>`), "utf8");
+}
+
+// --- Docs page (verification) ---
+const docsDir = path.join(OUT_DIR, "docs");
+fs.mkdirSync(docsDir, { recursive: true });
+const verDocSrc = path.join(ROOT, "docs", "verification.md");
+if (fs.existsSync(verDocSrc)) {
+  // Simple markdown-to-HTML (headings, code blocks, paragraphs, lists)
+  const md = fs.readFileSync(verDocSrc, "utf8");
+  let html = "";
+  let inCode = false;
+  for (const line of md.split("\n")) {
+    if (line.startsWith("```")) {
+      html += inCode ? "</pre>" : "<pre>";
+      inCode = !inCode;
+    } else if (inCode) {
+      html += esc(line) + "\n";
+    } else if (line.startsWith("# ")) {
+      html += `<h2>${esc(line.slice(2))}</h2>\n`;
+    } else if (line.startsWith("## ")) {
+      html += `<h3>${esc(line.slice(3))}</h3>\n`;
+    } else if (line.startsWith("### ")) {
+      html += `<h3 style="font-size:0.9rem">${esc(line.slice(4))}</h3>\n`;
+    } else if (line.startsWith("- ")) {
+      html += `<li>${esc(line.slice(2))}</li>\n`;
+    } else if (line.trim() === "") {
+      html += `<br>\n`;
+    } else {
+      // Inline code
+      const processed = esc(line).replace(/`([^`]+)`/g, '<code>$1</code>');
+      html += `<p>${processed}</p>\n`;
+    }
+  }
+  fs.writeFileSync(path.join(docsDir, "verification.html"), layout("Verification", html, `<a href="${BASE}/">Home</a> / Docs`), "utf8");
+}
+
+console.log(`Pages built: ${fs.readdirSync(OUT_DIR).length} top-level entries.`);
+console.log(`  Home: index.html`);
+console.log(`  Anchors: anchors/index.html`);
+console.log(`  Repos: ${nodes.length} repo page(s)`);

@@ -21,6 +21,9 @@ Commands:
   keygen            Generate an ed25519 signing keypair
   print-secrets     Print the secrets checklist for a generated keypair
   verify-release    Verify a release's trust chain and anchor status
+  build-pages       Build the static Pages site from registry artifacts
+  build-badges      Generate SVG badges for all repos
+  build-snippets    Generate verification snippets for all repos
 
 Quick start:
   node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
@@ -37,6 +40,7 @@ Options for verify-release:
   --repo <org/repo>          Target repository (required)
   --version <semver>         Release version (required)
   --anchored                 Also verify XRPL anchor inclusion
+  --json                     Output structured JSON (for CI/badges/automations)
 `;
 
 async function main() {
@@ -106,8 +110,32 @@ async function main() {
       verifyRelease({
         repo: args.repo,
         version: args.version,
-        anchored: Boolean(args.anchored)
+        anchored: Boolean(args.anchored),
+        json: Boolean(args.json),
       });
+      break;
+    }
+
+    case "build-pages": {
+      const { execSync } = await import("node:child_process");
+      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      execSync("node pages/build-pages.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      break;
+    }
+
+    case "build-badges": {
+      const { execSync } = await import("node:child_process");
+      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      break;
+    }
+
+    case "build-snippets": {
+      const { execSync } = await import("node:child_process");
+      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
       break;
     }
 

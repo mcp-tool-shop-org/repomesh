@@ -4,6 +4,7 @@
 // Usage:
 //   node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.4
 //   node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.4 --anchored
+//   node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.4 --anchored --json
 //
 // Checks:
 //   1. ReleasePublished event exists and is signed
@@ -121,35 +122,65 @@ function getPartitionEvents(events, partitionId) {
   return events.filter(ev => ev.timestamp?.startsWith(partitionId));
 }
 
-export function verifyRelease({ repo, version, anchored }) {
+export function verifyRelease({ repo, version, anchored, json }) {
   const events = readEvents();
   if (events.length === 0) {
-    console.error("No ledger events found.");
+    if (json) { console.log(JSON.stringify({ ok: false, error: "No ledger events found." })); }
+    else { console.error("No ledger events found."); }
     process.exit(1);
   }
 
-  console.log(`\nVerifying release: ${repo}@${version}`);
-  console.log(`  Anchored check: ${anchored ? "yes" : "no"}\n`);
+  // Collect structured result
+  const result = {
+    ok: true,
+    repo,
+    version,
+    release: null,
+    attestations: [],
+    anchor: null,
+  };
+
+  if (!json) {
+    console.log(`\nVerifying release: ${repo}@${version}`);
+    console.log(`  Anchored check: ${anchored ? "yes" : "no"}\n`);
+  }
 
   // 1. Find ReleasePublished event
   const release = events.find(ev =>
     ev.type === "ReleasePublished" && ev.repo === repo && ev.version === version
   );
   if (!release) {
-    console.error(`  ReleasePublished event not found for ${repo}@${version}`);
+    if (json) { console.log(JSON.stringify({ ok: false, error: `ReleasePublished event not found for ${repo}@${version}` })); }
+    else { console.error(`  ReleasePublished event not found for ${repo}@${version}`); }
     process.exit(1);
   }
-  console.log(`  Release event found: ${release.timestamp}`);
-  console.log(`    Commit:    ${release.commit}`);
-  console.log(`    Artifacts: ${(release.artifacts || []).length}`);
+
+  result.release = {
+    timestamp: release.timestamp,
+    commit: release.commit,
+    artifacts: (release.artifacts || []).length,
+    canonicalHash: release.signature?.canonicalHash,
+  };
 
   // 2. Verify signature
   const sigResult = verifySignature(release);
-  if (sigResult.ok) {
-    console.log(`    Signature: VALID (keyId=${release.signature.keyId}, node=${sigResult.nodeId})`);
-  } else {
-    console.error(`    Signature: FAILED (${sigResult.reason})`);
+  result.release.signatureValid = sigResult.ok;
+  result.release.signerNode = sigResult.ok ? sigResult.nodeId : null;
+  result.release.keyId = release.signature.keyId;
+
+  if (!sigResult.ok) {
+    result.ok = false;
+    result.release.signatureReason = sigResult.reason;
+    if (json) { console.log(JSON.stringify(result)); }
+    else { console.error(`    Signature: FAILED (${sigResult.reason})`); }
     process.exit(1);
+  }
+
+  if (!json) {
+    console.log(`  Release event found: ${release.timestamp}`);
+    console.log(`    Commit:    ${release.commit}`);
+    console.log(`    Artifacts: ${(release.artifacts || []).length}`);
+    console.log(`    Signature: VALID (keyId=${release.signature.keyId}, node=${sigResult.nodeId})`);
   }
 
   // 3. Find attestations
@@ -162,52 +193,97 @@ export function verifyRelease({ repo, version, anchored }) {
       attestTypes.add(a.type);
     }
   }
-  console.log(`\n  Attestations (${attestTypes.size}):`);
+
+  if (!json) { console.log(`\n  Attestations (${attestTypes.size}):`); }
+
   for (const t of attestTypes) {
     const att = attestations.find(ev => (ev.attestations || []).some(a => a.type === t));
     const sigOk = verifySignature(att);
     const noteMatch = att.notes?.match(/^([^:]+):\s*(pass|warn|fail)/);
-    const result = noteMatch ? noteMatch[2] : "?";
-    const signer = sigOk.ok ? ` (${sigOk.nodeId})` : "";
-    console.log(`    ${sigOk.ok ? "VALID" : "FAIL"}  ${t}: ${result}${signer}`);
+    const attResult = noteMatch ? noteMatch[2] : "unknown";
+    result.attestations.push({
+      type: t,
+      result: attResult,
+      signatureValid: sigOk.ok,
+      signerNode: sigOk.ok ? sigOk.nodeId : null,
+    });
+    if (!json) {
+      const signer = sigOk.ok ? ` (${sigOk.nodeId})` : "";
+      console.log(`    ${sigOk.ok ? "VALID" : "FAIL"}  ${t}: ${attResult}${signer}`);
+    }
   }
 
   // 4. Anchor verification (if --anchored)
   if (anchored) {
-    console.log(`\n  Anchor verification:`);
     const releaseHash = release.signature.canonicalHash;
-    console.log(`    Release canonicalHash: ${releaseHash}`);
+
+    if (!json) {
+      console.log(`\n  Anchor verification:`);
+      console.log(`    Release canonicalHash: ${releaseHash}`);
+    }
 
     const anchorResult = findAnchorForHash(events, releaseHash);
     if (!anchorResult) {
-      console.log(`    Not anchored yet (no anchor partition contains this release)`);
-      console.log(`    Run the anchor workflow to include this release in the next partition.`);
+      result.anchor = { anchored: false };
+      if (!json) {
+        console.log(`    Not anchored yet (no anchor partition contains this release)`);
+        console.log(`    Run the anchor workflow to include this release in the next partition.`);
+      }
     } else {
       const { manifest, meta } = anchorResult;
-      console.log(`    Partition:    ${manifest.partitionId}`);
-      console.log(`    Root:         ${manifest.root}`);
-      console.log(`    ManifestHash: ${manifest.manifestHash}`);
-      console.log(`    ManifestPath: ${meta.manifestPath}`);
-      if (meta.txHash) {
-        console.log(`    XRPL tx:      ${meta.txHash}`);
-      }
 
       // Verify manifest hash
       const { manifestHash: mh, ...base } = manifest;
       const recomputedMh = crypto.createHash("sha256")
         .update(canonicalize(base), "utf8").digest("hex");
-      if (recomputedMh === mh) {
-        console.log(`    ManifestHash: VERIFIED`);
-      } else {
-        console.error(`    ManifestHash: MISMATCH (expected ${recomputedMh})`);
+      const manifestValid = recomputedMh === mh;
+
+      if (!manifestValid) {
+        result.ok = false;
+        result.anchor = { anchored: true, manifestValid: false, expected: recomputedMh, got: mh };
+        if (json) { console.log(JSON.stringify(result)); }
+        else { console.error(`    ManifestHash: MISMATCH (expected ${recomputedMh})`); }
         process.exit(1);
       }
 
-      console.log(`    Release INCLUDED in anchored partition`);
+      result.anchor = {
+        anchored: true,
+        manifestValid: true,
+        partition: manifest.partitionId,
+        root: manifest.root,
+        manifestHash: manifest.manifestHash,
+        manifestPath: meta.manifestPath,
+        txHash: meta.txHash || null,
+        network: meta.network || null,
+      };
+
+      if (!json) {
+        console.log(`    Partition:    ${manifest.partitionId}`);
+        console.log(`    Root:         ${manifest.root}`);
+        console.log(`    ManifestHash: ${manifest.manifestHash}`);
+        console.log(`    ManifestPath: ${meta.manifestPath}`);
+        if (meta.txHash) {
+          console.log(`    XRPL tx:      ${meta.txHash}`);
+        }
+        console.log(`    ManifestHash: VERIFIED`);
+        console.log(`    Release INCLUDED in anchored partition`);
+      }
     }
   }
 
-  console.log(`\n  Verification: PASS\n`);
+  // Final output
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    // Inclusion statement (one-line summary)
+    if (anchored && result.anchor?.anchored) {
+      const a = result.anchor;
+      console.log(`\n  Anchored: YES (partition=${a.partition}, root=${a.root.slice(0, 12)}..., tx=${a.txHash || "local"})`);
+    } else if (anchored) {
+      console.log(`\n  Anchored: NO (pending)`);
+    }
+    console.log(`\n  Verification: PASS\n`);
+  }
 }
 
 // CLI entrypoint
@@ -218,9 +294,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
   const repo = repoIdx !== -1 ? args[repoIdx + 1] : null;
   const version = versionIdx !== -1 ? args[versionIdx + 1] : null;
   const anchored = args.includes("--anchored");
+  const json = args.includes("--json");
   if (!repo || !version) {
-    console.error("Usage: verify-release.mjs --repo org/repo --version X.Y.Z [--anchored]");
+    console.error("Usage: verify-release.mjs --repo org/repo --version X.Y.Z [--anchored] [--json]");
     process.exit(1);
   }
-  verifyRelease({ repo, version, anchored });
+  verifyRelease({ repo, version, anchored, json });
 }

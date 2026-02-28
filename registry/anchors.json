@@ -1,0 +1,71 @@
+{
+  "partitions": [
+    {
+      "partitionId": "2026-02-28",
+      "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+      "manifestHash": "75823866313cf7c78ff5d57814f1c6c57629b086844a19c81cecd8e48ed643c1",
+      "prev": null,
+      "range": [
+        "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
+        "cce98d420d705f89a06021a9500212b59e41c8aeba7cf84f3c598328f71cde8f"
+      ],
+      "count": 8,
+      "network": "testnet",
+      "txHash": null,
+      "walletAddress": null,
+      "manifestFile": "2026-02-28.json"
+    },
+    {
+      "partitionId": "all",
+      "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+      "manifestHash": "b69acaff18c7d45eb220f14e7ef24b9abb14e5978647dc11d92d27dab2604760",
+      "prev": null,
+      "range": [
+        "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
+        "cce98d420d705f89a06021a9500212b59e41c8aeba7cf84f3c598328f71cde8f"
+      ],
+      "count": 8,
+      "network": "testnet",
+      "txHash": null,
+      "walletAddress": null,
+      "manifestFile": "all.json"
+    },
+    {
+      "partitionId": "genesis",
+      "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+      "manifestHash": "19d31032af4c49b83edb1a56733083c6243d04dd061f146c88ec0e49bd120790",
+      "prev": null,
+      "range": [
+        "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
+        "cce98d420d705f89a06021a9500212b59e41c8aeba7cf84f3c598328f71cde8f"
+      ],
+      "count": 8,
+      "network": "testnet",
+      "txHash": null,
+      "walletAddress": null,
+      "manifestFile": "genesis.json"
+    }
+  ],
+  "releaseAnchors": {
+    "mcp-tool-shop-org/shipcheck@1.0.3": {
+      "repo": "mcp-tool-shop-org/shipcheck",
+      "version": "1.0.3",
+      "canonicalHash": "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
+      "partitionId": "2026-02-28",
+      "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+      "manifestHash": "75823866313cf7c78ff5d57814f1c6c57629b086844a19c81cecd8e48ed643c1",
+      "txHash": null,
+      "network": "testnet"
+    },
+    "mcp-tool-shop-org/shipcheck@1.0.4": {
+      "repo": "mcp-tool-shop-org/shipcheck",
+      "version": "1.0.4",
+      "canonicalHash": "5643ef59ff7c8e65ee312573b92c9a32e75c91dfea791f8f5b1ddc2c7784f898",
+      "partitionId": "2026-02-28",
+      "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+      "manifestHash": "75823866313cf7c78ff5d57814f1c6c57629b086844a19c81cecd8e48ed643c1",
+      "txHash": null,
+      "network": "testnet"
+    }
+  }
+}

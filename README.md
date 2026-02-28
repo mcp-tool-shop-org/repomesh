@@ -1,4 +1,13 @@
-# RepoMesh
+<p align="center">
+  <img src="assets/readme.png" width="400" alt="RepoMesh">
+</p>
+
+<p align="center">
+  <a href="https://github.com/mcp-tool-shop-org/repomesh/actions/workflows/ledger-ci.yml"><img src="https://github.com/mcp-tool-shop-org/repomesh/actions/workflows/ledger-ci.yml/badge.svg" alt="Ledger CI"></a>
+  <a href="https://github.com/mcp-tool-shop-org/repomesh/actions/workflows/registry-ci.yml"><img src="https://github.com/mcp-tool-shop-org/repomesh/actions/workflows/registry-ci.yml/badge.svg" alt="Registry CI"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
+  <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Trust_Index-live-blue" alt="Trust Index"></a>
+</p>
 
 Syntropic repo network — append-only ledger, node manifests, and scoring for distributed repo coordination.
 
@@ -69,30 +78,29 @@ Per-repo customization without forking verifiers:
 repomesh/
   profiles/                   # Trust profiles (baseline, open-source, regulated)
   schemas/                    # Source of truth for all schemas
-    node.schema.json          # Node manifest schema
-    event.schema.json         # Event envelope schema
-    repomesh.profile.schema.json   # Profile selection schema
-    repomesh.overrides.schema.json # Per-repo overrides schema
   ledger/                     # Append-only signed event log
     events/events.jsonl       # The ledger itself
     nodes/                    # Registered node manifests + profiles
     scripts/                  # Validation + verification tooling
   attestor/                   # Universal attestor (sbom, provenance, sig chain)
-    scripts/attest-release.mjs
   verifiers/                  # Independent verifier nodes
     license/                  # License compliance scanner
     security/                 # Vulnerability scanner (OSV.dev)
+  anchor/xrpl/               # XRPL anchoring (Merkle roots + testnet posting)
+    manifests/                # Committed partition manifests (append-only)
+    scripts/                  # compute-root, post-anchor, verify-anchor
   policy/                     # Network policy checks (semver, hash uniqueness)
-    scripts/check-policy.mjs
   registry/                   # Network index (auto-generated from ledger)
     nodes.json                # All registered nodes
-    capabilities.json         # Capability -> node reverse index
     trust.json                # Trust scores per release (integrity + assurance)
-    verifiers.json            # Verifier coverage per release
-    dependencies.json         # Dependency graph + warnings
-  templates/                  # Workflow templates for joining
+    anchors.json              # Anchor index (partitions + release anchoring)
+    badges/                   # SVG trust badges per repo
+    snippets/                 # Markdown verification snippets per repo
+  pages/                      # Static site generator (GitHub Pages)
+  docs/                       # Public verification docs
   tools/                      # Developer UX tools
-    repomesh.mjs              # CLI entrypoint (init, register-node, keygen)
+    repomesh.mjs              # CLI entrypoint
+  templates/                  # Workflow templates for joining
 ```
 
 ## Manual Join (5 minutes)
@@ -182,12 +190,44 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 | `governance` | Makes decisions |
 | `identity` | Issues/verifies credentials |
 
+## Public Verification
+
+Anyone can verify a release with one command:
+
+```bash
+git clone https://github.com/mcp-tool-shop-org/repomesh.git && cd repomesh
+node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
+```
+
+This checks:
+1. Release event exists and signature is valid (Ed25519)
+2. All attestations present and signed (SBOM, provenance, license, security)
+3. Release is included in an XRPL-anchored Merkle partition
+
+For CI gates, use `--json`:
+
+```bash
+node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --json
+```
+
+See [docs/verification.md](docs/verification.md) for the full verification guide, threat model, and key concepts.
+
+### Trust Badges
+
+Repos can embed trust badges from the registry:
+
+```markdown
+[![Integrity](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/integrity.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
+[![Assurance](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/assurance.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
+[![Anchored](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/anchored.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
+```
+
 ## Trust & Verification
 
 ### Verify a release
 
 ```bash
-node registry/scripts/verify-trust.mjs --repo mcp-tool-shop-org/shipcheck --version 1.0.4
+node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
 ### Attest a release
@@ -219,4 +259,4 @@ MIT
 
 ---
 
-Built by [MCP Tool Shop](https://mcp-tool-shop.github.io/)
+Built by <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>
