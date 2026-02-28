@@ -52,7 +52,7 @@ jobs:
           git config user.email "repomesh-bot@users.noreply.github.com"
           git checkout -b "$BRANCH"
           cat /tmp/repomesh-ci/anchor.jsonl >> ledger/events/events.jsonl
-          git add ledger/events/events.jsonl
+          git add ledger/events/events.jsonl anchor/xrpl/manifests/*.json
           git commit -m "anchor: XRPL partition $(date -u +%Y-%m-%d)"
           git push origin "$BRANCH"
           gh pr create \

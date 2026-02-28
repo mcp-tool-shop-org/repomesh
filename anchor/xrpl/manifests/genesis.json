@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "algo": "sha256-merkle-v1",
+  "partitionId": "genesis",
+  "network": "testnet",
+  "prev": null,
+  "range": [
+    "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
+    "cce98d420d705f89a06021a9500212b59e41c8aeba7cf84f3c598328f71cde8f"
+  ],
+  "count": 8,
+  "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
+  "manifestHash": "19d31032af4c49b83edb1a56733083c6243d04dd061f146c88ec0e49bd120790"
+}

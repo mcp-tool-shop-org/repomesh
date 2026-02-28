@@ -20,6 +20,7 @@ Commands:
   register-node     Register an existing node.json with the RepoMesh ledger
   keygen            Generate an ed25519 signing keypair
   print-secrets     Print the secrets checklist for a generated keypair
+  verify-release    Verify a release's trust chain and anchor status
 
 Quick start:
   node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
@@ -31,6 +32,11 @@ Options for init:
   --ledger-repo <org/repo>   RepoMesh ledger repo (default: mcp-tool-shop-org/repomesh)
   --key-id <id>              Signing key ID (default: ci-<repo>-<year>)
   --no-pr                    Skip PR creation, print manual instructions
+
+Options for verify-release:
+  --repo <org/repo>          Target repository (required)
+  --version <semver>         Release version (required)
+  --anchored                 Also verify XRPL anchor inclusion
 `;
 
 async function main() {
@@ -87,6 +93,21 @@ async function main() {
       const result = generateKeypair(outputDir);
       if (!result) process.exit(1);
       console.log(`\nPublic key PEM (for node.json):\n${result.publicKeyPem}`);
+      break;
+    }
+
+    case "verify-release": {
+      const { verifyRelease } = await import("./verify-release.mjs");
+      const args = parseArgs(process.argv.slice(1));
+      if (!args.repo || !args.version) {
+        console.error("Usage: node tools/repomesh.mjs verify-release --repo org/repo --version X.Y.Z [--anchored]");
+        process.exit(1);
+      }
+      verifyRelease({
+        repo: args.repo,
+        version: args.version,
+        anchored: Boolean(args.anchored)
+      });
       break;
     }
 

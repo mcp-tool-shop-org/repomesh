@@ -105,11 +105,22 @@ const manifestHash = sha256hex(canonicalize(manifestBase));
 // Full manifest with hash
 const manifest = { ...manifestBase, manifestHash };
 
-// Write manifest to manifests/<partitionId>.json
+// Write manifest to manifests/<partitionId>.json (append-only: write-if-missing, verify-if-exists)
 fs.mkdirSync(MANIFESTS_DIR, { recursive: true });
 const safeId = partitionId.replace(/[^a-zA-Z0-9._-]/g, "-");
 const manifestPath = path.join(MANIFESTS_DIR, `${safeId}.json`);
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+const manifestJson = JSON.stringify(manifest, null, 2) + "\n";
+
+if (fs.existsSync(manifestPath)) {
+  const existing = fs.readFileSync(manifestPath, "utf8");
+  if (existing !== manifestJson) {
+    console.error(`Manifest conflict: ${manifestPath} exists with different content.`);
+    console.error("Manifests are append-only. Use a new partitionId if algo/version changed.");
+    process.exit(1);
+  }
+} else {
+  fs.writeFileSync(manifestPath, manifestJson, "utf8");
+}
 
 // Write partition-root.json (backward compat + downstream scripts)
 const output = {
