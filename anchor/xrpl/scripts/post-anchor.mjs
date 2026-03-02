@@ -42,7 +42,7 @@ async function main() {
   try {
     const wallet = xrpl.Wallet.fromSeed(SEED);
     const tx = {
-      TransactionType: "Payment", Account: wallet.address, Destination: wallet.address, Amount: "1",
+      TransactionType: "AccountSet", Account: wallet.address,
       Memos: [buildAnchorMemo({
         partitionId: rootData.partitionId,
         network: config.network,
