@@ -23,7 +23,7 @@ const artifacts = [{ name: `anchor-${rootData.partitionId}.json`, sha256: rootDa
 
 const ev = buildAttestationEvent({
   repo: "mcp-tool-shop-org/repomesh",
-  version: rootData.partitionId.replace(/[^a-zA-Z0-9.-]/g, "-"),
+  version: `0.0.0-${rootData.partitionId.replace(/[^a-zA-Z0-9.-]/g, "-")}`,
   commit: "0000000",
   artifacts,
   attestations: [{ type: "ledger.anchor", uri: `xrpl:tx:${result.txHash}` }],
