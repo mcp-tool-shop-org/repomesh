@@ -10,18 +10,20 @@ sidebar:
 The fastest path from zero to a registered node:
 
 ```bash
-# 1. Initialize -- generates node.json, profile, workflow, and Ed25519 keypair
-node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+# 1. Initialize -- generates node.json, profile, workflow, overrides, and Ed25519 keypair
+npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source
 
 # 2. Add two secrets to your repo (Settings > Secrets and variables > Actions):
-#    REPOMESH_SIGNING_KEY   -- your Ed25519 private key PEM
-#    REPOMESH_LEDGER_TOKEN  -- a PAT with contents:write + pull-requests:write
+#    REPOMESH_SIGNING_KEY   -- your Ed25519 private key PEM (printed by init)
+#    REPOMESH_LEDGER_TOKEN  -- a fine-grained PAT with contents:write + pull-requests:write on the ledger repo
 
 # 3. Cut a release -- trust converges automatically
 gh release create v1.0.0 --generate-notes
 ```
 
 That is it. When the release workflow fires, your node signs a `ReleasePublished` event, the attestor scans for evidence, and trust scores begin converging.
+
+The `init` command also creates a `repomesh.overrides.json` (empty by default) and adds `repomesh-keys/` to `.gitignore` so private keys are never committed.
 
 ## Manual join (5 steps)
 
@@ -33,37 +35,59 @@ Place this at the root of your repository:
 
 ```json
 {
-  "nodeId": "your-org/your-repo",
+  "id": "your-org/your-repo",
   "kind": "compute",
-  "publicKey": "<your-ed25519-public-key-base64>",
-  "profile": "open-source",
-  "capabilities": ["release", "attest"],
-  "created": "2026-03-05T00:00:00Z"
+  "description": "What your repo does",
+  "provides": ["your-capability.v1"],
+  "consumes": [],
+  "interfaces": [
+    { "name": "your-interface", "version": "v1", "schemaPath": "./schemas/your.v1.json" }
+  ],
+  "invariants": {
+    "deterministicBuild": true,
+    "signedReleases": true,
+    "semver": true,
+    "changelog": true
+  },
+  "maintainers": [
+    {
+      "name": "your-org",
+      "keyId": "ci-your-repo-2026",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+      "contact": ""
+    }
+  ]
 }
 ```
+
+The `id` field must be `org/repo` format. The `kind` field declares the node role (see the [Ledger](/repomesh/handbook/ledger/) page for all node kinds). The `maintainers` array holds at least one entry with a PEM-encoded Ed25519 public key and a unique `keyId`.
 
 ### 2. Generate an Ed25519 keypair
 
 ```bash
 # Generate a private key
-openssl genpkey -algorithm Ed25519 -out repomesh-signing.pem
+openssl genpkey -algorithm ED25519 -out repomesh-private.pem
 
 # Extract the public key
-openssl pkey -in repomesh-signing.pem -pubout -out repomesh-signing.pub
-
-# Base64-encode the public key for node.json
-cat repomesh-signing.pub | base64 -w0
+openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
 ```
 
-Store the private key PEM as the `REPOMESH_SIGNING_KEY` secret. Never commit it.
+Paste the full public key PEM into your `node.json` maintainers entry. Store the private key PEM as the `REPOMESH_SIGNING_KEY` secret. Never commit the private key.
 
 ### 3. Register via PR
 
-Open a pull request against the RepoMesh registry that adds your `node.json` to `registry/nodes/your-org/your-repo.json`. The registry CI validates the schema and checks the public key format.
+Open a pull request against the RepoMesh repository that adds your node manifest to:
+
+```
+ledger/nodes/<your-org>/<your-repo>/node.json
+ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
+```
+
+Ledger CI validates the schema and checks the public key format.
 
 ### 4. Add the broadcast workflow
 
-Copy `.github/workflows/repomesh-broadcast.yml` from the templates directory. This workflow:
+Copy `templates/repomesh-broadcast.yml` to your repo's `.github/workflows/`. This workflow:
 - Fires on `release: published`
 - Signs the event with your `REPOMESH_SIGNING_KEY`
 - Posts the event to the ledger via `REPOMESH_LEDGER_TOKEN`
@@ -75,7 +99,19 @@ Add both secrets to your repository:
 | Secret | Purpose | Required scopes |
 |---|---|---|
 | `REPOMESH_SIGNING_KEY` | Ed25519 private key PEM for event signing | N/A (local to workflow) |
-| `REPOMESH_LEDGER_TOKEN` | GitHub PAT for posting events to the ledger | `contents:write`, `pull-requests:write` |
+| `REPOMESH_LEDGER_TOKEN` | GitHub PAT for posting events to the ledger | `contents:write`, `pull-requests:write` on the ledger repo |
+
+Create a fine-grained PAT at [github.com/settings/tokens](https://github.com/settings/tokens?type=beta).
+
+## Diagnose your setup
+
+After setting up, run the `doctor` command to validate your configuration:
+
+```bash
+npx @mcptoolshop/repomesh doctor --dir .
+```
+
+Doctor checks that `node.json`, `repomesh.profile.json`, `repomesh.overrides.json`, the broadcast workflow, and `.gitignore` are all present and schema-valid. Use `--json` for machine-readable output.
 
 ## Trust profiles
 
@@ -87,11 +123,11 @@ Choose a profile based on the level of evidence your project needs:
 | `open-source` | SBOM + provenance attestation | License + security scan | Default for open-source repositories |
 | `regulated` | SBOM + provenance + reproducibility proof | License + security + reproducibility | Compliance-critical, audited software |
 
-Set the profile in your `node.json`. The attestor adjusts its expectations based on the declared profile. Nodes that do not meet their declared profile receive a **profile gap** flag in the trust index.
+Set the profile in `repomesh.profile.json` (generated by `init`). The attestor adjusts its expectations based on the declared profile. Nodes that do not meet their declared profile receive a **profile gap** flag in the trust index.
 
 ## What happens after you join
 
-1. **Release event** -- when you create a release, the broadcast workflow signs and posts a `ReleasePublished` event.
+1. **Release event** -- when you create a release, the broadcast workflow signs and posts a `ReleasePublished` event to the ledger.
 2. **Attestor scan** -- the attestor picks up the event, runs verifiers (license, security, optionally reproducibility), and posts `AttestationPublished` events.
 3. **Trust convergence** -- the registry aggregates all attestation scores into a composite trust profile visible on the trust index page.
-4. **XRPL anchoring** -- periodically, a Merkle root of the latest ledger partition is posted to the XRP Ledger testnet, providing a tamper-evident timestamp for the entire batch.
+4. **XRPL anchoring** -- periodically, a Merkle root of the latest ledger events is posted to the XRP Ledger testnet, providing a tamper-evident timestamp for the entire batch.

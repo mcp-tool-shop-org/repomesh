@@ -9,83 +9,120 @@ Every claim in RepoMesh is independently verifiable. This page covers the four l
 
 ## Verify a release
 
-One command checks everything:
+The CLI works from anywhere -- no clone required. It fetches ledger data from GitHub automatically:
 
 ```bash
-node tools/repomesh.mjs verify-release \
+npx @mcptoolshop/repomesh verify-release \
   --repo your-org/your-repo \
   --version 1.0.0 \
   --anchored
 ```
 
 This performs:
-1. **Signature check** -- confirms the `ReleasePublished` event was signed by the node's registered key.
-2. **Attestation check** -- confirms at least one `AttestationPublished` event references this release.
-3. **Anchor check** (with `--anchored`) -- confirms the event's partition Merkle root is recorded on XRPL testnet.
+1. **Signature check** -- confirms the `ReleasePublished` event was signed by the node's registered key (Ed25519 over canonical JSON hash).
+2. **Attestation check** -- finds all `AttestationPublished` events for this release and verifies each attestation signature.
+3. **Anchor check** (with `--anchored`) -- confirms the event is included in an XRPL-anchored Merkle partition and verifies the manifest hash.
 
-The command exits `0` if all checks pass, `1` if any fail. Use `--json` for machine-readable output.
+The command exits `0` if all checks pass, non-zero if any fail. Use `--json` for machine-readable output.
+
+Inside a RepoMesh checkout, the CLI automatically uses local files instead of fetching remotely.
+
+### JSON output
+
+The `--json` flag produces structured output:
+
+```json
+{
+  "ok": true,
+  "repo": "your-org/your-repo",
+  "version": "1.0.0",
+  "release": {
+    "timestamp": "2026-03-05T12:00:00.000Z",
+    "commit": "abc1234...",
+    "artifacts": 1,
+    "canonicalHash": "5643ef...",
+    "signatureValid": true,
+    "signerNode": "your-org/your-repo",
+    "keyId": "ci-your-repo-2026"
+  },
+  "attestations": [
+    { "type": "sbom.present", "result": "pass", "signatureValid": true, "signerNode": "mcp-tool-shop-org/repomesh" }
+  ],
+  "anchor": {
+    "anchored": true,
+    "manifestValid": true,
+    "partition": "all",
+    "root": "abc123...",
+    "txHash": "DEF456..."
+  }
+}
+```
+
+## Verify an XRPL anchor
+
+Verify that an XRPL transaction correctly commits a ledger Merkle root:
+
+```bash
+npx @mcptoolshop/repomesh verify-anchor --tx <xrpl-transaction-hash>
+```
+
+Options:
+- `--network testnet|mainnet|devnet` (default: `testnet`)
+- `--ws-url <url>` -- custom XRPL WebSocket URL
+- `--json` -- machine-readable output
+
+This fetches the transaction from XRPL, decodes the memo, recomputes the Merkle root from local or remote ledger data, and confirms the roots match.
 
 ## Attest a release
 
-Attestor nodes scan for new releases and run verifiers against them:
+Attestor nodes scan for new releases and run verifiers:
 
 ```bash
-# Scan for unattested releases and run all configured verifiers
-node attestor/scan-new.mjs
-
-# Attest a specific release
-node attestor/attest.mjs --repo your-org/your-repo --version 1.0.0
+# Inside the RepoMesh checkout:
+node attestor/scripts/attest-release.mjs --scan-new
 ```
 
-The attestor runs each configured verifier, collects results, computes a composite score, signs the attestation event, and posts it to the ledger.
+The attestor processes all unattested releases: runs configured verifiers, collects results, signs the attestation event, and appends it to the ledger.
 
 ## Verifiers
 
-Verifiers are independent modules that check a specific property of a release. Each verifier produces a pass/fail result with a confidence score.
+Verifiers are independent modules that check a specific property of a release. Each verifier produces a pass/fail result.
 
-| Verifier | Checks | Output |
+| Verifier | Checks | Script path |
 |---|---|---|
-| `license` | SPDX license identifier present, compatible with declared policy | Pass/fail + license ID |
-| `security` | No known CVEs in direct dependencies, SBOM present | Pass/fail + CVE list |
-| `reproducibility` | Build from source matches published artifact checksums | Pass/fail + diff summary |
+| `license` | SPDX license identifier present, compatible with declared policy | `verifiers/license/scripts/verify-license.mjs` |
+| `security` | No known CVEs in direct dependencies (via OSV.dev), SBOM present | `verifiers/security/scripts/verify-security.mjs` |
+| `reproducibility` | Build from source matches published artifact checksums | `verifiers/repro/scripts/verify-repro.mjs` |
 
 Verifiers are configured per trust profile. The `baseline` profile requires no verifiers. The `open-source` profile requires `license` and `security`. The `regulated` profile requires all three.
 
 ### Run verifiers manually
 
 ```bash
-# Run the license verifier
-node verifiers/license.mjs --repo your-org/your-repo --version 1.0.0
-
-# Run the security verifier
-node verifiers/security.mjs --repo your-org/your-repo --version 1.0.0
-
-# Run all verifiers for a profile
-node verifiers/run-all.mjs --repo your-org/your-repo --version 1.0.0 --profile open-source
+# Inside the RepoMesh checkout:
+node verifiers/license/scripts/verify-license.mjs --scan-new
+node verifiers/security/scripts/verify-security.mjs --scan-new
 ```
 
 ## Policy checks
 
-Policy nodes enforce cross-repo rules. Run policy checks with:
+Policy nodes enforce cross-repo rules:
 
 ```bash
-# Check for breaking changes between versions
-node policy/check-breaking.mjs --repo your-org/your-repo --from 0.9.0 --to 1.0.0
-
-# Run all policy checks
-node policy/check-all.mjs --repo your-org/your-repo --version 1.0.0
+# Inside the RepoMesh checkout:
+node policy/scripts/check-policy.mjs
 ```
 
-Policy violations are recorded as `PolicyViolation` events on the ledger. They do not block releases by default, but CI gates can be configured to treat them as failures.
+Policy checks enforce semver monotonicity, artifact hash uniqueness, and required capabilities. Violations are recorded as `PolicyViolation` events on the ledger. They do not block releases by default, but CI gates can be configured to treat them as failures.
 
 ## Trust badges
 
-Embed trust badges in your README to surface verification status:
+Repos can embed trust badges from the registry. Badges are SVGs generated at `registry/badges/<org>/<repo>/`:
 
 ```markdown
-![Integrity](https://mcp-tool-shop-org.github.io/repomesh/badges/integrity/your-org/your-repo.svg)
-![Assurance](https://mcp-tool-shop-org.github.io/repomesh/badges/assurance/your-org/your-repo.svg)
-![Anchored](https://mcp-tool-shop-org.github.io/repomesh/badges/anchored/your-org/your-repo.svg)
+[![Integrity](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/your-org/your-repo/integrity.svg)](https://mcp-tool-shop-org.github.io/repomesh/)
+[![Assurance](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/your-org/your-repo/assurance.svg)](https://mcp-tool-shop-org.github.io/repomesh/)
+[![Anchored](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/your-org/your-repo/anchored.svg)](https://mcp-tool-shop-org.github.io/repomesh/)
 ```
 
 | Badge | Shows | Updates |
@@ -94,7 +131,7 @@ Embed trust badges in your README to surface verification status:
 | **Assurance** | Composite attestation score (0--100) | On every attestation event |
 | **Anchored** | Whether the latest partition is XRPL-anchored | On anchor settlement |
 
-Badge SVGs are regenerated on every registry update. Scores reflect the latest verified state.
+Badge SVGs are regenerated by `registry/scripts/build-badges.mjs` on every registry update.
 
 ## CI gates
 
@@ -102,35 +139,29 @@ Use verification output to gate deployments:
 
 ```yaml
 # In your GitHub Actions workflow
-- name: Check trust score
+- name: Check RepoMesh trust
   run: |
-    RESULT=$(node tools/repomesh.mjs verify-release \
+    RESULT=$(npx @mcptoolshop/repomesh verify-release \
       --repo ${{ github.repository }} \
       --version ${{ github.ref_name }} \
-      --json)
+      --anchored --json)
 
-    INTEGRITY=$(echo "$RESULT" | jq '.integrity')
-    ASSURANCE=$(echo "$RESULT" | jq '.assurance')
-
-    if [ "$INTEGRITY" -lt 80 ] || [ "$ASSURANCE" -lt 60 ]; then
-      echo "Trust score below threshold"
+    OK=$(echo "$RESULT" | jq -r '.ok')
+    if [ "$OK" != "true" ]; then
+      echo "RepoMesh verification failed"
       exit 1
     fi
 ```
 
-The `--json` output includes:
+The `--json` output includes `ok` (boolean), `release` (signature status), `attestations` (per-verifier results), and `anchor` (Merkle inclusion proof). Parse the fields you need for your gating logic.
 
-```json
-{
-  "repo": "your-org/your-repo",
-  "version": "1.0.0",
-  "integrity": 100,
-  "assurance": 85,
-  "anchored": true,
-  "attestations": 3,
-  "verifiers": {
-    "license": "pass",
-    "security": "pass"
-  }
-}
+## Check trust scores
+
+View the computed trust profile for any registered repo:
+
+```bash
+# Inside the RepoMesh checkout:
+node registry/scripts/verify-trust.mjs --repo your-org/your-repo
 ```
+
+This shows integrity score, assurance score, and profile-aware recommendations based on the latest ledger data.

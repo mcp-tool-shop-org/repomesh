@@ -43,3 +43,4 @@ RepoMesh is designed for organizations that manage multiple repositories and nee
 | [Ledger](/repomesh/handbook/ledger/) | Append-only event log, event types, node kinds |
 | [Verification](/repomesh/handbook/verification/) | Release verification, attestations, trust badges, CI gates |
 | [Architecture](/repomesh/handbook/architecture/) | Repo structure, XRPL anchoring, overrides system |
+| [Beginners](/repomesh/handbook/beginners/) | Plain-language introduction for newcomers to trust infrastructure |
