@@ -43,7 +43,7 @@
   },
   "homepage": "https://mcp-tool-shop-org.github.io/repomesh/",
   "dependencies": {
-    "commander": "^13.1.0",
+    "commander": "^14.0.3",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "xrpl": "^4.1.0"
