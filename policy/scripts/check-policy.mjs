@@ -13,8 +13,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
-const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
-const NODES_DIR = path.join(ROOT, "ledger", "nodes");
+const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger", "events", "events.jsonl");
+const NODES_DIR = process.env.REPOMESH_NODES_PATH || path.join(ROOT, "ledger", "nodes");
 
 function canonicalize(v) {
   if (Array.isArray(v)) return v.map(canonicalize);
@@ -28,17 +28,30 @@ function canonicalize(v) {
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
-  return fs.readFileSync(LEDGER_PATH, "utf8")
+  const lines = fs.readFileSync(LEDGER_PATH, "utf8")
     .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .map((l) => JSON.parse(l));
+    .filter((l) => l.trim().length > 0);
+  const events = [];
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      events.push(JSON.parse(lines[i]));
+    } catch (e) {
+      console.error(`Warning: skipping bad JSONL at line ${i + 1} in ${LEDGER_PATH}: ${e.message}`);
+    }
+  }
+  return events;
 }
 
 function findNodeManifest(repoId) {
   const [org, repo] = repoId.split("/");
   const p = path.join(NODES_DIR, org, repo, "node.json");
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {
+    console.error("Invalid JSON in " + p + ": " + e.message);
+    return null;
+  }
 }
 
 function compareSemver(a, b) {

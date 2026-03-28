@@ -79,7 +79,12 @@ if (computedHash !== found.signature.canonicalHash) {
 console.log(`  Hash:      ${computedHash} (verified)`);
 
 // Verify signature against registered node
+const SAFE_SEGMENT = /^[a-zA-Z0-9_.-]+$/; // path traversal guard
 const [org, repoName] = repo.split("/");
+if (!org || !repoName || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repoName)) {
+  console.error(`Invalid repo "${repo}": org and repo must match /^[a-zA-Z0-9_.-]+$/.`);
+  process.exit(1);
+}
 const nodePath = path.join(NODES_DIR, org, repoName, "node.json");
 if (!fs.existsSync(nodePath)) {
   console.error(`  Node manifest not found at ${path.relative(REPO_ROOT, nodePath)}`);
@@ -94,9 +99,19 @@ if (!maintainer) {
 }
 
 const pubKeyPem = maintainer.publicKey.trim();
+if (!pubKeyPem.includes("BEGIN PUBLIC KEY")) { // PEM format validation
+  console.error(`  Public key for ${repo} (keyId: ${found.signature.keyId}) is not valid PEM format.`);
+  process.exit(1);
+}
 const msg = Buffer.from(found.signature.canonicalHash, "hex");
 const sig = Buffer.from(found.signature.value, "base64");
-const ok = crypto.verify(null, msg, pubKeyPem, sig);
+let ok;
+try {
+  ok = crypto.verify(null, msg, pubKeyPem, sig);
+} catch (e) {
+  console.error("Signature verification error: " + e.message);
+  process.exit(1);
+}
 
 if (!ok) {
   console.error(`  Signature: FAILED`);

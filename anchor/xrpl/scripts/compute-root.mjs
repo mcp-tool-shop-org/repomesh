@@ -4,6 +4,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { merkleRootHex, merkleManifest } from "./merkle.mjs";
 
+// Manifest version — bump when anchor format changes (future: version negotiation)
+const MANIFEST_VERSION = 1;
+
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const MANIFESTS_DIR = path.join(import.meta.dirname, "..", "manifests");
@@ -43,14 +46,13 @@ function findLastAnchor(events) {
 function extractPrevRoot(anchorEvent) {
   if (!anchorEvent) return null;
   const notes = anchorEvent.notes || "";
+  const lastNewline = notes.lastIndexOf("\n");
+  if (lastNewline === -1) return null;
+  const jsonStr = notes.slice(lastNewline + 1);
   try {
-    const jsonMatch = notes.match(/\n(\{.*\})$/s);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[1]);
-      return parsed.merkleRoot || null;
-    }
-  } catch {}
-  return null;
+    const parsed = JSON.parse(jsonStr);
+    return parsed.merkleRoot || null;
+  } catch { return null; }
 }
 
 const args = process.argv.slice(2);
@@ -84,12 +86,13 @@ const lastAnchorForPrev = findLastAnchor(events);
 const prev = extractPrevRoot(lastAnchorForPrev?.event) || null;
 const range = [leaves[0], leaves[leaves.length - 1]];
 
-const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+let config;
+try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch (e) { console.error("Failed to read " + CONFIG_PATH + ": " + e.message); process.exit(1); }
 const root = merkleRootHex(leaves);
 
 // Build manifest base (without manifestHash)
 const manifestBase = {
-  v: 1,
+  v: MANIFEST_VERSION,
   algo: "sha256-merkle-v1",
   partitionId,
   network: config.network,

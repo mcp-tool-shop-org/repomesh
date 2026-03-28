@@ -30,6 +30,8 @@ This isn't a novel — skip to what you need.
 | Operate the network | [Section 8](#8-operating-repomesh) |
 | Understand threats | [Section 9](#9-security-model-and-threats) |
 | Look up a command | [Section 10](#10-glossary-and-reference) |
+| Understand tests | [Section 11](#11-testing) |
+| Fix CI failures | [Section 12](#12-ci-troubleshooting) |
 
 ---
 
@@ -454,6 +456,40 @@ The rule: graceful degradation, loud notes. A `warn` with a clear reason is much
 - Add your check to `verifier.policy.json`
 - Test locally: `node verifiers/your-check/scripts/verify-your-check.mjs --repo org/repo --version 1.0.0`
 
+### 5.5 Attestor dry-run mode
+
+Run the attestor without writing events:
+
+```bash
+node attestor/scripts/attest-release.mjs --scan-new --dry-run
+```
+
+This computes all attestation events for unattested releases, prints them as formatted JSON, and reports the count -- but writes nothing to the output file or ledger. Use it to preview what `attestor-ci` would produce before committing.
+
+### 5.6 Security verifier configuration
+
+Each verifier has a `config.json` that controls its behavior. The security verifier (`verifiers/security/config.json`) accepts:
+
+```json
+{
+  "ecosystem": "npm",
+  "severityThreshold": "moderate",
+  "ignoreVulns": [],
+  "sbomRequired": true
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `ecosystem` | string | `"npm"` | Package ecosystem for vulnerability lookups (OSV) |
+| `severityThreshold` | string | `"moderate"` | Minimum severity that triggers a `fail` result. One of: `critical`, `high`, `moderate`, `low` |
+| `ignoreVulns` | string[] | `[]` | List of vulnerability IDs (e.g., `GHSA-xxx-yyy`) to skip during scanning |
+| `sbomRequired` | boolean | `true` | When `true`, a missing SBOM produces `warn` instead of silently skipping the scan |
+
+The license verifier (`verifiers/license/config.json`) controls the license allowlist and copyleft detection. The repro verifier (`verifiers/repro/config.json`) controls the build command, Docker image, and hash algorithm.
+
+Per-repo overrides in `repomesh.overrides.json` (see [Section 4.4](#44-overrides)) take precedence over verifier-level config.
+
 ---
 
 ## 6. Verifying Trust
@@ -745,7 +781,23 @@ Symptom: `anchor-xrpl` workflow fails.
 
 **Bugs in verifier logic.** A verifier that misclassifies a license or misses a vulnerability will produce a wrong-but-signed attestation. Defense: multiple verifiers checking the same thing, dispute events for corrections.
 
-### 9.3 Responsible disclosure
+### 9.3 Security hardening patterns
+
+RepoMesh applies defense-in-depth throughout its codebase. If you contribute code or write verifiers, follow these patterns.
+
+**Shell injection prevention.** All subprocess calls use `execFileSync` with array arguments, never string interpolation through a shell. This prevents argument injection even if user-supplied values (repo names, versions) contain shell metacharacters.
+
+**JSON.parse guards.** Every `JSON.parse` call is wrapped in a try/catch. Malformed JSONL lines in the ledger are skipped with a warning rather than crashing the pipeline. The `readEvents` helper tolerates corrupted lines gracefully.
+
+**Path traversal prevention.** Manifest paths and node paths are resolved with `path.resolve` and checked with `startsWith` against the repo root. Paths containing `..` or resolving outside the expected directory are rejected. This blocks attacks that embed traversal sequences in anchor events or node references.
+
+**ReDoS-safe parsing.** Regular expressions used for validation (repo patterns, version strings, ANSI stripping) are kept simple and anchored. The repo pattern `^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$` uses character classes without nested quantifiers.
+
+**Input validation.** All CLI entry points validate `--repo` format (must be `org/name`), `--version` presence, and required flags before any processing begins. Missing or malformed inputs produce structured error messages with hints, not stack traces.
+
+**HTTP timeouts.** All fetch operations use a configurable timeout (default 10s, override via `REPOMESH_FETCH_TIMEOUT`). Unreachable hosts produce clear error messages rather than hanging indefinitely.
+
+### 9.4 Responsible disclosure
 
 If you find a security issue in RepoMesh itself (not in a repo it tracks):
 
@@ -803,6 +855,7 @@ node verifiers/license/scripts/verify-license.mjs --repo org/repo --version 1.0.
 node verifiers/security/scripts/verify-security.mjs --repo org/repo --version 1.0.0
 node verifiers/repro/scripts/verify-repro.mjs --repo org/repo --version 1.0.0
 node attestor/scripts/attest-release.mjs --scan-new
+node attestor/scripts/attest-release.mjs --scan-new --dry-run
 
 # Anchoring
 node anchor/xrpl/scripts/compute-root.mjs --date 2026-02-28
@@ -869,6 +922,34 @@ node tools/repomesh.mjs build-pages
 | `anchor/xrpl/manifests/*.json` | Committed partition manifests |
 | `templates/repomesh-broadcast.yml` | Workflow template for joining repos |
 
+### Global CLI flags
+
+These flags work on all `repomesh` subcommands:
+
+| Flag | Short | Effect |
+|---|---|---|
+| `--quiet` | `-q` | Suppress all non-error output |
+| `--verbose` | `-v` | Show additional diagnostic info |
+| `--debug` | | Show internal trace-level messages (prefixed `[debug]`) |
+| `--no-color` | | Strip ANSI codes and emoji from output (also respects `NO_COLOR` env var) |
+| `--json` | | Emit machine-readable JSON instead of human-friendly text |
+
+`--quiet` and `--verbose`/`--debug` are mutually exclusive by convention. If both are present, `--quiet` wins for `log()` output while `debug()` still emits.
+
+### Shell completion
+
+Generate a completion script for your shell:
+
+```bash
+# Bash — add to ~/.bashrc
+repomesh completion >> ~/.bashrc
+
+# Zsh — add to ~/.zshrc
+repomesh completion --shell zsh >> ~/.zshrc
+```
+
+The completion script covers all subcommands (`verify-release`, `init`, `keygen`, `build-pages`, etc.) and their flags.
+
 ### Environment variables
 
 | Variable | Used by | Purpose |
@@ -876,8 +957,102 @@ node tools/repomesh.mjs build-pages
 | `REPOMESH_SIGNING_KEY` | All signers | Ed25519 private key PEM |
 | `REPOMESH_KEY_ID` | All signers | Key identifier (e.g., `ci-repo-2026`) |
 | `REPOMESH_LEDGER_TOKEN` | Broadcast workflow | GitHub PAT for ledger PRs |
+| `REPOMESH_LEDGER_URL` | CLI (remote mode) | Override the default ledger URL |
+| `REPOMESH_MANIFESTS_URL` | CLI (remote mode) | Override the default manifests URL |
+| `REPOMESH_FETCH_TIMEOUT` | CLI (remote mode) | HTTP timeout in ms (default: 10000) |
+| `NO_COLOR` | CLI | Disable ANSI colors and emoji (same as `--no-color`) |
 | `XRPL_SEED` | Anchor scripts | XRPL wallet seed |
 | `XRPL_WS_URL` | Anchor scripts | XRPL WebSocket endpoint |
+
+---
+
+## 11. Testing
+
+RepoMesh has 58 tests across 3 suites, all using the Node.js built-in test runner (`node:test`). No external test framework required.
+
+### Running tests
+
+```bash
+# Ledger validation suite (27 tests)
+node --test ledger/tests/validate-ledger.test.mjs
+
+# Tools integration suite (11 tests)
+node --test tools/tests/tools.test.mjs
+
+# CLI suite (20 tests across 3 files)
+node --test packages/repomesh-cli/tests/*.test.mjs
+```
+
+### What each suite covers
+
+**Ledger validation** (`ledger/tests/validate-ledger.test.mjs`) — 27 tests covering:
+- Append-only enforcement (shrink detection, modification detection, valid appends)
+- Ed25519 signature verification (valid, wrong key, tampered body, corrupted signature)
+- Schema validation (missing fields, invalid enums, malformed repo patterns)
+- Uniqueness constraints (duplicate detection, distinct version acceptance)
+- Timestamp bounds (future drift, stale events, valid range)
+- Canonical hash computation (determinism, key-order independence, known-value pinning)
+- Merkle tree correctness (single leaf, two leaf, odd leaf promotion, balanced tree, leaf mutation)
+
+**Tools integration** (`tools/tests/tools.test.mjs`) — 11 tests covering:
+- Keygen (Ed25519 PEM generation, no-overwrite guard)
+- Policy checker (semver monotonicity violation and pass)
+- Verify-release end-to-end (valid signature pass, tampered hash rejection)
+- Input validation (bad repo formats, missing required flags)
+- Path traversal guards (relative `..` traversal and absolute path escape both blocked)
+
+**CLI** (`packages/repomesh-cli/tests/`) — 20 tests across 3 files:
+- `version.test.mjs` (7): semver consistency, CHANGELOG presence, dynamic version reading, shebang
+- `hardening.test.mjs` (6): malformed JSON.parse resilience, missing node.json graceful failure, HTTP timeout behavior, env var URL overrides
+- `cli-flags.test.mjs` (7): log helper exports, `--quiet`/`--debug` flag behavior, bash/zsh completion output, `--help` flag listing, error hints for missing public keys
+
+---
+
+## 12. CI Troubleshooting
+
+Common CI failure patterns and how to resolve them.
+
+### Schema validation errors (ledger-ci)
+
+**Symptom:** `ledger-ci` fails with "schema violation" or "invalid event structure."
+
+**Resolution:**
+1. Check the PR diff — which event was added?
+2. Validate the event locally: `node -e "const Ajv = require('ajv'); ..." ` or run `npm run validate:ledger` in the `ledger/` directory.
+3. Common causes: missing required fields (`type`, `repo`, `version`, `signature`), wrong `type` enum value, extra fields not in schema.
+4. Fix the broadcasting repo's `repomesh-broadcast.yml` — it is generating malformed events.
+
+### Signature failures (ledger-ci)
+
+**Symptom:** `ledger-ci` fails with "signature invalid" or "key not found."
+
+**Resolution:**
+1. Compare the `keyId` in the rejected event with the public keys in `ledger/nodes/<org>/<repo>/node.json`.
+2. If the keyId does not match any maintainer entry, the signing key was rotated without updating `node.json`.
+3. If the key matches but verification fails, the `REPOMESH_SIGNING_KEY` secret in the broadcasting repo is wrong — regenerate and update.
+4. After fixing, re-trigger the broadcast workflow from the source repo.
+
+### Missing node manifests (registry-ci)
+
+**Symptom:** `registry-ci` fails or produces empty trust scores for a repo.
+
+**Resolution:**
+1. Check that `ledger/nodes/<org>/<repo>/node.json` exists and is valid JSON.
+2. Run locally: `node registry/scripts/build-registry.mjs` — the error message will point to the problem.
+3. If the node was recently onboarded, ensure the onboarding PR (with `node.json`) was merged before the release PR.
+
+### Pages build failures (pages-ci)
+
+**Symptom:** `pages-ci` fails during the build phase.
+
+**Resolution:**
+1. Non-critical steps (metrics, stats, timeline) use `continue-on-error` and will not block the build.
+2. If `build-pages.mjs` itself fails, check that `registry/nodes.json` and `registry/trust.json` exist and are valid. The build script logs warnings for missing artifacts and continues with defaults.
+3. If the Astro site build fails (`npm run build` in `site/`), check for dependency issues: delete `node_modules` and re-run `npm ci`.
+
+### Schema backward compatibility (B-10)
+
+When modifying `schemas/event.schema.json`, always test changes against existing ledger events before merging. Schema changes that invalidate historical events will break `ledger-ci` validation on every subsequent PR. Add new optional fields rather than changing existing required fields. Run `npm run validate:ledger` locally with the full `events.jsonl` to confirm backward compatibility.
 
 ---
 

@@ -9,10 +9,16 @@ import path from "node:path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const METRICS_PATH = path.join(ROOT, "registry", "metrics.json");
 
+// B-1: Safe JSON loading with try-catch and descriptive errors
 function readJSON(rel) {
   const p = path.join(ROOT, rel);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (err) {
+    console.error(`[metrics] Warning: Failed to parse ${rel}: ${err.message}. Using default.`);
+    return null;
+  }
 }
 
 const nodes = readJSON("registry/nodes.json") || [];

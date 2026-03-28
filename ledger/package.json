@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "validate:ledger": "node scripts/validate-ledger.mjs",
     "verify:release": "node scripts/verify-release.mjs"
   },

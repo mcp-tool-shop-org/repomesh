@@ -53,8 +53,13 @@ function computeCanonicalHash(ev) {
   return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
 }
 
+const SAFE_SEGMENT = /^[a-zA-Z0-9_.-]+$/; // path traversal guard
+
 function findNodeManifest(repoId) {
   const [org, repo] = repoId.split("/");
+  if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) {
+    fail(`Invalid repoId "${repoId}": org and repo must match /^[a-zA-Z0-9_.-]+$/.`);
+  }
   const p = path.join(NODES_DIR, org, repo, "node.json");
   if (!fs.existsSync(p)) {
     fail(
@@ -121,11 +126,17 @@ function findKeyAcrossNodes(keyId) {
 function verifyEd25519(pubKeyPem, msgHex, sigB64) {
   const msg = Buffer.from(msgHex, "hex");
   const sig = Buffer.from(sigB64, "base64");
-  return crypto.verify(null, msg, pubKeyPem, sig);
+  try {
+    return crypto.verify(null, msg, pubKeyPem, sig);
+  } catch (e) {
+    console.error("Signature verification error: " + e.message);
+    return false;
+  }
 }
 
 // --- main ---
 
+console.error("[validate] Loading schemas...");
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 
@@ -136,6 +147,7 @@ const validateNode = ajv.compile(nodeSchema);
 
 const headLines = readLines(headPath);
 const baseLines = basePath ? readLines(basePath) : [];
+console.error(`[validate] Base: ${baseLines.length} events, Head: ${headLines.length} events`);
 
 // 1. Append-only check
 if (baseLines.length > 0) {
@@ -155,6 +167,7 @@ if (newLines.length === 0) {
   process.exit(0);
 }
 
+console.error(`[validate] Checking ${newLines.length} events...`);
 console.log(`Validating ${newLines.length} new event(s)...\n`);
 
 // Build uniqueness set from existing (base) events
@@ -238,6 +251,7 @@ for (let idx = 0; idx < newLines.length; idx++) {
   }
 
   // Signature verification
+  console.error(`[validate] Verifying signature for line ${lineNo}...`);
   // For ReleasePublished: signer must be a maintainer of the event's repo
   // For AttestationPublished/PolicyViolation: signer can be any registered node
   //   (attestors and policy nodes sign events about other repos)

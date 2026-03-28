@@ -1,0 +1,6 @@
+{
+  "ecosystem": "npm",
+  "severityThreshold": "moderate",
+  "ignoreVulns": [],
+  "sbomRequired": true
+}

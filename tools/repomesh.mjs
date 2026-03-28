@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Exit codes: 0 = success, 1 = user error, 2 = runtime error
 // RepoMesh CLI — Single entrypoint for all RepoMesh tools.
 //
 // Usage:
@@ -118,24 +119,48 @@ async function main() {
 
     case "build-pages": {
       const { execSync } = await import("node:child_process");
-      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
-      execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
-      execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
-      execSync("node pages/build-pages.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      const cwd = path.resolve(toolsDir, "..");
+      try {
+        execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd });
+        execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd });
+        execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd });
+        execSync("node pages/build-pages.mjs", { stdio: "inherit", cwd });
+      } catch (e) {
+        const context = { command: "build-pages", cwd };
+        console.error(`Build failed: ${e.message}`);
+        if (process.argv.includes("--debug")) console.error("Context:", JSON.stringify(context));
+        process.exit(1);
+      }
       break;
     }
 
     case "build-badges": {
       const { execSync } = await import("node:child_process");
-      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
-      execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      const cwd = path.resolve(toolsDir, "..");
+      try {
+        execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd });
+        execSync("node registry/scripts/build-badges.mjs", { stdio: "inherit", cwd });
+      } catch (e) {
+        const context = { command: "build-badges", cwd };
+        console.error(`Build failed: ${e.message}`);
+        if (process.argv.includes("--debug")) console.error("Context:", JSON.stringify(context));
+        process.exit(1);
+      }
       break;
     }
 
     case "build-snippets": {
       const { execSync } = await import("node:child_process");
-      execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
-      execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd: path.resolve(toolsDir, "..") });
+      const cwd = path.resolve(toolsDir, "..");
+      try {
+        execSync("node registry/scripts/build-anchors.mjs", { stdio: "inherit", cwd });
+        execSync("node registry/scripts/build-snippets.mjs", { stdio: "inherit", cwd });
+      } catch (e) {
+        const context = { command: "build-snippets", cwd };
+        console.error(`Build failed: ${e.message}`);
+        if (process.argv.includes("--debug")) console.error("Context:", JSON.stringify(context));
+        process.exit(1);
+      }
       break;
     }
 
@@ -185,8 +210,10 @@ function parseArgs(argv) {
 }
 
 main().catch(e => {
+  const context = { command, args: process.argv.slice(2) };
   if (process.argv.includes("--debug")) {
     console.error(e);
+    console.error("Context:", JSON.stringify(context));
   } else {
     console.error(`Error: ${e.message || e}`);
     if (e.hint) console.error(`Hint: ${e.hint}`);

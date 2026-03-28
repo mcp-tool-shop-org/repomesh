@@ -9,19 +9,33 @@ import { fetchText, fetchJson } from "../http.mjs";
 import { DEFAULT_LEDGER_URL, DEFAULT_ANCHOR_CONFIG_URL } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootHex } from "./merkle.mjs";
+import { isDebug, debug as debugLog } from "../log.mjs";
 
 function hexToString(hex) { return Buffer.from(hex, "hex").toString("utf8"); }
 function sha256hex(str) { return crypto.createHash("sha256").update(str, "utf8").digest("hex"); }
+
+function parseJsonlLines(lines) {
+  const results = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      results.push(JSON.parse(line));
+    } catch (e) {
+      debugLog(`skipping malformed JSONL line: ${e.message}`);
+    }
+  }
+  return results;
+}
 
 async function loadEvents(opts) {
   if (opts.local) {
     const p = path.join(opts.root, "ledger", "events", "events.jsonl");
     if (!fs.existsSync(p)) return [];
-    return fs.readFileSync(p, "utf8").split("\n").filter(l => l.trim()).map(l => JSON.parse(l));
+    return parseJsonlLines(fs.readFileSync(p, "utf8").split("\n"));
   }
   const url = opts.ledgerUrl || DEFAULT_LEDGER_URL;
   const text = await fetchText(url);
-  return text.split("\n").filter(l => l.trim()).map(l => JSON.parse(l));
+  return parseJsonlLines(text.split("\n"));
 }
 
 function partitionEvents(events, partitionId) {
@@ -57,7 +71,8 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json }) {
         const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
         resolvedWsUrl = config.rippledUrl;
         resolvedNetwork = config.network;
-      } catch {
+      } catch (e) {
+        debugLog(e.message);
         resolvedWsUrl = WS_URLS[resolvedNetwork];
       }
     } else {
@@ -65,7 +80,8 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json }) {
         const config = await fetchJson(DEFAULT_ANCHOR_CONFIG_URL);
         resolvedWsUrl = config.rippledUrl;
         resolvedNetwork = config.network;
-      } catch {
+      } catch (e) {
+        debugLog(e.message);
         resolvedWsUrl = WS_URLS[resolvedNetwork];
       }
     }
@@ -92,9 +108,33 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json }) {
       else { console.error("  No repomesh-anchor-v1 memo found in transaction."); }
       process.exit(1);
     }
-    memo = JSON.parse(hexToString(anchorMemo.Memo.MemoData));
+    try {
+      memo = JSON.parse(hexToString(anchorMemo.Memo.MemoData));
+    } catch (e) {
+      const msg = `Failed to parse memo data: ${e.message}`;
+      if (json) { console.log(JSON.stringify({ ok: false, error: msg })); }
+      else { console.error(`  ${msg}`); }
+      process.exit(1);
+    }
   } finally {
     await client.disconnect();
+  }
+
+  // Security: validate memo shape after deserialization from untrusted XRPL data
+  if (
+    typeof memo !== "object" || memo === null ||
+    typeof memo.p !== "string" ||
+    typeof memo.r !== "string" ||
+    typeof memo.h !== "string" ||
+    typeof memo.c !== "number" ||
+    (memo.n !== undefined && typeof memo.n !== "string") ||
+    (memo.pv !== undefined && typeof memo.pv !== "string") ||
+    (memo.rg !== undefined && !Array.isArray(memo.rg))
+  ) {
+    const err = "Invalid memo structure: missing or wrongly-typed fields";
+    if (json) { console.log(JSON.stringify({ ok: false, error: err })); }
+    else { console.error(`  ${err}`); }
+    process.exit(1);
   }
 
   const prevRoot = memo.pv && memo.pv !== "0" ? memo.pv : null;

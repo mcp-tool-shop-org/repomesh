@@ -19,6 +19,8 @@ const PROFILES_DIR = path.join(ROOT, "profiles");
 const REGISTRY_DIR = path.join(ROOT, "registry");
 const POLICY_PATH = path.join(ROOT, "verifier.policy.json");
 
+const REPO_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
   return fs.readFileSync(LEDGER_PATH, "utf8")
@@ -29,6 +31,7 @@ function readEvents() {
 
 // Load profile selection for a repo from its node snapshot directory
 function loadRepoProfile(repoId) {
+  if (!REPO_ID_RE.test(repoId)) return null;
   const [org, repo] = repoId.split("/");
   const profilePath = path.join(NODES_DIR, org, repo, "repomesh.profile.json");
   if (!fs.existsSync(profilePath)) return null;
@@ -48,6 +51,7 @@ function loadProfileDef(profileId) {
 
 // Load overrides for a repo from its node snapshot directory
 function loadRepoOverrides(repoId) {
+  if (!REPO_ID_RE.test(repoId)) return null;
   const [org, repo] = repoId.split("/");
   const overridesPath = path.join(NODES_DIR, org, repo, "repomesh.overrides.json");
   if (!fs.existsSync(overridesPath)) return null;
@@ -142,6 +146,52 @@ function resolveConsensus(sources, checkPolicy) {
   return { consensus: results[0], sources };
 }
 
+// Severity/strictness ordering for threshold validation (stricter = lower index)
+const THRESHOLD_STRICTNESS = { fail: 0, warn: 1, pass: 2 };
+
+// Validate that repo overrides do not weaken critical profile thresholds.
+// Returns a sanitized copy of overrides with weakening fields removed.
+function validateOverrides(repoOverrides, profileDef) {
+  if (!repoOverrides || !profileDef) return repoOverrides;
+
+  const sanitized = JSON.parse(JSON.stringify(repoOverrides));
+  const profileThresholds = profileDef.thresholds || {};
+
+  // Guard: licenseTreatUnknownAs cannot be weakened below profile requirement
+  if (sanitized.thresholds?.licenseTreatUnknownAs && profileThresholds.licenseTreatUnknownAs) {
+    const profileLevel = THRESHOLD_STRICTNESS[profileThresholds.licenseTreatUnknownAs];
+    const overrideLevel = THRESHOLD_STRICTNESS[sanitized.thresholds.licenseTreatUnknownAs];
+    if (profileLevel !== undefined && overrideLevel !== undefined && overrideLevel > profileLevel) {
+      console.warn(
+        `Warning: repo override licenseTreatUnknownAs="${sanitized.thresholds.licenseTreatUnknownAs}" ` +
+        `is weaker than profile "${profileDef.id}" requirement "${profileThresholds.licenseTreatUnknownAs}". Ignoring override.`
+      );
+      delete sanitized.thresholds.licenseTreatUnknownAs;
+    }
+  }
+
+  // Guard: securityFailOn cannot remove severities that the profile requires
+  if (Array.isArray(sanitized.thresholds?.securityFailOn) && Array.isArray(profileThresholds.securityFailOn)) {
+    const profileSet = new Set(profileThresholds.securityFailOn);
+    const overrideSet = new Set(sanitized.thresholds.securityFailOn);
+    const removed = [...profileSet].filter(s => !overrideSet.has(s));
+    if (removed.length > 0) {
+      console.warn(
+        `Warning: repo override securityFailOn removes profile-required severities [${removed.join(", ")}] ` +
+        `from profile "${profileDef.id}". Restoring profile requirements.`
+      );
+      sanitized.thresholds.securityFailOn = [...new Set([...sanitized.thresholds.securityFailOn, ...profileThresholds.securityFailOn])];
+    }
+  }
+
+  // Clean up empty thresholds object
+  if (sanitized.thresholds && Object.keys(sanitized.thresholds).length === 0) {
+    delete sanitized.thresholds;
+  }
+
+  return sanitized;
+}
+
 // Merge profile scoring overrides and repo overrides into assurance weights
 function resolveAssuranceWeights(profileDef, repoOverrides) {
   const weights = {};
@@ -180,7 +230,7 @@ for (const ev of events) {
     commit: ev.commit,
     timestamp: ev.timestamp,
     artifactCount: ev.artifacts?.length || 0,
-    inlineAttestations: (ev.attestations || []).map((a) => a.type),
+    inlineAttestations: (Array.isArray(ev.attestations) ? ev.attestations : []).map((a) => a.type),
     attestations: [],       // resolved (one per check kind, backward compat)
     attestationSources: {}, // all sources per check kind (new: multi-attestor)
     policyViolations: [],
@@ -200,47 +250,57 @@ for (const ev of events) {
 
   const signerNode = findSignerNode(ev.signature?.keyId) || "unknown";
 
-  // Parse from notes
-  const notes = ev.notes || "";
-  const noteLines = notes.split("\n").filter(Boolean);
-  for (const line of noteLines) {
-    const match = line.match(/^([^:]+):\s*(pass|warn|fail)\s*\u2014\s*(.+)$/);
-    if (match) {
-      const kind = match[1].trim();
-      if (!rawSources[key]) rawSources[key] = {};
-      if (!rawSources[key][kind]) rawSources[key][kind] = [];
-      // Deduplicate by (kind, node)
-      if (!rawSources[key][kind].some(s => s.node === signerNode)) {
-        rawSources[key][kind].push({
-          result: match[2], reason: match[3].trim(),
-          node: signerNode, timestamp: ev.timestamp,
-        });
+  // Parse from notes (defensive: skip lines that don't match expected format)
+  try {
+    const notes = ev.notes || "";
+    const noteLines = notes.split("\n").filter(Boolean);
+    for (const line of noteLines) {
+      const match = line.match(/^([^:]+):\s*(pass|warn|fail)\s*\u2014\s*(.+)$/);
+      if (match) {
+        const kind = match[1].trim();
+        if (!rawSources[key]) rawSources[key] = {};
+        if (!rawSources[key][kind]) rawSources[key][kind] = [];
+        // Deduplicate by (kind, node)
+        if (!rawSources[key][kind].some(s => s.node === signerNode)) {
+          rawSources[key][kind].push({
+            result: match[2], reason: match[3].trim(),
+            node: signerNode, timestamp: ev.timestamp,
+          });
+        }
       }
     }
+  } catch (noteErr) {
+    console.warn(`Warning: failed to parse attestation notes for ${key}: ${noteErr.message}`);
   }
 
-  // Also check attestation URIs
-  for (const att of ev.attestations || []) {
-    const uriMatch = att.uri?.match(/^repomesh:attestor:([^:]+):(\w+)$/);
-    if (uriMatch) {
-      const kind = uriMatch[1];
-      const result = uriMatch[2];
-      if (!rawSources[key]) rawSources[key] = {};
-      if (!rawSources[key][kind]) rawSources[key][kind] = [];
-      if (!rawSources[key][kind].some(s => s.node === signerNode)) {
-        rawSources[key][kind].push({
-          result, reason: "",
-          node: signerNode, timestamp: ev.timestamp,
-        });
+  // Also check attestation URIs (defensive: skip malformed entries)
+  try {
+    const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
+    for (const att of evAttestations) {
+      if (!att || typeof att.uri !== "string") continue;
+      const uriMatch = att.uri.match(/^repomesh:attestor:([^:]+):(\w+)$/);
+      if (uriMatch) {
+        const kind = uriMatch[1];
+        const result = uriMatch[2];
+        if (!rawSources[key]) rawSources[key] = {};
+        if (!rawSources[key][kind]) rawSources[key][kind] = [];
+        if (!rawSources[key][kind].some(s => s.node === signerNode)) {
+          rawSources[key][kind].push({
+            result, reason: "",
+            node: signerNode, timestamp: ev.timestamp,
+          });
+        }
       }
     }
+  } catch (uriErr) {
+    console.warn(`Warning: failed to parse attestation URIs for ${key}: ${uriErr.message}`);
   }
 }
 
 // Index dispute events
 for (const ev of events) {
   if (ev.type !== "AttestationPublished") continue;
-  if (!(ev.attestations || []).some(a => a.type === "attestation.dispute")) continue;
+  if (!(Array.isArray(ev.attestations) ? ev.attestations : []).some(a => a.type === "attestation.dispute")) continue;
   const key = `${ev.repo}@${ev.version}`;
   if (!releases[key]) continue;
   const signerNode = findSignerNode(ev.signature?.keyId) || "unknown";
@@ -293,7 +353,8 @@ for (const entry of Object.values(releases)) {
   const repoProfile = loadRepoProfile(entry.repo);
   const profileId = repoProfile?.profileId || null;
   const profileDef = profileId ? loadProfileDef(profileId) : null;
-  const repoOverrides = loadRepoOverrides(entry.repo);
+  const rawOverrides = loadRepoOverrides(entry.repo);
+  const repoOverrides = validateOverrides(rawOverrides, profileDef);
   const assuranceWeights = resolveAssuranceWeights(profileDef, repoOverrides);
 
   entry.profileId = profileId;

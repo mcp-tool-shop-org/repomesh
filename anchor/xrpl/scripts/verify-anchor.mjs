@@ -18,6 +18,9 @@ import crypto from "node:crypto";
 import xrpl from "xrpl";
 import { merkleRootHex } from "./merkle.mjs";
 
+// Manifest version — bump when anchor format changes (future: version negotiation)
+const MANIFEST_VERSION = 1;
+
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const CONFIG_PATH = path.join(import.meta.dirname, "..", "config.json");
@@ -65,7 +68,8 @@ async function main() {
   const txHash = txIdx !== -1 ? args[txIdx + 1] : null;
   if (!txHash) { console.error("Usage: verify-anchor.mjs --tx <txHash>"); process.exit(1); }
 
-  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  let config;
+  try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch (e) { console.error("Failed to read " + CONFIG_PATH + ": " + e.message); process.exit(1); }
   const WS_URL = process.env.XRPL_WS_URL || config.rippledUrl;
 
   console.log(`\nVerifying anchor: ${txHash}`);
@@ -140,7 +144,7 @@ async function main() {
   // 4. Recompute manifestHash
   const localRange = [leaves[0], leaves[leaves.length - 1]];
   const manifestBase = {
-    v: 1,
+    v: MANIFEST_VERSION,
     algo: "sha256-merkle-v1",
     partitionId: memo.p,
     network: memo.n,
@@ -165,9 +169,10 @@ async function main() {
       if (ev.type !== "AttestationPublished") return false;
       const notes = ev.notes || "";
       try {
-        const jsonMatch = notes.match(/\n(\{.*\})$/s);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[1]);
+        const lastNewline = notes.lastIndexOf("\n");
+        if (lastNewline !== -1) {
+          const jsonStr = notes.slice(lastNewline + 1);
+          const parsed = JSON.parse(jsonStr);
           return parsed.merkleRoot === prevRoot;
         }
       } catch {}

@@ -18,8 +18,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
+const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger", "events", "events.jsonl");
 const MANIFESTS_DIR = path.join(ROOT, "anchor", "xrpl", "manifests");
+const NODES_DIR = process.env.REPOMESH_NODES_PATH || path.join(ROOT, "ledger", "nodes");
 
 function canonicalize(value) {
   return JSON.stringify(sortKeys(value));
@@ -34,21 +35,36 @@ function sortKeys(v) {
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
-  return fs.readFileSync(LEDGER_PATH, "utf8")
-    .split("\n").filter(l => l.trim().length > 0).map(l => JSON.parse(l));
+  const raw = fs.readFileSync(LEDGER_PATH, "utf8");
+  const lines = raw.split("\n").filter(l => l.trim().length > 0);
+  const events = [];
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      events.push(JSON.parse(lines[i]));
+    } catch (e) {
+      console.error(`Warning: skipping bad JSONL at line ${i + 1} in ${LEDGER_PATH}: ${e.message}`);
+    }
+  }
+  console.error(`Ledger has ${events.length} events`);
+  return events;
 }
 
 function findPublicKeyForKeyId(keyId) {
   // Search all registered nodes for a maintainer with this keyId
-  const nodesDir = path.join(ROOT, "ledger", "nodes");
-  if (!fs.existsSync(nodesDir)) return null;
-  for (const org of fs.readdirSync(nodesDir)) {
-    const orgDir = path.join(nodesDir, org);
+  if (!fs.existsSync(NODES_DIR)) return null;
+  for (const org of fs.readdirSync(NODES_DIR)) {
+    const orgDir = path.join(NODES_DIR, org);
     if (!fs.statSync(orgDir).isDirectory()) continue;
     for (const repo of fs.readdirSync(orgDir)) {
       const nodePath = path.join(orgDir, repo, "node.json");
       if (!fs.existsSync(nodePath)) continue;
-      const node = JSON.parse(fs.readFileSync(nodePath, "utf8"));
+      let node;
+      try {
+        node = JSON.parse(fs.readFileSync(nodePath, "utf8"));
+      } catch (e) {
+        console.error("Invalid JSON in " + nodePath + ": " + e.message);
+        continue;
+      }
       const m = (node.maintainers || []).find(m => m.keyId === keyId);
       if (m?.publicKey) return { publicKey: m.publicKey, nodeId: node.id };
     }
@@ -89,10 +105,17 @@ function findAnchorForHash(events, canonicalHash) {
       const meta = JSON.parse(jsonMatch[1]);
       if (!meta.manifestPath) continue;
 
-      // Load manifest and check if hash is in range
-      const manifestFullPath = path.join(ROOT, meta.manifestPath);
+      // Validate manifestPath against path traversal using resolve + startsWith
+      const manifestFullPath = path.resolve(ROOT, meta.manifestPath);
+      if (!manifestFullPath.startsWith(path.resolve(ROOT) + path.sep)) continue;
       if (!fs.existsSync(manifestFullPath)) continue;
-      const manifest = JSON.parse(fs.readFileSync(manifestFullPath, "utf8"));
+      let manifest;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestFullPath, "utf8"));
+      } catch (e) {
+        console.error("Invalid JSON in " + manifestFullPath + ": " + e.message);
+        continue;
+      }
 
       // Recompute: get all events in this partition and check inclusion
       const partition = getPartitionEvents(events, manifest.partitionId);
@@ -125,8 +148,10 @@ function getPartitionEvents(events, partitionId) {
 export function verifyRelease({ repo, version, anchored, json }) {
   const events = readEvents();
   if (events.length === 0) {
-    if (json) { console.log(JSON.stringify({ ok: false, error: "No ledger events found." })); }
-    else { console.error("No ledger events found."); }
+    const exists = fs.existsSync(LEDGER_PATH);
+    const reason = exists ? "Ledger file exists but contains no valid events (possibly corrupt)." : "Ledger file not found at " + LEDGER_PATH;
+    if (json) { console.log(JSON.stringify({ ok: false, error: reason })); }
+    else { console.error(reason); }
     process.exit(1);
   }
 

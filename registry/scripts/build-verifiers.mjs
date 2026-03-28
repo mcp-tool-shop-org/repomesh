@@ -58,14 +58,16 @@ function loadProfileDef(profileId) {
   } catch { return null; }
 }
 
-// Known assurance check types
-const ASSURANCE_CHECKS = ["license.audit", "security.scan", "repro.build"];
+// Known assurance check types.
+// TODO: Eventually make this config-driven (e.g. loaded from a verifier-registry.json)
+// so new check types can be added without code changes.
+const ASSURANCE_CHECKS = Object.freeze(["license.audit", "security.scan", "repro.build"]);
 
 function checksForNode(node) {
   const checks = [];
   for (const cap of node.provides || []) {
     for (const check of ASSURANCE_CHECKS) {
-      if (cap.startsWith(check.replace(".", "."))) checks.push(check);
+      if (cap.startsWith(check)) checks.push(check);
     }
   }
   return [...new Set(checks)];

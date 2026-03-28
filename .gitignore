@@ -1,5 +1,6 @@
 node_modules/
 *.pem
+repomesh-keys/
 anchor/xrpl/partition-root.json
 anchor/xrpl/anchor-result.json
 pages/out/

@@ -2,16 +2,21 @@
 // Works standalone (from npm install) — uses packaged templates/profiles.
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { clean } from "./log.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, "..");
 
-export async function init({ repo, profile, dir, keyId, noPr }) {
+// Wrap console output through clean() for --no-color / NO_COLOR support.
+function out(msg) { console.log(clean(msg)); }
+function err(msg) { console.error(clean(msg)); }
+
+export async function init({ repo, profile, dir, keyId, noPr, json }) {
   const [org, repoName] = (repo || "").split("/");
   if (!org || !repoName) {
-    console.error("Error: --repo must be org/repo format.");
+    console.error(`Error: --repo must be org/repo format. Got: "${repo || ""}". Example: mcp-tool-shop-org/my-tool`);
     process.exit(1);
   }
 
@@ -26,12 +31,14 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
   const resolvedKeyId = keyId || `ci-${repoName}-${new Date().getFullYear()}`;
   const ledger = "mcp-tool-shop-org/repomesh";
 
-  console.log(`\nRepoMesh Init`);
-  console.log(`  Repo:    ${repo}`);
-  console.log(`  Profile: ${profileId}`);
-  console.log(`  KeyId:   ${resolvedKeyId}`);
-  console.log(`  Target:  ${path.resolve(target)}`);
-  console.log();
+  if (!json) {
+    out(`\nRepoMesh Init`);
+    out(`  Repo:    ${repo}`);
+    out(`  Profile: ${profileId}`);
+    out(`  KeyId:   ${resolvedKeyId}`);
+    out(`  Target:  ${path.resolve(target)}`);
+    out('');
+  }
 
   // 1. Generate keypair
   const keysDir = path.join(target, "repomesh-keys", `${org}-${repoName}`);
@@ -39,15 +46,16 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
   const privatePath = path.join(keysDir, "private.pem");
   const publicPath = path.join(keysDir, "public.pem");
 
+  // Security: use Node.js crypto instead of shelling out to openssl (avoids command injection via paths)
   try {
-    execSync(`openssl genpkey -algorithm ED25519 -out "${privatePath}"`, { stdio: "pipe" });
-    execSync(`openssl pkey -in "${privatePath}" -pubout -out "${publicPath}"`, { stdio: "pipe" });
-    console.log(`\u2705 Generated Ed25519 keypair in ${keysDir}`);
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+    const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });
+    const publicPem = publicKey.export({ type: "spki", format: "pem" });
+    fs.writeFileSync(privatePath, privatePem, "utf8");
+    fs.writeFileSync(publicPath, publicPem, "utf8");
+    if (!json) out(`\u2705 Generated Ed25519 keypair in ${keysDir}`);
   } catch (e) {
-    console.error("Error: openssl not found or keypair generation failed.");
-    console.error("Hint: Install openssl, or generate keys manually:");
-    console.error("  openssl genpkey -algorithm ED25519 -out private.pem");
-    console.error("  openssl pkey -in private.pem -pubout -out public.pem");
+    console.error(`Error: keypair generation failed: ${e.message}`);
     process.exit(2);
   }
 
@@ -58,14 +66,19 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
   let nodeJson;
 
   if (fs.existsSync(nodeJsonPath)) {
-    console.log(`\u2705 Existing node.json found, validating...`);
-    nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
+    if (!json) out(`\u2705 Existing node.json found, validating...`);
+    try {
+      nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
+    } catch (e) {
+      console.error(`Error: Invalid JSON in ${nodeJsonPath}: ${e.message}`);
+      process.exit(1);
+    }
     const maintainer = nodeJson.maintainers?.find(m => m.keyId === resolvedKeyId);
     if (!maintainer) {
       nodeJson.maintainers = nodeJson.maintainers || [];
       nodeJson.maintainers.push({ name: org, keyId: resolvedKeyId, publicKey: publicKeyPem, contact: "" });
       fs.writeFileSync(nodeJsonPath, JSON.stringify(nodeJson, null, 2) + "\n", "utf8");
-      console.log(`  Added maintainer with keyId=${resolvedKeyId}`);
+      if (!json) out(`  Added maintainer with keyId=${resolvedKeyId}`);
     }
   } else {
     nodeJson = {
@@ -79,25 +92,38 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
       maintainers: [{ name: org, keyId: resolvedKeyId, publicKey: publicKeyPem, contact: "" }],
     };
     fs.writeFileSync(nodeJsonPath, JSON.stringify(nodeJson, null, 2) + "\n", "utf8");
-    console.log(`\u2705 Created node.json`);
-    console.log(`  \u2192 Edit the "description", "provides", and "interfaces" fields`);
+    if (!json) {
+      out(`\u2705 Created node.json`);
+      out(`  \u2192 Edit the "description", "provides", and "interfaces" fields`);
+    }
   }
 
   // 3. Create profile + overrides
   const profileJsonPath = path.join(target, "repomesh.profile.json");
   fs.writeFileSync(profileJsonPath, JSON.stringify({ profileId, profileVersion: "v1", overridesPath: "repomesh.overrides.json" }, null, 2) + "\n", "utf8");
-  console.log(`\u2705 Created repomesh.profile.json (profile: ${profileId})`);
+  if (!json) out(`\u2705 Created repomesh.profile.json (profile: ${profileId})`);
 
   const overridesJsonPath = path.join(target, "repomesh.overrides.json");
   if (!fs.existsSync(overridesJsonPath)) {
     fs.writeFileSync(overridesJsonPath, "{}\n", "utf8");
-    console.log(`\u2705 Created repomesh.overrides.json (empty)`);
+    if (!json) out(`\u2705 Created repomesh.overrides.json (empty)`);
   }
 
   // 4. Create broadcast workflow from packaged template
   const workflowDir = path.join(target, ".github", "workflows");
   const workflowPath = path.join(workflowDir, "repomesh-broadcast.yml");
   const templatePath = path.join(PKG_ROOT, "templates", "repomesh-broadcast.yml");
+
+  // Security: validate values before injecting into YAML template (prevents template injection)
+  const safePattern = /^[a-zA-Z0-9._\/-]+$/;
+  if (!safePattern.test(resolvedKeyId)) {
+    console.error(`Error: keyId contains invalid characters: ${resolvedKeyId}`);
+    process.exit(1);
+  }
+  if (!safePattern.test(ledger)) {
+    console.error(`Error: ledger contains invalid characters: ${ledger}`);
+    process.exit(1);
+  }
 
   let workflowContent;
   if (fs.existsSync(templatePath)) {
@@ -110,29 +136,34 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
 
   fs.mkdirSync(workflowDir, { recursive: true });
   fs.writeFileSync(workflowPath, workflowContent, "utf8");
-  console.log(`\u2705 Created .github/workflows/repomesh-broadcast.yml`);
+  if (!json) out(`\u2705 Created .github/workflows/repomesh-broadcast.yml`);
 
   // 5. Print secrets checklist
   const privateKeyPem = fs.readFileSync(privatePath, "utf8").trim();
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`  ADD THESE SECRETS TO ${repo}`);
-  console.log(`${"=".repeat(60)}`);
-  console.log(`\n  Secret 1: REPOMESH_SIGNING_KEY`);
-  console.log(`  Value:\n\n  ${privateKeyPem.split("\n").join("\n  ")}\n`);
-  console.log(`  Secret 2: REPOMESH_LEDGER_TOKEN`);
-  console.log(`  Value: GitHub PAT (fine-grained) with these scopes on ${ledger}:`);
-  console.log(`    \u2022 Contents: Read and write`);
-  console.log(`    \u2022 Pull requests: Read and write`);
-  console.log(`\n  Create at: https://github.com/settings/tokens?type=beta`);
-  console.log(`${"=".repeat(60)}`);
+  if (!json) {
+    err('\n\u26A0 SECURITY: The private key below is shown ONCE. Save it securely. DO NOT commit or share it.\n');
+    out(`\n${"=".repeat(60)}`);
+    out(`  ADD THESE SECRETS TO ${repo}`);
+    out(`${"=".repeat(60)}`);
+    out(`\n  Secret 1: REPOMESH_SIGNING_KEY`);
+    out(`  Value:\n\n  ${privateKeyPem.split("\n").join("\n  ")}\n`);
+    out(`  Secret 2: REPOMESH_LEDGER_TOKEN`);
+    out(`  Value: GitHub PAT (fine-grained) with these scopes on ${ledger}:`);
+    out(`    Required scopes: repo (Full control), workflow (Update workflows), read:org`);
+    out(`    \u2022 Contents: Read and write`);
+    out(`    \u2022 Pull requests: Read and write`);
+    out(`\n  Create at: https://github.com/settings/tokens?type=beta`);
+    out(`${"=".repeat(60)}`);
+    err('TIP: Add your keys directory to .gitignore immediately.');
+  }
 
   // 6. Register (PR) — only if not --no-pr and gh is available
-  if (!noPr) {
-    console.log(`\n\u2192 To register with the RepoMesh network, open a PR adding your node manifest to:`);
-    console.log(`  ledger/nodes/${org}/${repoName}/node.json`);
-    console.log(`  ledger/nodes/${org}/${repoName}/repomesh.profile.json`);
-    console.log(`\n  Or run from inside a RepoMesh checkout:`);
-    console.log(`  node tools/repomesh.mjs register-node --repo ${repo} --node-json ${nodeJsonPath}`);
+  if (!noPr && !json) {
+    out(`\n\u2192 To register with the RepoMesh network, open a PR adding your node manifest to:`);
+    out(`  ledger/nodes/${org}/${repoName}/node.json`);
+    out(`  ledger/nodes/${org}/${repoName}/repomesh.profile.json`);
+    out(`\n  Or run from inside a RepoMesh checkout:`);
+    out(`  node tools/repomesh.mjs register-node --repo ${repo} --node-json ${nodeJsonPath}`);
   }
 
   // 7. .gitignore for private keys
@@ -142,25 +173,34 @@ export async function init({ repo, profile, dir, keyId, noPr }) {
     const content = fs.readFileSync(gitignorePath, "utf8");
     if (!content.includes(gitignoreEntry)) {
       fs.appendFileSync(gitignorePath, `\n# RepoMesh private keys (NEVER commit)\n${gitignoreEntry}\n`, "utf8");
-      console.log(`\u2705 Added repomesh-keys/ to .gitignore`);
+      if (!json) out(`\u2705 Added repomesh-keys/ to .gitignore`);
     }
   } else {
     fs.writeFileSync(gitignorePath, `# RepoMesh private keys (NEVER commit)\n${gitignoreEntry}\n`, "utf8");
-    console.log(`\u2705 Created .gitignore with repomesh-keys/`);
+    if (!json) out(`\u2705 Created .gitignore with repomesh-keys/`);
   }
 
-  // 8. Next steps
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`  NEXT STEPS`);
-  console.log(`${"=".repeat(60)}`);
-  console.log(`  1. Add the two secrets above to ${repo}`);
-  console.log(`  2. Edit node.json: description, provides, interfaces`);
-  console.log(`  3. Commit: git add node.json repomesh.profile.json repomesh.overrides.json .github/workflows/repomesh-broadcast.yml`);
-  console.log(`  4. Cut a release (e.g., v1.0.0)`);
-  console.log(`  5. Trust converges automatically within one attestor cycle`);
-  console.log(`\n  Check trust:`);
-  console.log(`    npx @mcptoolshop/repomesh verify-release --repo ${repo} --version 1.0.0`);
-  console.log(`${"=".repeat(60)}\n`);
+  // 8. Next steps or JSON summary
+  if (json) {
+    console.log(JSON.stringify({
+      repo,
+      profile: profileId,
+      keyId: resolvedKeyId,
+      nodeJsonPath: path.resolve(nodeJsonPath),
+    }));
+  } else {
+    out(`\n${"=".repeat(60)}`);
+    out(`  NEXT STEPS`);
+    out(`${"=".repeat(60)}`);
+    out(`  1. Add the two secrets above to ${repo}`);
+    out(`  2. Edit node.json: description, provides, interfaces`);
+    out(`  3. Commit: git add node.json repomesh.profile.json repomesh.overrides.json .github/workflows/repomesh-broadcast.yml`);
+    out(`  4. Cut a release (e.g., v1.0.0)`);
+    out(`  5. Trust converges automatically within one attestor cycle`);
+    out(`\n  Check trust:`);
+    out(`    npx @mcptoolshop/repomesh verify-release --repo ${repo} --version 1.0.0`);
+    out(`${"=".repeat(60)}\n`);
+  }
 }
 
 function generateMinimalBroadcast(keyId, ledgerRepo) {

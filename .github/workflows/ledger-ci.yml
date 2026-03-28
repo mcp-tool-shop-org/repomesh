@@ -12,10 +12,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   validate-ledger:
     runs-on: ubuntu-latest
     steps:
+      # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
+      # Full SHA pinning not required; major tags provide auto-patching with low risk.
       - name: Checkout (full history)
         uses: actions/checkout@v4
         with:
@@ -40,3 +45,11 @@ jobs:
           BASE_LEDGER: /tmp/base-events.jsonl
           HEAD_LEDGER: events/events.jsonl
         run: npm run validate:ledger
+
+      # B-7: Surface actionable error message on failure
+      - name: Report failure details
+        if: failure()
+        run: |
+          echo "::error::Ledger validation failed. Check the validator output above for details."
+          echo "::error::Common causes: schema violation, invalid signature, duplicate event, or timestamp issue."
+          echo "::error::See docs/handbook.md CI Troubleshooting section for resolution steps."

@@ -17,6 +17,8 @@ jobs:
   attest-and-check:
     runs-on: ubuntu-latest
     steps:
+      # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
+      # Full SHA pinning not required; major tags provide auto-patching with low risk.
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -29,8 +31,8 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          mkdir -p /tmp/repomesh-ci
-          node attestor/scripts/attest-release.mjs --scan-new --sign --output /tmp/repomesh-ci/attestations.jsonl || true
+          mkdir -p /tmp/repomesh-ci /tmp/repomesh-ci/logs
+          node attestor/scripts/attest-release.mjs --scan-new --sign --output /tmp/repomesh-ci/attestations.jsonl 2>/tmp/repomesh-ci/logs/attestor.log || echo "::warning::Attestor failed"
 
       # Run license verifier
       - name: Run license verifier
@@ -38,7 +40,7 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          node verifiers/license/scripts/verify-license.mjs --scan-new --sign --output /tmp/repomesh-ci/license.jsonl || true
+          node verifiers/license/scripts/verify-license.mjs --scan-new --sign --output /tmp/repomesh-ci/license.jsonl 2>/tmp/repomesh-ci/logs/license.log || echo "::warning::License verifier failed"
 
       # Run security verifier
       - name: Run security verifier
@@ -46,7 +48,7 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          node verifiers/security/scripts/verify-security.mjs --scan-new --sign --output /tmp/repomesh-ci/security.jsonl || true
+          node verifiers/security/scripts/verify-security.mjs --scan-new --sign --output /tmp/repomesh-ci/security.jsonl 2>/tmp/repomesh-ci/logs/security.log || echo "::warning::Security verifier failed"
 
       # Run reproducibility verifier
       - name: Run reproducibility verifier
@@ -54,7 +56,7 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          node verifiers/repro/scripts/verify-repro.mjs --scan-new --sign --output /tmp/repomesh-ci/repro.jsonl || true
+          node verifiers/repro/scripts/verify-repro.mjs --scan-new --sign --output /tmp/repomesh-ci/repro.jsonl 2>/tmp/repomesh-ci/logs/repro.log || echo "::warning::Reproducibility verifier failed"
 
       # Run policy checks
       - name: Run policy checks
@@ -62,7 +64,17 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          node policy/scripts/check-policy.mjs --sign --output /tmp/repomesh-ci/violations.jsonl || true
+          node policy/scripts/check-policy.mjs --sign --output /tmp/repomesh-ci/violations.jsonl 2>/tmp/repomesh-ci/logs/policy.log || echo "::warning::Policy check failed"
+
+      # B-3: Upload verifier logs as artifacts for debugging
+      - name: Upload verifier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repomesh-ci-logs
+          path: /tmp/repomesh-ci/logs/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Check if there are new events to append
       - name: Check for new events

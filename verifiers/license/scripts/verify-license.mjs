@@ -20,6 +20,8 @@ import {
 } from "../../lib/common.mjs";
 import { findSbomUriFromReleaseEvent, fetchCycloneDxComponents } from "../../lib/fetch-sbom.mjs";
 
+const REPO_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
 function loadConfig() {
   const p = path.join(process.cwd(), "verifiers/license/config.json");
   return JSON.parse(fs.readFileSync(p, "utf8"));
@@ -27,13 +29,14 @@ function loadConfig() {
 
 // Load per-repo overrides from ledger node snapshot
 function loadOverrides(repo) {
+  if (!REPO_ID_RE.test(repo)) return null;
   const [org, repoName] = repo.split("/");
   const p = path.join(process.cwd(), "ledger/nodes", org, repoName, "repomesh.overrides.json");
   if (!fs.existsSync(p)) return null;
   try {
     const data = JSON.parse(fs.readFileSync(p, "utf8"));
     return data?.license || null;
-  } catch { return null; }
+  } catch (e) { console.warn('Warning: failed to load overrides for ' + repo + ': ' + e.message); return null; }
 }
 
 // Merge base config with per-repo overrides
@@ -107,6 +110,9 @@ function classifyLicenses(components, cfg) {
 }
 
 async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
+  if (!REPO_ID_RE.test(repo)) {
+    throw new Error(`Invalid repo format: ${repo} (expected org/repo)`);
+  }
   const events = readEvents();
   const rel = findReleaseEvent(events, repo, version);
   if (!rel) throw new Error(`No ReleasePublished found for ${repo}@${version}`);

@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import {
   readEvents,
   findReleaseEvent,
@@ -119,24 +119,47 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
   let details = {};
 
   try {
+    // Validate repo format to prevent command injection (R-F-001)
+    const REPO_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+    if (!REPO_RE.test(repo)) {
+      throw new Error(`Invalid repo format: ${repo}`);
+    }
+
     // Clone at tag
-    console.log(`  Cloning ${repo}@v${version}...`);
-    execSync(
-      `git clone --depth 1 --branch "v${version}" "https://github.com/${repo}.git" "${cloneDir}"`,
-      { stdio: "pipe", timeout: 120000 }
-    );
+    console.error(`[repro] Cloning repository ${repo}@v${version}...`);
+    try {
+      execFileSync("git", [
+        "clone", "--depth", "1", "--branch", `v${version}`,
+        `https://github.com/${repo}.git`, cloneDir
+      ], { stdio: "pipe", timeout: 120000 });
+    } catch (cloneErr) {
+      throw new Error(`git clone failed for ${repo}@v${version}: ${String(cloneErr.message || cloneErr).slice(0, 300)}`);
+    }
 
-    // Run build in container
-    console.log(`  Building in ${cfg.dockerImage}...`);
-    const dockerCmd = [
-      "docker", "run", "--rm",
-      "-v", `"${cloneDir}:/w"`,
-      "-w", "/w",
-      cfg.dockerImage,
-      "sh", "-c", `"${cfg.buildCommand}"`
-    ].join(" ");
+    // Validate buildCommand against allowlist (R-F-002)
+    const BUILD_ALLOWLIST = [
+      "npm run build", "npm ci && npm run build", "npm install && npm run build",
+      "make", "make build", "make all",
+      "yarn build", "yarn install && yarn build",
+      "pnpm build", "pnpm install && pnpm build"
+    ];
+    if (!BUILD_ALLOWLIST.includes(cfg.buildCommand)) {
+      throw new Error(`Build command not in allowlist: ${cfg.buildCommand}`);
+    }
 
-    execSync(dockerCmd, { stdio: "pipe", timeout: 600000 });
+    // Run build in container using execFileSync to avoid shell injection (R-F-003)
+    console.error(`[repro] Building in Docker image ${cfg.dockerImage}...`);
+    try {
+      execFileSync("docker", [
+        "run", "--rm",
+        "-v", `${cloneDir}:/w`,
+        "-w", "/w",
+        cfg.dockerImage,
+        "sh", "-c", cfg.buildCommand
+      ], { stdio: "pipe", timeout: 600000 });
+    } catch (dockerErr) {
+      throw new Error(`Docker build failed for ${repo}@v${version} in ${cfg.dockerImage}: ${String(dockerErr.message || dockerErr).slice(0, 300)}`);
+    }
 
     // Find rebuilt artifacts
     const rebuiltArtifacts = findPackedArtifacts(cloneDir);

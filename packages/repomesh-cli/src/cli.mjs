@@ -15,20 +15,24 @@ const program = new Command();
 program
   .name("repomesh")
   .description("Trust infrastructure for repo networks — verify releases, check anchors, onboard repos.")
-  .version(pkg.version, "-V, --cli-version");
+  .version(pkg.version, "-V, --cli-version")
+  .option("-q, --quiet", "Suppress informational output")
+  .option("--verbose", "Show verbose output")
+  .option("--debug", "Show debug output with stack traces")
+  .option("--no-color", "Disable ANSI colors and emoji (also respects NO_COLOR env)");
 
 // --- User commands (work anywhere) ---
 
 program
   .command("verify-release")
-  .description("Verify a release's trust chain and anchor status")
+  .description("Verify a release's trust chain and anchor status.\n  Note: Each verification fetches remote data. Use --local with a local clone for repeated/offline use.")
   .requiredOption("--repo <org/repo>", "Target repository")
   .requiredOption("--version <semver>", "Release version")
   .option("--anchored", "Also verify XRPL anchor inclusion")
   .option("--json", "Output structured JSON")
-  .option("--ledger-url <url>", "Custom ledger events URL")
-  .option("--nodes-url <url>", "Custom nodes base URL")
-  .option("--manifests-url <url>", "Custom manifests base URL")
+  .option("--ledger-url <url>", "Custom ledger events URL (defaults to public GitHub ledger; use --local for offline)")
+  .option("--nodes-url <url>", "Custom nodes base URL (defaults to public GitHub ledger; use --local for offline)")
+  .option("--manifests-url <url>", "Custom manifests base URL (defaults to public GitHub ledger; use --local for offline)")
   .action(async (opts) => {
     const { verifyRelease } = await import("./verify/verify-release.mjs");
     await verifyRelease({
@@ -65,10 +69,11 @@ program
   .command("init")
   .description("Generate onboarding files for a repo joining RepoMesh")
   .requiredOption("--repo <org/repo>", "Target repository")
-  .option("--profile <id>", "Trust profile: baseline, open-source, regulated", "open-source")
+  .option("--profile <id>", "Trust profile: baseline (minimal), open-source (recommended), regulated (strict compliance)", "open-source")
   .option("--dir <path>", "Target directory", ".")
   .option("--keyid <id>", "Signing key ID")
   .option("--no-pr", "Skip PR instructions")
+  .option("--json", "Output structured JSON summary (suppresses decorative output)")
   .action(async (opts) => {
     const { init } = await import("./init.mjs");
     await init({
@@ -77,6 +82,7 @@ program
       dir: opts.dir,
       keyId: opts.keyid,
       noPr: opts.pr === false,
+      json: opts.json,
     });
   });
 
@@ -91,17 +97,62 @@ program
     await doctor({ dir: opts.dir, repo: opts.repo, json: opts.json });
   });
 
+// --- Shell completion ---
+
+program
+  .command("completion")
+  .description("Output shell completion script (bash/zsh)")
+  .option("--shell <shell>", "Shell type: bash, zsh", "bash")
+  .action((opts) => {
+    const commands = ["verify-release", "verify-anchor", "init", "doctor", "completion",
+      "build-pages", "build-registry", "build-badges", "build-snippets"];
+    const globalFlags = "--quiet --verbose --debug --json --help --cli-version";
+    if (opts.shell === "zsh") {
+      console.log(`#compdef repomesh
+_repomesh() {
+  local -a commands
+  commands=(${commands.map(c => `'${c}:${c} command'`).join(" ")})
+  _arguments '1:command:->cmds' '*::arg:->args'
+  case $state in
+    cmds) _describe 'command' commands ;;
+    args) _arguments '*:flags:(${globalFlags})' ;;
+  esac
+}
+compdef _repomesh repomesh`);
+    } else {
+      console.log(`# bash completion for repomesh
+_repomesh() {
+  local cur=\${COMP_WORDS[COMP_CWORD]}
+  local commands="${commands.join(" ")}"
+  local flags="${globalFlags}"
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
+  else
+    COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+  fi
+}
+complete -F _repomesh repomesh`);
+    }
+  });
+
 // --- Dev commands (require RepoMesh checkout) ---
 
-const devCommands = ["build-pages", "build-registry", "build-badges", "build-snippets"];
+// Security: static allowlist prevents command injection via dev command names
+const DEV_COMMAND_ALLOWLIST = new Set(["build-pages", "build-registry", "build-badges", "build-snippets"]);
+const devCommands = [...DEV_COMMAND_ALLOWLIST];
 for (const cmd of devCommands) {
   program
     .command(cmd)
     .description(`[dev] Run ${cmd} (requires RepoMesh checkout)`)
     .action(async () => {
       requireRepoMeshCheckout(cmd);
-      const { execSync } = await import("node:child_process");
-      execSync(`node tools/repomesh.mjs ${cmd}`, { stdio: "inherit", cwd: process.cwd() });
+      if (!DEV_COMMAND_ALLOWLIST.has(cmd)) {
+        console.error(`Error: Unknown dev command: ${cmd}`);
+        process.exit(1);
+      }
+      const { execFileSync } = await import("node:child_process");
+      // Security: use execFileSync with array args to avoid shell interpolation
+      execFileSync("node", ["tools/repomesh.mjs", cmd], { stdio: "inherit", cwd: process.cwd() });
     });
 }
 

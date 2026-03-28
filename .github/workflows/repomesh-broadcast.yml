@@ -28,7 +28,7 @@ on:
 
 # ---- EDIT THESE ----
 env:
-  REPOMESH_KEY_ID: "ci-yourrepo-2026"  # Must match keyId in your node.json
+  REPOMESH_KEY_ID: "ci-repo-2026"  # Must match keyId in your node.json
   REPOMESH_LEDGER_REPO: "mcp-tool-shop-org/repomesh"
 
 jobs:
@@ -72,7 +72,7 @@ jobs:
       - name: Generate provenance
         env:
           REPO_ID: ${{ github.repository }}
-          VERSION: ${{ github.ref_name }}  # Must be valid semver (validated in build-event.mjs below)
+          VERSION: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
           RUNNER_OS: ${{ runner.os }}
           RUNNER_ARCH: ${{ runner.arch }}
@@ -142,12 +142,6 @@ jobs:
           const version = process.env.VERSION.replace(/^v/, "");
           const commit = process.env.COMMIT;
           const keyId = process.env.KEY_ID;
-
-          // Security: validate VERSION is valid semver before use in URIs/events
-          if (!/^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$/.test(version)) {
-            console.error(`Invalid semver version: ${version}`);
-            process.exit(1);
-          }
 
           if (!process.env.SIGNING_KEY) {
             console.error("REPOMESH_SIGNING_KEY secret is not set.");

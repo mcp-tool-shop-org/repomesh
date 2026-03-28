@@ -4,6 +4,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { isDebug, log, debug as debugLog } from "../log.mjs";
+
+function progress(step, msg) { console.error(`[verify] step ${step}: ${msg}`); }
 import { isRepoMeshCheckout } from "../mode.mjs";
 import { fetchText, fetchJson } from "../http.mjs";
 import {
@@ -15,15 +18,28 @@ import { merkleRootHex } from "./merkle.mjs";
 
 // --- Data loading (local or remote) ---
 
+function parseJsonlLines(lines) {
+  const results = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      results.push(JSON.parse(line));
+    } catch (e) {
+      debugLog(`skipping malformed JSONL line: ${e.message}`);
+    }
+  }
+  return results;
+}
+
 async function loadEvents(opts) {
   if (opts.local) {
     const p = path.join(opts.root, "ledger", "events", "events.jsonl");
     if (!fs.existsSync(p)) return [];
-    return fs.readFileSync(p, "utf8").split("\n").filter(l => l.trim()).map(l => JSON.parse(l));
+    return parseJsonlLines(fs.readFileSync(p, "utf8").split("\n"));
   }
   const url = opts.ledgerUrl || DEFAULT_LEDGER_URL;
   const text = await fetchText(url);
-  return text.split("\n").filter(l => l.trim()).map(l => JSON.parse(l));
+  return parseJsonlLines(text.split("\n"));
 }
 
 async function findPublicKey(keyId, opts) {
@@ -36,7 +52,14 @@ async function findPublicKey(keyId, opts) {
       for (const repo of fs.readdirSync(orgDir)) {
         const nodePath = path.join(orgDir, repo, "node.json");
         if (!fs.existsSync(nodePath)) continue;
-        const node = JSON.parse(fs.readFileSync(nodePath, "utf8"));
+        let node;
+        try {
+          node = JSON.parse(fs.readFileSync(nodePath, "utf8"));
+        } catch (e) {
+          debugLog(`failed to parse ${nodePath}: ${e.message}`);
+          continue;
+        }
+        if (!node || typeof node !== 'object') continue;
         const m = (node.maintainers || []).find(m => m.keyId === keyId);
         if (m?.publicKey) return { publicKey: m.publicKey, nodeId: node.id };
       }
@@ -49,9 +72,8 @@ async function findPublicKey(keyId, opts) {
   const events = opts._events || [];
   const signerRepos = new Set();
   for (const ev of events) {
-    if (ev.signature?.keyId === keyId && ev.repo) {
-      // The signer node is typically the network node, not the release repo.
-      // Check all known node IDs from events.
+    if (!ev?.signature?.keyId || !ev.repo) continue;
+    if (ev.signature.keyId === keyId) {
       signerRepos.add(ev.repo);
     }
   }
@@ -59,7 +81,7 @@ async function findPublicKey(keyId, opts) {
   const nodesUrl = opts.nodesUrl || DEFAULT_NODES_URL;
   const tried = new Set();
   for (const ev of events) {
-    if (ev.signature?.keyId !== keyId) continue;
+    if (!ev?.signature?.keyId || ev.signature.keyId !== keyId) continue;
     // Try the repo itself
     const candidates = [ev.repo];
     // Also try common attestor node paths
@@ -68,9 +90,10 @@ async function findPublicKey(keyId, opts) {
       for (const c of candidates) {
         try {
           const node = await fetchJson(`${nodesUrl}/${c}/node.json`);
+          if (!node || typeof node !== 'object') continue;
           const m = (node.maintainers || []).find(m => m.keyId === keyId);
           if (m?.publicKey) return { publicKey: m.publicKey, nodeId: node.id };
-        } catch {}
+        } catch (e) { debugLog(e.message); }
       }
     }
   }
@@ -78,9 +101,10 @@ async function findPublicKey(keyId, opts) {
   for (const nodeId of ["mcp-tool-shop-org/repomesh", "mcp-tool-shop-org/repomesh-license-verifier", "mcp-tool-shop-org/repomesh-security-verifier"]) {
     try {
       const node = await fetchJson(`${nodesUrl}/${nodeId}/node.json`);
+      if (!node || typeof node !== 'object') continue;
       const m = (node.maintainers || []).find(m => m.keyId === keyId);
       if (m?.publicKey) return { publicKey: m.publicKey, nodeId: node.id };
-    } catch {}
+    } catch (e) { debugLog(e.message); }
   }
   return null;
 }
@@ -93,13 +117,13 @@ async function verifySignature(event, opts) {
   if (canonHash !== sig.canonicalHash) return { ok: false, reason: "canonical hash mismatch" };
 
   const key = await findPublicKey(sig.keyId, opts);
-  if (!key) return { ok: false, reason: `no public key for keyId=${sig.keyId}` };
+  if (!key) return { ok: false, reason: `no public key for keyId=${sig.keyId}`, hint: "Ensure the signing repo has registered node.json in the ledger. Run: npx repomesh doctor --repo <org/repo> to check node registration" };
 
   try {
     const ok = crypto.verify(null, Buffer.from(canonHash, "hex"), key.publicKey, Buffer.from(sig.value, "base64"));
-    return ok ? { ok: true, nodeId: key.nodeId } : { ok: false, reason: "signature invalid" };
+    return ok ? { ok: true, nodeId: key.nodeId } : { ok: false, reason: "signature invalid", hint: "The release may have been tampered with, or the signing key has changed" };
   } catch (e) {
-    return { ok: false, reason: `verify error: ${e.message}` };
+    return { ok: false, reason: `verify error: ${e.message}`, hint: "The release may have been tampered with, or the signing key has changed" };
   }
 }
 
@@ -124,31 +148,49 @@ async function findAnchorForHash(events, canonicalHash, opts) {
   for (const anchor of anchors) {
     const notes = anchor.notes || "";
     try {
-      const jsonMatch = notes.match(/\n(\{.*\})$/s);
+      // Security: non-greedy match prevents over-capturing; validate parsed fields
+      const jsonMatch = notes.match(/\n(\{.*?\})$/s);
       if (!jsonMatch) continue;
-      const meta = JSON.parse(jsonMatch[1]);
-      if (!meta.manifestPath) continue;
+      let meta;
+      try { meta = JSON.parse(jsonMatch[1]); } catch (e) {
+        debugLog(`malformed anchor meta JSON: ${e.message}`);
+        continue;
+      }
+      if (
+        typeof meta.manifestPath !== "string" ||
+        (meta.txHash !== undefined && typeof meta.txHash !== "string") ||
+        (meta.network !== undefined && typeof meta.network !== "string")
+      ) continue;
+
+      // Security: prevent path traversal via resolved path check
+      const resolved = path.resolve(opts.root, meta.manifestPath);
+      if (!resolved.startsWith(path.resolve(opts.root))) continue;
 
       let manifest;
       if (opts.local) {
-        const p = path.join(opts.root, meta.manifestPath);
-        if (!fs.existsSync(p)) continue;
-        manifest = JSON.parse(fs.readFileSync(p, "utf8"));
+        if (!fs.existsSync(resolved)) continue;
+        try {
+          manifest = JSON.parse(fs.readFileSync(resolved, "utf8"));
+        } catch (e) {
+          debugLog(`failed to parse manifest at ${resolved}: ${e.message}`);
+          continue;
+        }
       } else {
         const manifestsUrl = opts.manifestsUrl || DEFAULT_MANIFESTS_URL;
         const manifestFile = meta.manifestPath.split("/").pop();
         try {
           manifest = await fetchJson(`${manifestsUrl}/${manifestFile}`);
-        } catch { continue; }
+        } catch (e) { debugLog(e.message); continue; }
       }
 
+      if (!manifest || typeof manifest !== 'object' || !manifest.partitionId) continue;
       const partition = getPartitionEvents(events, manifest.partitionId);
       const leaves = partition.map(ev => ev.signature?.canonicalHash)
         .filter(h => typeof h === "string" && /^[0-9a-fA-F]{64}$/.test(h));
       if (leaves.includes(canonicalHash)) {
         return { anchor, manifest, meta };
       }
-    } catch {}
+    } catch (e) { debugLog(e.message); }
   }
   return null;
 }
@@ -165,7 +207,26 @@ export async function verifyRelease({ repo, version, anchored, json, ledgerUrl, 
     manifestsUrl,
   };
 
-  const events = await loadEvents(opts);
+  progress("1/4", "Loading events...");
+  let events;
+  try {
+    events = await loadEvents(opts);
+  } catch (e) {
+    const isTimeout = e.message?.includes('Timeout') || e.message?.includes('timeout') || e.message?.includes('AbortError');
+    const isNetwork = e.message?.includes('fetch') || e.message?.includes('ENOTFOUND');
+    const msg = isNetwork || isTimeout
+      ? `Network unavailable. Use --local with a local ledger clone for offline verification. (${e.message})`
+      : e.message;
+    const hint = isTimeout
+      ? "Try --local with a local ledger clone, or set REPOMESH_FETCH_TIMEOUT"
+      : isNetwork ? "Check your network connection, or use --local with a local ledger clone" : undefined;
+    if (json) { console.log(JSON.stringify({ ok: false, error: msg, ...(hint ? { hint } : {}) })); }
+    else {
+      console.error(`Error: ${msg}`);
+      if (hint) console.error(`Hint: ${hint}`);
+    }
+    process.exit(1);
+  }
   opts._events = events;
 
   if (events.length === 0) {
@@ -200,6 +261,13 @@ export async function verifyRelease({ repo, version, anchored, json, ledgerUrl, 
   };
 
   // 2. Verify signature
+  progress("2/4", "Discovering keys...");
+  if (!release?.signature?.keyId) {
+    if (json) { console.log(JSON.stringify({ ok: false, error: `Release event missing signature or keyId` })); }
+    else { console.error(`  Release event missing signature or keyId`); }
+    process.exit(1);
+  }
+  progress("3/4", "Verifying signature...");
   const sigResult = await verifySignature(release, opts);
   result.release.signatureValid = sigResult.ok;
   result.release.signerNode = sigResult.ok ? sigResult.nodeId : null;
@@ -208,8 +276,12 @@ export async function verifyRelease({ repo, version, anchored, json, ledgerUrl, 
   if (!sigResult.ok) {
     result.ok = false;
     result.release.signatureReason = sigResult.reason;
+    if (sigResult.hint) result.release.hint = sigResult.hint;
     if (json) { console.log(JSON.stringify(result)); }
-    else { console.error(`    Signature: FAILED (${sigResult.reason})`); }
+    else {
+      console.error(`    Signature: FAILED (${sigResult.reason})`);
+      if (sigResult.hint) console.error(`    Hint: ${sigResult.hint}`);
+    }
     process.exit(1);
   }
 
@@ -244,6 +316,7 @@ export async function verifyRelease({ repo, version, anchored, json, ledgerUrl, 
   }
 
   // 4. Anchor verification
+  progress("4/4", "Checking anchor...");
   if (anchored) {
     const releaseHash = release.signature.canonicalHash;
     if (!json) {

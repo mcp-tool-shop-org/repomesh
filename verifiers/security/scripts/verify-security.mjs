@@ -22,6 +22,35 @@ import { findSbomUriFromReleaseEvent, fetchCycloneDxComponents } from "../../lib
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+const SEVERITY_ORDER = ["critical", "high", "moderate", "low"];
+
+function loadConfig() {
+  const p = path.join(process.cwd(), "verifiers/security/config.json");
+  return JSON.parse(fs.readFileSync(p, "utf8"));
+}
+
+// Merge base config with per-repo overrides
+function mergeSecurityConfig(cfg, overrides) {
+  if (!overrides) return cfg;
+  const merged = { ...cfg };
+
+  if (overrides.ecosystem) merged.ecosystem = overrides.ecosystem;
+  if (overrides.severityThreshold) merged.severityThreshold = overrides.severityThreshold;
+  if (typeof overrides.sbomRequired === "boolean") merged.sbomRequired = overrides.sbomRequired;
+  if (Array.isArray(overrides.ignoreVulns)) {
+    merged.ignoreVulns = [...new Set([...merged.ignoreVulns, ...overrides.ignoreVulns])];
+  }
+
+  return merged;
+}
+
+// Determine which severities trigger a fail based on the threshold
+function failSeveritiesFromThreshold(threshold) {
+  const idx = SEVERITY_ORDER.indexOf(threshold || "moderate");
+  if (idx < 0) return new Set(["critical", "high"]);
+  return new Set(SEVERITY_ORDER.slice(0, idx + 1));
+}
+
 // Load per-repo overrides from ledger node snapshot
 function loadSecurityOverrides(repo) {
   const [org, repoName] = repo.split("/");
@@ -42,11 +71,13 @@ async function osvQueryBatch(queries) {
       const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "accept": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000)
       });
       if (!res.ok) throw new Error(`OSV HTTP ${res.status}`);
       return await res.json();
     } catch (e) {
+      console.error(`[security] OSV attempt ${attempt + 1}/3 failed: ${e.message}`);
       if (attempt === 2) throw e;
       await sleep(300 * (attempt + 1));
     }
@@ -103,6 +134,7 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
 
   const comps = await fetchCycloneDxComponents(sbomUri);
   const pkgs = comps.map(c => purlToOsvPackage(c.purl)).filter(Boolean);
+  console.error(`[security] Parsed ${comps.length} SBOM components, ${pkgs.length} queryable packages`);
 
   if (pkgs.length === 0) {
     // Zero dependencies = zero vulnerabilities = pass
@@ -120,6 +152,7 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
 
   // Build OSV queries (batch, max 1000 per request)
   const queries = pkgs.map(p => ({ package: { ecosystem: p.ecosystem, name: p.name }, version: p.version }));
+  console.error(`[security] Querying OSV for ${pkgs.length} packages...`);
   let osv;
   try {
     osv = await osvQueryBatch(queries);
@@ -136,10 +169,17 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
     return { result: "warn", reason: "osv unreachable" };
   }
 
-  // Load per-repo overrides
+  // Load config and per-repo overrides
+  const baseCfg = loadConfig();
   const overrides = loadSecurityOverrides(repo);
-  const ignoreIds = new Set((overrides?.ignoreVulns || []).map(v => v.id));
-  const failSeverities = new Set(overrides?.failOnSeverities || ["critical", "high"]);
+  const cfg = mergeSecurityConfig(baseCfg, overrides);
+  const ignoreIds = new Set([
+    ...cfg.ignoreVulns.map(v => typeof v === "string" ? v : v.id),
+    ...(overrides?.ignoreVulns || []).map(v => typeof v === "string" ? v : v.id)
+  ]);
+  const failSeverities = overrides?.failOnSeverities
+    ? new Set(overrides.failOnSeverities)
+    : failSeveritiesFromThreshold(cfg.severityThreshold);
 
   const results = Array.isArray(osv?.results) ? osv.results : [];
   const counts = { critical: 0, high: 0, moderate: 0, low: 0, unknown: 0 };

@@ -48,7 +48,7 @@ if (fs.existsSync(MANIFESTS_DIR)) {
       if (!(ev.attestations || []).some(a => a.type === "ledger.anchor")) continue;
       const notes = ev.notes || "";
       try {
-        const jsonMatch = notes.match(/\n(\{.*\})$/s);
+        const jsonMatch = notes.match(/\n(\{.*?\})$/s);
         if (!jsonMatch) continue;
         const meta = JSON.parse(jsonMatch[1]);
         if (meta.merkleRoot === manifest.root || meta.manifestHash === manifest.manifestHash) {

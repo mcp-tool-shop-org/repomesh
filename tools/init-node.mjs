@@ -16,8 +16,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { generateKeypair } from "./keygen.mjs";
 import { registerNode } from "./register-node.mjs";
+
+// Early validation: OpenSSL is required for key generation
+try { execSync('openssl version', { stdio: 'pipe' }); } catch { console.error('Error: openssl not found. Install: https://wiki.openssl.org/index.php/Binaries'); process.exit(1); }
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -35,6 +39,10 @@ function parseArgs(argv) {
 }
 
 export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, noPr }) {
+  const TOTAL_STEPS = 8;
+  let step = 0;
+  const progress = (msg) => console.error(`[${++step}/${TOTAL_STEPS}] ${msg}`);
+
   const [org, repoName] = repo.split("/");
   if (!org || !repoName) {
     console.error("\u274C --repo must be org/repo format");
@@ -60,6 +68,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   console.log();
 
   // 1. Generate keypair
+  progress("Generating keypair...");
   const keysDir = path.join(target, "repomesh-keys", `${org}-${repoName}`);
   const keys = generateKeypair(keysDir);
   if (!keys) {
@@ -68,12 +77,18 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   }
 
   // 2. Create node.json
+  progress("Creating node.json...");
   const nodeJsonPath = path.join(target, "node.json");
   let nodeJson;
 
   if (fs.existsSync(nodeJsonPath)) {
     console.log(`\u2705 Existing node.json found, validating...`);
-    nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
+    try {
+      nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
+    } catch (e) {
+      console.error("Invalid JSON in " + nodeJsonPath + ": " + e.message);
+      process.exit(1);
+    }
     // Update public key if needed
     const maintainer = nodeJson.maintainers?.find(m => m.keyId === resolvedKeyId);
     if (!maintainer) {
@@ -118,6 +133,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   }
 
   // 3. Create repomesh.profile.json
+  progress("Creating repomesh.profile.json...");
   const profileJsonPath = path.join(target, "repomesh.profile.json");
   const profileJson = {
     profileId,
@@ -128,6 +144,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   console.log(`\u2705 Created repomesh.profile.json (profile: ${profileId})`);
 
   // 4. Create repomesh.overrides.json (empty starter)
+  progress("Creating repomesh.overrides.json...");
   const overridesJsonPath = path.join(target, "repomesh.overrides.json");
   if (!fs.existsSync(overridesJsonPath)) {
     fs.writeFileSync(overridesJsonPath, JSON.stringify({}, null, 2) + "\n", "utf8");
@@ -135,6 +152,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   }
 
   // 5. Create broadcast workflow
+  progress("Creating broadcast workflow...");
   const workflowDir = path.join(target, ".github", "workflows");
   const workflowPath = path.join(workflowDir, "repomesh-broadcast.yml");
 
@@ -163,6 +181,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   console.log(`\u2705 Created .github/workflows/repomesh-broadcast.yml`);
 
   // 6. Print secrets checklist
+  progress("Printing secrets checklist...");
   const privateKeyPem = fs.readFileSync(keys.privatePath, "utf8").trim();
 
   console.log(`\n${"=".repeat(60)}`);
@@ -184,7 +203,7 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
   console.log(`${"=".repeat(60)}`);
 
   // 7. Register with RepoMesh (open PR)
-  console.log(`\n\u2192 Registering node with RepoMesh...`);
+  progress("Registering node with RepoMesh...");
   const result = registerNode({
     repoId: repo,
     nodeJsonPath,
@@ -194,7 +213,13 @@ export async function initNode({ repo, profile, targetDir, ledgerRepo, keyId, no
     noPr: noPr || false
   });
 
+  if (result && result.error) {
+    console.error(`\u274C Registration failed: ${result.error}`);
+    process.exit(1);
+  }
+
   // 8. Print next steps
+  progress("Done!");
   console.log(`\n${"=".repeat(60)}`);
   console.log(`  NEXT STEPS`);
   console.log(`${"=".repeat(60)}`);

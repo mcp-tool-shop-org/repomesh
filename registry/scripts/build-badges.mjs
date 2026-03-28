@@ -40,9 +40,24 @@ function scoreColor(score) {
 }
 
 // Load trust + anchors
-const trust = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "trust.json"), "utf8"));
+let trust;
+try {
+  trust = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "trust.json"), "utf8"));
+} catch (e) {
+  console.error(`Failed to parse ${path.join(REGISTRY_DIR, "trust.json")}: ${e.message}`);
+  process.exit(1);
+}
+
 const anchorsPath = path.join(REGISTRY_DIR, "anchors.json");
-const anchors = fs.existsSync(anchorsPath) ? JSON.parse(fs.readFileSync(anchorsPath, "utf8")) : { releaseAnchors: {} };
+let anchors = { releaseAnchors: {} };
+if (fs.existsSync(anchorsPath)) {
+  try {
+    anchors = JSON.parse(fs.readFileSync(anchorsPath, "utf8"));
+  } catch (e) {
+    console.error(`Failed to parse ${anchorsPath}: ${e.message}`);
+    process.exit(1);
+  }
+}
 
 // Group by repo, pick latest version
 const byRepo = {};

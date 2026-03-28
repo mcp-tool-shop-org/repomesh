@@ -36,12 +36,34 @@ for (const entry of trust) {
   });
 }
 
+// Determine if a string is a valid ISO date (YYYY-MM-DD)
+function isIsoDate(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+}
+
+// Derive a timestamp for non-date partition IDs by looking at release events
+// that were anchored into this partition. Falls back to a sentinel.
+function resolvePartitionTimestamp(partitionId, releaseEvents) {
+  if (partitionId.startsWith("since:")) {
+    return partitionId.slice(6);
+  }
+  if (isIsoDate(partitionId)) {
+    return `${partitionId}T00:00:00.000Z`;
+  }
+  // Non-date partition (e.g. "all", "genesis") — use earliest/latest release ts
+  const anchored = releaseEvents.filter(e => e.anchorPartition === partitionId);
+  if (anchored.length > 0) {
+    // Use the earliest release timestamp from events in this partition
+    const sorted = anchored.map(e => e.ts).filter(Boolean).sort();
+    if (sorted.length > 0) return sorted[0];
+  }
+  // No anchored releases found — use sentinel with explanatory note
+  return "1970-01-01T00:00:00.000Z";
+}
+
 // Add anchors
 for (const p of anchors.partitions) {
-  // Use manifestHash timestamp or partition date as ts
-  const ts = p.partitionId.startsWith("since:")
-    ? p.partitionId.slice(6)
-    : `${p.partitionId}T00:00:00.000Z`;
+  const ts = resolvePartitionTimestamp(p.partitionId, events);
   events.push({
     type: "anchor",
     ts,

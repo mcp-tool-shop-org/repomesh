@@ -28,6 +28,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
+      # Full SHA pinning not required; major tags provide auto-patching with low risk.
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -44,11 +46,14 @@ jobs:
       - name: Build snippets
         run: node registry/scripts/build-snippets.mjs
 
+      # B-4: Non-critical build steps use continue-on-error for graceful degradation
       - name: Build metrics
         run: node pages/build-metrics.mjs
+        continue-on-error: true
 
       - name: Build timeline
         run: node pages/build-timeline.mjs
+        continue-on-error: true
 
       - name: Build registry explorer
         run: |
@@ -56,9 +61,10 @@ jobs:
           mkdir -p site/public
           cp -r pages/out/* site/public/
 
-      # Build live stats for Astro landing page
+      # Build live stats for Astro landing page (B-4: non-critical)
       - name: Build stats
         run: node pages/build-stats.mjs
+        continue-on-error: true
 
       # Build Astro landing page (includes registry explorer as static assets)
       - name: Install site dependencies

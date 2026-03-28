@@ -13,16 +13,28 @@ const ASSETS_DIR = path.join(import.meta.dirname, "assets");
 // Base path for GitHub Pages (matches repo name)
 const BASE = "/repomesh";
 
+// Safe JSON loader — returns fallback on missing file or parse error (B-1, B-6)
+function safeLoadJSON(filePath, fallback, label) {
+  if (!fs.existsSync(filePath)) {
+    console.error(`[pages] Warning: ${label} not found at ${filePath}, using defaults`);
+    return fallback;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (err) {
+    console.error(`[pages] Warning: Failed to parse ${label} at ${filePath}: ${err.message}. Using defaults.`);
+    return fallback;
+  }
+}
+
 // Load data
-const nodes = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "nodes.json"), "utf8"));
-const trust = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "trust.json"), "utf8"));
-const verifiers = JSON.parse(fs.readFileSync(path.join(REGISTRY_DIR, "verifiers.json"), "utf8"));
-const anchorsPath = path.join(REGISTRY_DIR, "anchors.json");
-const anchors = fs.existsSync(anchorsPath) ? JSON.parse(fs.readFileSync(anchorsPath, "utf8")) : { partitions: [], releaseAnchors: {} };
-const metricsPath = path.join(REGISTRY_DIR, "metrics.json");
-const metrics = fs.existsSync(metricsPath) ? JSON.parse(fs.readFileSync(metricsPath, "utf8")) : { history: [], current: {}, deltas: {}, latestRelease: null };
-const timelinePath = path.join(REGISTRY_DIR, "timeline.json");
-const timeline = fs.existsSync(timelinePath) ? JSON.parse(fs.readFileSync(timelinePath, "utf8")) : { events: [] };
+console.error("[pages] Loading registry artifacts...");
+const nodes = safeLoadJSON(path.join(REGISTRY_DIR, "nodes.json"), [], "nodes.json");
+const trust = safeLoadJSON(path.join(REGISTRY_DIR, "trust.json"), [], "trust.json");
+const verifiers = safeLoadJSON(path.join(REGISTRY_DIR, "verifiers.json"), { verifiers: [] }, "verifiers.json");
+const anchors = safeLoadJSON(path.join(REGISTRY_DIR, "anchors.json"), { partitions: [], releaseAnchors: {} }, "anchors.json");
+const metrics = safeLoadJSON(path.join(REGISTRY_DIR, "metrics.json"), { history: [], current: {}, deltas: {}, latestRelease: null }, "metrics.json");
+const timeline = safeLoadJSON(path.join(REGISTRY_DIR, "timeline.json"), { events: [] }, "timeline.json");
 
 // --- Helpers ---
 
@@ -76,7 +88,8 @@ ${body}
 </html>`;
 }
 
-// --- Build output dir ---
+// --- Build output dir --- (B-2: progress logging)
+console.error("[pages] Building output directory...");
 fs.rmSync(OUT_DIR, { recursive: true, force: true });
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -90,7 +103,8 @@ for (const f of fs.readdirSync(ASSETS_DIR)) {
 // .nojekyll
 fs.writeFileSync(path.join(OUT_DIR, ".nojekyll"), "", "utf8");
 
-// --- Home page ---
+// --- Home page --- (B-2)
+console.error("[pages] Building home page...");
 let homeBody = "";
 
 // Latest releases
@@ -145,7 +159,8 @@ homeBody += `<p style="margin-top:0.5rem"><a href="${BASE}/anchors/">View full a
 
 fs.writeFileSync(path.join(OUT_DIR, "index.html"), layout("Home", homeBody), "utf8");
 
-// --- Anchors page ---
+// --- Anchors page --- (B-2)
+console.error("[pages] Building anchor page...");
 let anchorsBody = `<h2>Anchor Chain</h2>
 <p style="color:var(--text-muted);margin-bottom:1rem">Each anchor binds a ledger partition's Merkle root to the XRP Ledger. Anchors form a linked list via the <code>prev</code> field.</p>`;
 
@@ -170,7 +185,8 @@ const anchorsDir = path.join(OUT_DIR, "anchors");
 fs.mkdirSync(anchorsDir, { recursive: true });
 fs.writeFileSync(path.join(anchorsDir, "index.html"), layout("Anchors", anchorsBody, `<a href="${BASE}/">Home</a> / Anchors`), "utf8");
 
-// --- Dashboard (Health) page ---
+// --- Dashboard (Health) page --- (B-2)
+console.error("[pages] Building health dashboard...");
 
 function trustRingSvg(label, score, color, size = 120) {
   const r = (size - 8) / 2;
@@ -341,7 +357,8 @@ const healthDir = path.join(OUT_DIR, "health");
 fs.mkdirSync(healthDir, { recursive: true });
 fs.writeFileSync(path.join(healthDir, "index.html"), layout("Network Dashboard", healthBody, `<a href="${BASE}/">Home</a> / Dashboard`), "utf8");
 
-// --- Repo pages ---
+// --- Repo pages --- (B-2)
+console.error(`[pages] Building ${nodes.length} repo page(s)...`);
 for (const node of nodes) {
   const [org, name] = node.id.split("/");
   const repoDir = path.join(OUT_DIR, "repos", org, name);
@@ -410,7 +427,8 @@ for (const node of nodes) {
   fs.writeFileSync(path.join(repoDir, "index.html"), layout(node.id, body, `<a href="${BASE}/">Home</a> / <a href="${BASE}/repos/${org}/${name}/">${esc(node.id)}</a>`), "utf8");
 }
 
-// --- Docs page (verification) ---
+// --- Docs page (verification) --- (B-2)
+console.error("[pages] Building docs page...");
 const docsDir = path.join(OUT_DIR, "docs");
 fs.mkdirSync(docsDir, { recursive: true });
 const verDocSrc = path.join(ROOT, "docs", "verification.md");

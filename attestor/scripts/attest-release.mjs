@@ -30,17 +30,25 @@ function canonicalize(v) {
 
 function readEvents() {
   if (!fs.existsSync(LEDGER_PATH)) return [];
-  return fs.readFileSync(LEDGER_PATH, "utf8")
+  let raw;
+  try { raw = fs.readFileSync(LEDGER_PATH, "utf8"); } catch (e) { console.error("Failed to read " + LEDGER_PATH + ": " + e.message); process.exit(1); }
+  return raw
     .split("\n")
     .filter((l) => l.trim().length > 0)
     .map((l) => JSON.parse(l));
 }
 
+const SAFE_SEGMENT = /^[a-zA-Z0-9_.-]+$/; // path traversal guard
+
 function findNodeManifest(repoId) {
   const [org, repo] = repoId.split("/");
+  if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) {
+    console.error(`Invalid repoId "${repoId}": org and repo must match /^[a-zA-Z0-9_.-]+$/.`);
+    return null;
+  }
   const p = path.join(NODES_DIR, org, repo, "node.json");
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("Failed to read " + p + ": " + e.message); return null; }
 }
 
 // --- attestation checks ---
@@ -169,10 +177,11 @@ function buildAttestationEvent(releaseEvent, checks) {
 const args = process.argv.slice(2);
 const scanNew = args.includes("--scan-new");
 const doSign = args.includes("--sign");
+const dryRun = process.argv.includes("--dry-run");
 const repoIdx = args.indexOf("--repo");
 const versionIdx = args.indexOf("--version");
 const outputIdx = args.indexOf("--output");
-const outputPath = outputIdx !== -1 ? args[outputIdx + 1] : null;
+const outputPath = (outputIdx !== -1 && outputIdx + 1 < args.length) ? args[outputIdx + 1] : null;
 
 const events = readEvents();
 
@@ -194,7 +203,7 @@ if (scanNew) {
     console.log("No unattested releases found.");
     process.exit(0);
   }
-} else if (repoIdx !== -1 && versionIdx !== -1) {
+} else if (repoIdx !== -1 && repoIdx + 1 < args.length && versionIdx !== -1 && versionIdx + 1 < args.length) {
   const repo = args[repoIdx + 1];
   const version = args[versionIdx + 1];
   const found = events.find(
@@ -210,6 +219,7 @@ if (scanNew) {
   console.error("  node attest-release.mjs --repo <org/repo> --version <semver>");
   console.error("  node attest-release.mjs --scan-new");
   console.error("  node attest-release.mjs --scan-new --sign --output <path>");
+  console.error("  node attest-release.mjs --scan-new --dry-run");
   process.exit(1);
 }
 
@@ -252,7 +262,13 @@ for (const release of targets) {
 }
 
 // Output
-if (outputPath) {
+if (dryRun) {
+  console.log("\n--- DRY RUN: Attestation events (not written) ---");
+  for (const ev of results) {
+    console.log(JSON.stringify(ev, null, 2));
+  }
+  console.log(`\n${results.length} attestation(s) computed (dry run — nothing written).`);
+} else if (outputPath) {
   const lines = results.map((ev) => JSON.stringify(ev)).join("\n") + "\n";
   fs.writeFileSync(outputPath, lines, "utf8");
   console.log(`\n${results.length} attestation(s) written to ${outputPath}`);

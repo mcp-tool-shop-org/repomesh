@@ -21,19 +21,34 @@ export function readEventsIncremental() {
   if (fs.existsSync(CACHE_PATH)) {
     try {
       cached = JSON.parse(fs.readFileSync(CACHE_PATH, "utf8"));
-    } catch { cached = { lineCount: 0, events: [] }; }
+    } catch (e) { console.warn('Warning: failed to read event cache: ' + e.message); cached = { lineCount: 0, events: [] }; }
   }
 
   // If ledger grew, parse only new lines
   if (cached.lineCount <= lines.length && cached.lineCount > 0) {
-    // Validate cache isn't stale (check last cached line hash)
-    const newLines = lines.slice(cached.lineCount);
-    const newEvents = newLines.map(l => JSON.parse(l));
-    const allEvents = [...cached.events, ...newEvents];
+    // Validate last cached event matches the corresponding ledger line
+    const lastCachedIdx = cached.lineCount - 1;
+    const lastCachedEvent = cached.events[cached.events.length - 1];
+    let lastLedgerEvent;
+    try {
+      lastLedgerEvent = JSON.parse(lines[lastCachedIdx]);
+    } catch (e) {
+      console.warn('Warning: failed to parse ledger line ' + lastCachedIdx + ' for cache validation: ' + e.message);
+      lastLedgerEvent = null;
+    }
 
-    // Update cache
-    fs.writeFileSync(CACHE_PATH, JSON.stringify({ lineCount: lines.length, events: allEvents }), "utf8");
-    return allEvents;
+    // If mismatch (ledger was edited/truncated), invalidate cache and re-parse
+    if (!lastLedgerEvent || JSON.stringify(lastCachedEvent) !== JSON.stringify(lastLedgerEvent)) {
+      console.warn('Warning: event cache mismatch at line ' + lastCachedIdx + ', re-parsing full ledger');
+    } else {
+      const newLines = lines.slice(cached.lineCount);
+      const newEvents = newLines.map(l => JSON.parse(l));
+      const allEvents = [...cached.events, ...newEvents];
+
+      // Update cache
+      fs.writeFileSync(CACHE_PATH, JSON.stringify({ lineCount: lines.length, events: allEvents }), "utf8");
+      return allEvents;
+    }
   }
 
   // Full parse (cache miss or ledger shrank)

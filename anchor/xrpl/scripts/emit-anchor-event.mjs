@@ -12,8 +12,9 @@ const skIdx = args.indexOf("--signing-key");
 const signingKeyPath = skIdx !== -1 ? args[skIdx + 1] : null;
 
 const anchorDir = path.join(import.meta.dirname, "..");
-const result = JSON.parse(fs.readFileSync(path.join(anchorDir, "anchor-result.json"), "utf8"));
-const rootData = JSON.parse(fs.readFileSync(path.join(anchorDir, "partition-root.json"), "utf8"));
+let result, rootData;
+try { result = JSON.parse(fs.readFileSync(path.join(anchorDir, "anchor-result.json"), "utf8")); } catch (e) { console.error("Failed to read anchor-result.json: " + e.message); process.exit(1); }
+try { rootData = JSON.parse(fs.readFileSync(path.join(anchorDir, "partition-root.json"), "utf8")); } catch (e) { console.error("Failed to read partition-root.json: " + e.message); process.exit(1); }
 
 if (!result.ok) { console.error("Anchor tx failed. Not emitting."); process.exit(1); }
 

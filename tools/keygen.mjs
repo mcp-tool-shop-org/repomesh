@@ -10,14 +10,19 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 
 export function generateKeypair(outputDir) {
   // Check openssl is available
   try {
-    execSync("openssl version", { stdio: "pipe" });
+    const ver = execSync("openssl version", { stdio: "pipe", encoding: "utf8" }).trim();
+    console.error(`Using ${ver}`);
   } catch {
-    console.error("\u274C openssl not found. Install OpenSSL or generate keys manually:");
+    console.error("\u274C openssl not found. Install OpenSSL:");
+    console.error("  Windows: winget install ShiningLight.OpenSSL");
+    console.error("  macOS:   brew install openssl");
+    console.error("  Linux:   sudo apt install openssl");
+    console.error("\nOr generate keys manually:");
     console.error("  openssl genpkey -algorithm ED25519 -out private.pem");
     console.error("  openssl pkey -in private.pem -pubout -out public.pem");
     return null;
@@ -38,8 +43,16 @@ export function generateKeypair(outputDir) {
     };
   }
 
-  execSync(`openssl genpkey -algorithm ED25519 -out "${privatePath}"`, { stdio: "pipe" });
-  execSync(`openssl pkey -in "${privatePath}" -pubout -out "${publicPath}"`, { stdio: "pipe" });
+  try {
+    execFileSync('openssl', ['genpkey', '-algorithm', 'ED25519', '-out', privatePath], { stdio: "pipe" });
+    execFileSync('openssl', ['pkey', '-in', privatePath, '-pubout', '-out', publicPath], { stdio: "pipe" });
+  } catch (e) {
+    console.error(`\u274C Key generation failed: ${e.message}`);
+    // Clean up partial files
+    try { fs.unlinkSync(privatePath); } catch {}
+    try { fs.unlinkSync(publicPath); } catch {}
+    return null;
+  }
 
   const publicKeyPem = fs.readFileSync(publicPath, "utf8").trim();
 

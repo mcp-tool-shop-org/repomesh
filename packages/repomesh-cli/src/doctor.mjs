@@ -17,6 +17,17 @@ function loadSchema(name) {
 
 export async function doctor({ dir, repo, json }) {
   const target = dir || ".";
+
+  // Fresh repo detection: if node.json doesn't exist, guide the user
+  if (!fs.existsSync(path.join(target, "node.json"))) {
+    if (json) {
+      console.log(JSON.stringify({ ok: true, fresh: true, message: "No repomesh configuration found." }));
+    } else {
+      console.log('\nNo repomesh configuration found. Run: npx repomesh init --repo <org/repo> to get started.\n');
+    }
+    return;
+  }
+
   const checks = [];
 
   function check(name, fn) {
@@ -40,7 +51,7 @@ export async function doctor({ dir, repo, json }) {
       addFormats(ajv);
       const validate = ajv.compile(schema);
       if (!validate(node)) {
-        return { ok: false, message: `Schema errors: ${validate.errors.map(e => `${e.instancePath} ${e.message}`).join("; ")}` };
+        return { ok: false, message: `Schema errors:\n${validate.errors.map(e => '  - ' + e.instancePath + ': ' + e.message).join('\n')}` };
       }
     }
 
@@ -69,7 +80,7 @@ export async function doctor({ dir, repo, json }) {
       addFormats(ajv);
       const validate = ajv.compile(schema);
       if (!validate(profile)) {
-        return { ok: false, message: `Schema errors: ${validate.errors.map(e => `${e.instancePath} ${e.message}`).join("; ")}` };
+        return { ok: false, message: `Schema errors:\n${validate.errors.map(e => '  - ' + e.instancePath + ': ' + e.message).join('\n')}` };
       }
     }
 
@@ -88,7 +99,7 @@ export async function doctor({ dir, repo, json }) {
       addFormats(ajv);
       const validate = ajv.compile(schema);
       if (!validate(overrides)) {
-        return { ok: false, message: `Schema errors: ${validate.errors.map(e => `${e.instancePath} ${e.message}`).join("; ")}` };
+        return { ok: false, message: `Schema errors:\n${validate.errors.map(e => '  - ' + e.instancePath + ': ' + e.message).join('\n')}` };
       }
     }
 

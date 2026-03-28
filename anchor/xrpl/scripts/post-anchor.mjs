@@ -27,14 +27,16 @@ function buildAnchorMemo({ partitionId, network, rootHex, manifestHash, count, p
 
 async function main() {
   const configPath = path.join(import.meta.dirname, "..", "config.json");
-  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  let config;
+  try { config = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch (e) { console.error("Failed to read " + configPath + ": " + e.message); process.exit(1); }
   const WS_URL = process.env.XRPL_WS_URL || config.rippledUrl;
   const SEED = process.env.XRPL_SEED;
-  if (!SEED) { console.error("Set XRPL_SEED env var"); process.exit(1); }
+  if (!SEED) { console.error("Set XRPL_SEED env var or add to anchor/xrpl/config.json. Generate with: xrpl wallet create"); process.exit(1); }
 
   const rootPath = path.join(import.meta.dirname, "..", "partition-root.json");
   if (!fs.existsSync(rootPath)) { console.error("Run compute-root.mjs first"); process.exit(1); }
-  const rootData = JSON.parse(fs.readFileSync(rootPath, "utf8"));
+  let rootData;
+  try { rootData = JSON.parse(fs.readFileSync(rootPath, "utf8")); } catch (e) { console.error("Failed to read " + rootPath + ": " + e.message); process.exit(1); }
   if (!rootData.root) { console.log("Empty partition. Skipping."); process.exit(0); }
 
   const client = new xrpl.Client(WS_URL);
@@ -53,7 +55,7 @@ async function main() {
         range: rootData.range,
       })],
     };
-    const result = await client.submitAndWait(tx, { wallet });
+    const result = await Promise.race([client.submitAndWait(tx, { wallet }), new Promise((_, reject) => setTimeout(() => reject(new Error("XRPL submission timeout (60s)")), 60000))]);
     const txHash = result?.result?.hash || result?.result?.tx_json?.hash;
     const output = {
       ok: (result?.result?.meta?.TransactionResult || result?.result?.engine_result) === "tesSUCCESS",

@@ -12,7 +12,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
@@ -37,8 +37,20 @@ if (!fs.existsSync(nodeJsonPath)) {
 }
 
 // Load and validate
-const nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
-const schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, "utf8"));
+let nodeJson;
+try {
+  nodeJson = JSON.parse(fs.readFileSync(nodeJsonPath, "utf8"));
+} catch (e) {
+  console.error("Invalid JSON in " + nodeJsonPath + ": " + e.message);
+  process.exit(1);
+}
+let schema;
+try {
+  schema = JSON.parse(fs.readFileSync(SCHEMA_PATH, "utf8"));
+} catch (e) {
+  console.error("Invalid JSON in " + SCHEMA_PATH + ": " + e.message);
+  process.exit(1);
+}
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
@@ -61,6 +73,11 @@ if (!nodeJson.id.includes("/")) {
 }
 
 const [org, repo] = nodeJson.id.split("/");
+const SAFE_NAME = /^[a-zA-Z0-9_.-]+$/;
+if (!SAFE_NAME.test(org) || !SAFE_NAME.test(repo)) {
+  console.error(`\u274C org and repo must match ${SAFE_NAME}`);
+  process.exit(1);
+}
 const destDir = path.join(NODES_DIR, org, repo);
 const destPath = path.join(destDir, "node.json");
 
@@ -83,21 +100,44 @@ console.log(`  Maintainer: ${nodeJson.maintainers.map((m) => `${m.name} (${m.key
 
 if (openPR) {
   console.log("\nOpening PR...");
+
+  // Check prerequisites
+  try {
+    execFileSync("git", ["--version"], { stdio: "pipe" });
+  } catch {
+    console.error("\u274C git not found. Install Git: https://git-scm.com/downloads");
+    process.exit(1);
+  }
+  try {
+    execFileSync("gh", ["auth", "status"], { stdio: "pipe" });
+  } catch {
+    console.error("\u274C GitHub CLI not authenticated. Run: gh auth login");
+    console.error("  Install gh: https://cli.github.com/");
+    process.exit(1);
+  }
+
   try {
     const branch = `join/${org}/${repo}`;
-    execSync(`git checkout -b ${branch}`, { cwd: ROOT, stdio: "pipe" });
-    execSync(`git add ${path.relative(ROOT, destPath)}`, { cwd: ROOT, stdio: "pipe" });
-    execSync(`git commit -m "join: register ${nodeJson.id} as ${nodeJson.kind} node"`, { cwd: ROOT, stdio: "pipe" });
-    execSync(`git push origin ${branch}`, { cwd: ROOT, stdio: "pipe" });
+    execFileSync("git", ["checkout", "-b", branch], { cwd: ROOT, stdio: "pipe" });
+    execFileSync("git", ["add", path.relative(ROOT, destPath)], { cwd: ROOT, stdio: "pipe" });
+    const SAFE_KIND = /^[a-zA-Z0-9_.-]+$/;
+    const kind = SAFE_KIND.test(nodeJson.kind) ? nodeJson.kind : "unknown";
+    execFileSync("git", ["commit", "-m", `join: register ${org}/${repo} as ${kind} node`], { cwd: ROOT, stdio: "pipe" });
+    execFileSync("git", ["push", "origin", branch], { cwd: ROOT, stdio: "pipe" });
 
-    const prUrl = execSync(
-      `gh pr create --title "join: ${nodeJson.id}" --body "Register ${nodeJson.id} as a ${nodeJson.kind} node in the RepoMesh network.\n\nProvides: ${(nodeJson.provides || []).join(", ")}"`,
-      { cwd: ROOT, encoding: "utf8" }
-    ).trim();
+    const provides = (nodeJson.provides || []).join(", ");
+    const prBody = `Register ${org}/${repo} as a ${kind} node in the RepoMesh network.\n\nProvides: ${provides}`;
+    const prUrl = execFileSync("gh", [
+      "pr", "create",
+      "--title", `join: ${org}/${repo}`,
+      "--body", prBody,
+    ], { cwd: ROOT, encoding: "utf8" }).trim();
 
     console.log(`\u2705 PR created: ${prUrl}`);
   } catch (e) {
+    const context = { node: nodeJson.id, cwd: ROOT, action: "join-pr" };
     console.error(`\u274C PR creation failed: ${e.message}`);
+    if (process.argv.includes("--debug")) console.error("Context:", JSON.stringify(context));
     console.log("You can manually commit and push the changes.");
     process.exit(1);
   }

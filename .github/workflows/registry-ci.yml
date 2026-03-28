@@ -22,6 +22,8 @@ jobs:
   build-registry:
     runs-on: ubuntu-latest
     steps:
+      # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
+      # Full SHA pinning not required; major tags provide auto-patching with low risk.
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -58,30 +60,33 @@ jobs:
           console.log('All profile snapshots valid.');
           "
 
-      - name: Build registry index
-        run: node registry/scripts/build-registry.mjs
-
-      - name: Build trust index
-        run: node registry/scripts/build-trust.mjs
-
-      - name: Build dependency graph
-        run: node registry/scripts/build-dependencies.mjs
-
-      - name: Build verifiers index
-        run: node registry/scripts/build-verifiers.mjs
-
-      - name: Build anchor index
-        run: node registry/scripts/build-anchors.mjs
-
-      - name: Build badges
-        run: node registry/scripts/build-badges.mjs
-
-      - name: Build snippets
-        run: node registry/scripts/build-snippets.mjs
+      # B-5: All registry build scripts run in a single step with set -e
+      # to prevent committing partial registry state on failure
+      - name: Build registry (all indexes)
+        run: |
+          set -e
+          node registry/scripts/build-registry.mjs
+          node registry/scripts/build-trust.mjs
+          node registry/scripts/build-dependencies.mjs
+          node registry/scripts/build-verifiers.mjs
+          node registry/scripts/build-anchors.mjs
+          node registry/scripts/build-badges.mjs
+          node registry/scripts/build-snippets.mjs
 
       - name: Commit updated registry
+        id: commit-registry
         run: |
           git config user.name "repomesh-bot"
           git config user.email "repomesh-bot@users.noreply.github.com"
           git add registry/nodes.json registry/capabilities.json registry/trust.json registry/dependencies.json registry/verifiers.json registry/anchors.json registry/badges/ registry/snippets/
-          git diff --cached --quiet && echo "No registry changes" || (git commit -m "registry: update index, trust, dependencies, verifiers, badges, and snippets" && git push)
+          if git diff --cached --quiet; then
+            echo "No registry changes"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "registry: update index, trust, dependencies, verifiers, badges, and snippets"
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push registry changes
+        if: steps.commit-registry.outputs.has_changes == 'true'
+        run: git push

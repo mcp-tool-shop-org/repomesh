@@ -35,6 +35,8 @@ The network enforces three invariants:
 
 ```bash
 node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+# JSON output for CI piping:
+node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source --json
 ```
 
 This generates everything you need:
@@ -48,6 +50,25 @@ Then add two secrets to your repo:
 2. `REPOMESH_LEDGER_TOKEN` — GitHub PAT with `contents:write` + `pull-requests:write` on this repo
 
 Cut a release. Trust converges automatically.
+
+### CLI Flags
+
+All commands accept: `--quiet`, `--verbose`, `--debug`, `--no-color`. The `init` command also supports `--json` for machine-readable output.
+
+Shell completions are available:
+
+```bash
+repomesh completion bash >> ~/.bashrc
+repomesh completion zsh >> ~/.zshrc
+```
+
+### Environment Overrides
+
+| Variable | Purpose |
+|----------|---------|
+| `REPOMESH_LEDGER_URL` | Override ledger endpoint |
+| `REPOMESH_MANIFESTS_URL` | Override manifests endpoint |
+| `REPOMESH_FETCH_TIMEOUT` | Fetch timeout in ms |
 
 ### Profiles
 
@@ -239,6 +260,7 @@ node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --vers
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
+node attestor/scripts/attest-release.mjs --scan-new --dry-run  # preview without writing
 ```
 
 Checks: `sbom.present`, `provenance.present`, `signature.chain`
@@ -249,6 +271,8 @@ Checks: `sbom.present`, `provenance.present`, `signature.chain`
 node verifiers/license/scripts/verify-license.mjs --scan-new
 node verifiers/security/scripts/verify-security.mjs --scan-new
 ```
+
+Security verifier thresholds (max CVEs, allowed severities) are config-driven via `verifiers/security/config.json`.
 
 ### Run policy checks
 
@@ -261,6 +285,22 @@ Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
 ## Security & Threat Model
 
 RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process.
+
+Hardening (dogfood swarm, 137 findings fixed):
+
+- All `execSync` calls use array arguments — no shell injection vectors
+- All `JSON.parse` calls are wrapped in try/catch with structured errors
+- Path traversal prevented on all file operations
+- ReDoS-safe parsing throughout (no unbounded regex)
+- PEM private keys excluded via `.gitignore`
+
+## Testing
+
+58 tests (20 CLI + 27 ledger + 11 tools) covering: Ed25519 signatures, schema validation, Merkle tree integrity, append-only invariants, path traversal prevention, and input validation.
+
+```bash
+node --test
+```
 
 ## License
 
