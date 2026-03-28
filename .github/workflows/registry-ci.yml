@@ -24,7 +24,7 @@ jobs:
     steps:
       # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
       # Full SHA pinning not required; major tags provide auto-patching with low risk.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:
