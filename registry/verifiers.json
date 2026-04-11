@@ -55,6 +55,13 @@
         ],
         "missing": []
       }
+    },
+    "mcp-tool-shop-org/repomesh": {
+      "0.0.0-genesis": {
+        "completed": [],
+        "expected": [],
+        "missing": []
+      }
     }
   }
 }

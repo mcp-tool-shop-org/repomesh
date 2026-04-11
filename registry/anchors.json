@@ -11,8 +11,8 @@
       ],
       "count": 8,
       "network": "testnet",
-      "txHash": null,
-      "walletAddress": null,
+      "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
+      "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
       "manifestFile": "2026-02-28.json"
     },
     {
@@ -26,8 +26,8 @@
       ],
       "count": 8,
       "network": "testnet",
-      "txHash": null,
-      "walletAddress": null,
+      "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
+      "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
       "manifestFile": "all.json"
     },
     {
@@ -41,8 +41,8 @@
       ],
       "count": 8,
       "network": "testnet",
-      "txHash": null,
-      "walletAddress": null,
+      "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
+      "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
       "manifestFile": "genesis.json"
     }
   ],
@@ -54,7 +54,7 @@
       "partitionId": "2026-02-28",
       "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
       "manifestHash": "75823866313cf7c78ff5d57814f1c6c57629b086844a19c81cecd8e48ed643c1",
-      "txHash": null,
+      "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
       "network": "testnet"
     },
     "mcp-tool-shop-org/shipcheck@1.0.4": {
@@ -64,7 +64,7 @@
       "partitionId": "2026-02-28",
       "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
       "manifestHash": "75823866313cf7c78ff5d57814f1c6c57629b086844a19c81cecd8e48ed643c1",
-      "txHash": null,
+      "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
       "network": "testnet"
     }
   }
