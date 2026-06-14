@@ -1,5 +1,66 @@
 [
   {
+    "repo": "mcp-tool-shop-org/repomesh",
+    "version": "2.0.0",
+    "commit": "717b80218893b05610b9703951de9c75dc197495",
+    "timestamp": "2026-06-14T20:01:15.802Z",
+    "artifactCount": 1,
+    "attestations": [],
+    "attestationSources": {},
+    "policyViolations": [],
+    "disputes": [],
+    "ignoredDisputes": [],
+    "disputed": false,
+    "trustScore": 45,
+    "integrityScore": 45,
+    "assuranceScore": 0,
+    "profileId": null,
+    "expectedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "assuranceScaling": {
+      "rawAchieved": 0,
+      "sumOfPassWeights": 100,
+      "scalingFactor": 1,
+      "renormalized": false
+    },
+    "assuranceBreakdown": {
+      "license.audit": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      },
+      "security.scan": {
+        "result": "missing",
+        "points": 0,
+        "max": 40
+      },
+      "repro.build": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      }
+    },
+    "completedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations"
+    ],
+    "missingChecks": [
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "verdict": "PARTIAL",
+    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
+    "assuranceConsensus": {}
+  },
+  {
     "repo": "mcp-tool-shop-org/shipcheck",
     "version": "1.0.4",
     "commit": "12a73e4efe722510df604892631301a5d2b6ae87",
