@@ -91,7 +91,16 @@
           "minLength": 32,
           "maxLength": 600
         },
-        "contact": { "type": "string", "maxLength": 120 }
+        "contact": { "type": "string", "maxLength": 120 },
+        "validFrom": { "type": "string", "format": "date-time" },
+        "validUntil": { "type": "string", "format": "date-time" },
+        "revokedAt": { "type": "string", "format": "date-time" },
+        "revocationReason": { "type": "string", "enum": ["rotation", "compromise", "retirement"] },
+        "invalidAfter": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 5280 §5.3.2 invalidity date. The trust boundary for a compromise (may precede revokedAt). Defaults to revokedAt when reason=compromise and this is absent."
+        }
       }
     }
   }

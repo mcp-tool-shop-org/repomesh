@@ -79,10 +79,22 @@ async function defaultClientFactory(wsUrl) {
   return new xrpl.Client(wsUrl);
 }
 
+// Convert an XRPL Ripple-epoch close-time (seconds since 2000-01-01T00:00:00Z) to a JS Date.
+// Ripple epoch offset from the Unix epoch is 946684800 seconds (contract §5.2). Returns null
+// when the field is missing/non-numeric so the caller can fall back to the offline ladder.
+function rippleDateToCloseTime(rippleEpochSeconds) {
+  if (typeof rippleEpochSeconds !== "number" || !Number.isFinite(rippleEpochSeconds)) return null;
+  const d = new Date((rippleEpochSeconds + 946684800) * 1000);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // Fetch + structurally validate an anchor tx from XRPL. Returns:
-//   { ok, memo, account, validated, txResult, reason }
+//   { ok, memo, account, validated, txResult, closeTime, reason }
 // Enforces: tx.validated===true, meta.TransactionResult==='tesSUCCESS',
 //           Account ∈ trustedAccounts. (ANC-001, ANC-002, CLI-008)
+// closeTime (key-lifecycle rung-1, contract §5.2): the XRPL ledger close-time of the tx, derived
+// from txData.date (Ripple epoch seconds). This is the only TRUSTWORTHY clock for a compromise
+// decision — threaded out via verifyAnchorTx so the CLI online resolver can use it as 'xrpl'.
 async function fetchAndValidateTx({ tx, wsUrl, trustedAccounts, clientFactory }) {
   const factory = clientFactory || defaultClientFactory;
   let client;
@@ -143,13 +155,21 @@ async function fetchAndValidateTx({ tx, wsUrl, trustedAccounts, clientFactory })
     return { ok: false, reason: "invalid memo structure: missing or wrongly-typed fields" };
   }
 
-  return { ok: true, memo, account, validated: true, txResult };
+  // closeTime (contract §5.2): the validated tx's ledger close-time, the trustworthy clock for
+  // the key-lifecycle compromise gate. null when txData.date is absent/non-numeric.
+  const closeTime = rippleDateToCloseTime(txData.date);
+
+  return { ok: true, memo, account, validated: true, txResult, closeTime };
 }
 
 /**
  * Programmatic helper used by verify-release. Verifies an anchor tx on-chain and
  * (optionally) that its memo matches expected root/manifestHash/count. Returns
- * { ok, reason, account, memo }.
+ * { ok, reason, account, memo, closeTime }.
+ *
+ * closeTime (contract §5.2 rung-1): the XRPL ledger close-time of the anchor tx, threaded out
+ * so the key-lifecycle online resolver can use the trusted on-chain clock ('xrpl' source). It is
+ * present on the success result only; offline / failed verification yields no closeTime.
  */
 export async function verifyAnchorTx({ tx, network, wsUrl, expect, opts, clientFactory }) {
   const resolvedWsUrl = wsUrl || WS_URLS[network] || WS_URLS.testnet;
@@ -172,7 +192,8 @@ export async function verifyAnchorTx({ tx, network, wsUrl, expect, opts, clientF
     if (expect.h !== undefined && r.memo.h !== expect.h) return { ok: false, reason: "memo manifestHash does not match local manifest" };
     if (expect.c !== undefined && r.memo.c !== expect.c) return { ok: false, reason: `memo count ${r.memo.c} != local count ${expect.c}` };
   }
-  return { ok: true, account: r.account, memo: r.memo };
+  // closeTime: the trusted on-chain clock for the key-lifecycle rung-1 resolver (contract §5.2).
+  return { ok: true, account: r.account, memo: r.memo, closeTime: r.closeTime ?? null };
 }
 
 // Walk the prev-root chain backwards through local anchors (CLI-007). Returns

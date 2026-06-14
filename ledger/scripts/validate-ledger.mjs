@@ -14,6 +14,11 @@ import crypto from "node:crypto";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { canonicalizeForHash } from "./canonicalize.mjs";
+import {
+  keyWindow,
+  isKeyValidForSignature,
+  resolveTrustedSignatureTimeSync,
+} from "../../verifiers/lib/key-window.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(ROOT, "..");
@@ -127,7 +132,11 @@ function findNodeManifest(repoId) {
   return loadJson(p);
 }
 
-function extractPublicKey(nodeManifest, keyId) {
+// `windowCheck(maintainer) -> { valid, reason }` (contract §5.3): applied AFTER the maintainer is
+// found by keyId and BEFORE its key is returned. A grandfathered maintainer (no window fields) always
+// returns valid → byte-identical to today. A windowed key outside its valid window fails with the
+// predicate's reason surfaced in this site's existing structured `fail(...)` error.
+function extractPublicKey(nodeManifest, keyId, windowCheck) {
   const maints = nodeManifest.maintainers || [];
   const m = maints.find((x) => x.keyId === keyId);
 
@@ -137,6 +146,16 @@ function extractPublicKey(nodeManifest, keyId) {
       `No maintainer with keyId="${keyId}" in node.json for ${nodeManifest.id}. ` +
       `Available keyIds: ${available}`
     );
+  }
+
+  if (typeof windowCheck === "function") {
+    const dec = windowCheck(m);
+    if (!dec.valid) {
+      fail(
+        `No usable key for keyId="${keyId}" in ${nodeManifest.id}: ${dec.reason}. ` +
+        `The key's lifecycle window in node.json excludes this signature's trusted time.`
+      );
+    }
   }
 
   if (!m.publicKey) {
@@ -183,7 +202,7 @@ function listNodeManifests() {
 // D2 + LDG-007: resolve the verifying key for a third-party event from a TRUSTED, correctly-kinded
 // node whose maintainer advertises this keyId. Fails on: not-allowlisted signer, wrong kind, or
 // keyId collision across trusted nodes (ambiguous resolution).
-function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds) {
+function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowCheck) {
   const matches = [];
   for (const { id, manifest } of listNodeManifests()) {
     if (!allowlist.has(id)) continue;
@@ -199,6 +218,19 @@ function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds) {
               `Maintainer "${keyId}" in trusted node ${id} has an empty contact. ` +
               `Every maintainer key must have an attributable contact.`,
           };
+        }
+        // Key-lifecycle time gate (contract §5.3): a windowed third-party key whose signature falls
+        // outside its valid window must not resolve. Grandfathered keys (no window fields) pass
+        // unchanged. Surfaced via the existing structured {error} shape, carrying the predicate reason.
+        if (typeof windowCheck === "function") {
+          const dec = windowCheck(m);
+          if (!dec.valid) {
+            return {
+              error:
+                `No usable key for keyId="${keyId}" in trusted node ${id}: ${dec.reason}. ` +
+                `The key's lifecycle window excludes this signature's trusted time.`,
+            };
+          }
         }
         matches.push({ id, pk });
       }
@@ -233,6 +265,89 @@ function verifyEd25519(pubKeyPem, msgHex, sigB64) {
     console.error("Signature verification error: " + e.message);
     return false;
   }
+}
+
+// --- Offline trusted-time ctx (contract §5.2/§5.3) --------------------------------------------
+// validate-ledger runs OFFLINE → the SYNC resolver. The ctx is built from the already-loaded ledger
+// events + the trustedAttestors allowlist (D18 rung-2 gate). See verify-release.mjs for the same shape.
+//   findEarliestAnchorForLeaf(leafHash): earliest AttestationPublished ledger.anchor whose pinned
+//     partition range [firstLeaf..lastLeaf] contains leafHash (contiguous slice in ledger order).
+//   isBundledTrustedAnchor(anchorEvent): the anchor's signer keyId resolves to a trustedAttestors
+//     node AND the anchor's own signature verifies. A forged/untrusted anchor is not a trusted clock.
+function buildOfflineTrustCtx(events, trustedAttestorsSet) {
+  const nodeCache = new Map();
+  const leafOrder = events.map((e) => e?.signature?.canonicalHash);
+
+  const anchors = [];
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev?.type !== "AttestationPublished") continue;
+    const isAnchor = Array.isArray(ev.attestations) &&
+      ev.attestations.some((a) => a?.type === "ledger.anchor");
+    if (!isAnchor) continue;
+    let range = null;
+    try {
+      const brace = typeof ev.notes === "string" ? ev.notes.indexOf("{") : -1;
+      if (brace !== -1) {
+        const meta = JSON.parse(ev.notes.slice(brace));
+        if (Array.isArray(meta.range) && meta.range.length === 2) range = meta.range;
+      }
+    } catch {
+      // unparseable anchor notes → not usable as a clock
+    }
+    if (range) anchors.push({ ev, range });
+  }
+
+  function loadNode(repoId) {
+    if (nodeCache.has(repoId)) return nodeCache.get(repoId);
+    let node = null;
+    try {
+      node = findNodeManifestSafe(repoId);
+    } catch {
+      node = null;
+    }
+    nodeCache.set(repoId, node);
+    return node;
+  }
+
+  function findEarliestAnchorForLeaf(leafHash) {
+    for (const { ev, range } of anchors) {
+      const start = leafOrder.indexOf(range[0]);
+      const end = leafOrder.indexOf(range[1]);
+      if (start === -1 || end === -1 || end < start) continue;
+      for (let j = start; j <= end; j++) {
+        if (leafOrder[j] === leafHash) return ev;
+      }
+    }
+    return null;
+  }
+
+  function isBundledTrustedAnchor(anchorEvent) {
+    const keyId = anchorEvent?.signature?.keyId;
+    if (!keyId) return false;
+    for (const id of trustedAttestorsSet) {
+      const node = loadNode(id);
+      const m = (node?.maintainers || []).find((x) => x.keyId === keyId);
+      if (!m?.publicKey) continue;
+      const pem = String(m.publicKey).trim();
+      if (!pem.includes("BEGIN PUBLIC KEY")) continue;
+      if (verifyEd25519(pem, anchorEvent.signature.canonicalHash, anchorEvent.signature.value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  return { findEarliestAnchorForLeaf, isBundledTrustedAnchor };
+}
+
+// Like findNodeManifest but returns null (instead of fail()) when absent — for ctx anchor resolution.
+function findNodeManifestSafe(repoId) {
+  const [org, repo] = (repoId || "").split("/");
+  if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) return null;
+  const p = path.join(NODES_DIR, org, repo, "node.json");
+  if (!fs.existsSync(p)) return null;
+  try { return loadJson(p); } catch { return null; }
 }
 
 // --- LDG-001: immutability via committed anchor manifests (Merkle-root inclusion) -----------
@@ -399,6 +514,185 @@ for (const line of baseLines) {
 
 const now = Date.now();
 
+// Offline trusted-time ctx (contract §5.2/§5.3), built ONCE from the full head ledger (anchors may
+// live in base events). Reused for every event's key-lifecycle time gate (sites 4 + 5 + §8).
+const trustCtx = buildOfflineTrustCtx(allHeadEvents, trustedAttestors);
+
+// Per-event window check: resolve THIS event's trusted signature time, then apply the shared predicate
+// to the maintainer found by keyId. Returns the predicate's { valid, reason }. Grandfathered keys
+// (no window fields) always return valid → byte-identical to today.
+function windowCheckFor(targetEvent) {
+  const tt = resolveTrustedSignatureTimeSync(targetEvent, trustCtx);
+  return (maintainer) => isKeyValidForSignature(maintainer, tt);
+}
+
+// --- §8: KeyRotation/KeyRevocation validation + binding -------------------------------------
+// Asserts (1) schema [done in main loop], (2) semantic shape per action, (3) signature verifies,
+// (4) signer AUTHORIZED, (5) node.json BINDING reflects the event. Any failure => fail(...).
+function validateKeyLifecycleEvent(ev, lineNo) {
+  const key = ev.key || {};
+  const action = key.action;
+
+  // (2) Semantic shape per action (contract §3.2 note / §8.2). The schema is permissive on the
+  // sub-object; the actionable per-action error lives here.
+  if (action === "rotate") {
+    for (const f of ["retiringKeyId", "newKeyId", "newPublicKey", "effectiveAt"]) {
+      if (!key[f]) {
+        fail(`KeyRotation at line ${lineNo} is missing key.${f} (rotate requires retiringKeyId+newKeyId+newPublicKey+effectiveAt).`);
+      }
+    }
+    if (!String(key.newPublicKey).includes("BEGIN PUBLIC KEY")) {
+      fail(`KeyRotation at line ${lineNo}: key.newPublicKey must be PEM (BEGIN PUBLIC KEY).`);
+    }
+    if (isNaN(new Date(key.effectiveAt).getTime())) {
+      fail(`KeyRotation at line ${lineNo}: key.effectiveAt is not a valid date-time.`);
+    }
+  } else if (action === "revoke") {
+    for (const f of ["revokedKeyId", "reason"]) {
+      if (!key[f]) {
+        fail(`KeyRevocation at line ${lineNo} is missing key.${f} (revoke requires revokedKeyId+reason).`);
+      }
+    }
+    if (key.reason === "compromise" && !key.invalidAfter) {
+      fail(`KeyRevocation at line ${lineNo}: reason=compromise requires key.invalidAfter (RFC 5280 §5.3.2 invalidity date).`);
+    }
+    if (key.invalidAfter && isNaN(new Date(key.invalidAfter).getTime())) {
+      fail(`KeyRevocation at line ${lineNo}: key.invalidAfter is not a valid date-time.`);
+    }
+  } else {
+    fail(`Key-lifecycle event at line ${lineNo}: unknown key.action "${action}" (expected rotate|revoke).`);
+  }
+
+  const targetKeyId = action === "rotate" ? key.retiringKeyId : key.revokedKeyId;
+  const signerKeyId = ev.signature.keyId;
+
+  // Load + schema-check the target node manifest (the node that owns the affected key).
+  const node = findNodeManifest(ev.repo);
+  if (!validateNode(node)) {
+    fail(`node.json schema failed for ${ev.repo} (line ${lineNo}): ${ajv.errorsText(validateNode.errors)}`);
+  }
+  const maints = node.maintainers || [];
+
+  // (3)+(4) Resolve the SIGNING key and assert the signer is AUTHORIZED (contract §4.1/§4.2):
+  //   path A — a surviving SAME-NODE maintainer key (!= the revoked/retiring key) that is ITSELF
+  //            currently valid; OR
+  //   path B — a node in verifier.policy.json.trustedPolicy (the governance floor, §4.3).
+  let signerPem = null;
+  const sameNodeSigner = maints.find((m) => m.keyId === signerKeyId);
+
+  if (sameNodeSigner) {
+    // Path A: the signer is a maintainer of the target node itself.
+    if (signerKeyId === targetKeyId) {
+      // The retiring/revoked key cannot authorize its own removal for a REVOCATION (it may be
+      // compromised). A ROTATION is allowed to be self-signed (proves possession, §4.1).
+      if (action === "revoke") {
+        fail(
+          `KeyRevocation at line ${lineNo}: signed by the revoked key "${signerKeyId}" itself. ` +
+          `A revocation must be signed by a SURVIVING same-node key or a trustedPolicy node (§4.2).`
+        );
+      }
+      // rotate self-signed by the retiring key — authorized; possession proven.
+    } else {
+      // A different same-node key: it must itself be currently valid (not revoked/rotated-out).
+      const dec = isKeyValidForSignature(sameNodeSigner, resolveTrustedSignatureTimeSync(ev, trustCtx));
+      if (!dec.valid) {
+        fail(
+          `${ev.type} at line ${lineNo}: signing key "${signerKeyId}" is itself not currently valid ` +
+          `(${dec.reason}). A surviving signer must be a valid same-node key (§4.2).`
+        );
+      }
+    }
+    if (!sameNodeSigner.publicKey || !String(sameNodeSigner.publicKey).includes("BEGIN PUBLIC KEY")) {
+      fail(`${ev.type} at line ${lineNo}: signer "${signerKeyId}" in ${ev.repo} has no PEM publicKey.`);
+    }
+    signerPem = String(sameNodeSigner.publicKey).trim();
+  } else {
+    // Path B: governance floor — the signer must be a trustedPolicy node advertising this keyId.
+    // Gate the trustedPolicy signer on its own lifecycle window too (a revoked policy key cannot sign).
+    const resolved = resolveTrustedKey(
+      signerKeyId, "PolicyViolation", trustedPolicy, POLICY_KINDS, windowCheckFor(ev)
+    );
+    if (resolved.error) {
+      fail(
+        `${ev.type} at line ${lineNo}: signer "${signerKeyId}" is neither a surviving same-node key ` +
+        `of ${ev.repo} nor a trustedPolicy node. ${resolved.error}`
+      );
+    }
+    signerPem = resolved.pk;
+  }
+
+  // (3) Signature verifies against the resolved signing key.
+  if (!verifyEd25519(signerPem, ev.signature.canonicalHash, ev.signature.value)) {
+    fail(`${ev.type} at line ${lineNo}: signature verification failed (keyId=${signerKeyId}).`);
+  }
+
+  // (5) BINDING: the target node.json maintainer fields MUST reflect the event. node.json and the
+  // ledger cannot revoke/un-revoke unilaterally — a mismatch in EITHER direction is a violation.
+  if (action === "revoke") {
+    const revoked = maints.find((m) => m.keyId === targetKeyId);
+    if (!revoked) {
+      fail(
+        `KeyRevocation at line ${lineNo}: revoked key "${targetKeyId}" is not present in ` +
+        `${ev.repo} node.json. The revocation has no backing node.json entry (binding §6).`
+      );
+    }
+    const w = keyWindow(revoked);
+    if (!w.revokedAt) {
+      fail(
+        `KeyRevocation at line ${lineNo}: node.json maintainer "${targetKeyId}" has no revokedAt. ` +
+        `A signed revocation must be reflected in node.json (binding §6/§8.5).`
+      );
+    }
+    if (w.revocationReason !== key.reason) {
+      fail(
+        `KeyRevocation at line ${lineNo}: node.json revocationReason "${w.revocationReason}" does not ` +
+        `match the event reason "${key.reason}" for "${targetKeyId}" (binding §8.5).`
+      );
+    }
+    if (key.reason === "compromise") {
+      const nodeInvalid = w.invalidAfter ? w.invalidAfter.getTime() : null;
+      const evInvalid = new Date(key.invalidAfter).getTime();
+      if (nodeInvalid !== evInvalid) {
+        fail(
+          `KeyRevocation at line ${lineNo}: node.json invalidAfter for "${targetKeyId}" does not match ` +
+          `the event's invalidAfter (${key.invalidAfter}) (binding §8.5).`
+        );
+      }
+    }
+  } else {
+    // rotate: retiring key gets validUntil=effectiveAt; the new key must exist with validFrom=effectiveAt.
+    const effectiveMs = new Date(key.effectiveAt).getTime();
+    const retiring = maints.find((m) => m.keyId === key.retiringKeyId);
+    if (!retiring) {
+      fail(
+        `KeyRotation at line ${lineNo}: retiring key "${key.retiringKeyId}" is not present in ` +
+        `${ev.repo} node.json (binding §6).`
+      );
+    }
+    const rw = keyWindow(retiring);
+    if (!rw.validUntil || rw.validUntil.getTime() !== effectiveMs) {
+      fail(
+        `KeyRotation at line ${lineNo}: node.json retiring key "${key.retiringKeyId}" must have ` +
+        `validUntil=effectiveAt (${key.effectiveAt}) (binding §8.5).`
+      );
+    }
+    const fresh = maints.find((m) => m.keyId === key.newKeyId);
+    if (!fresh) {
+      fail(
+        `KeyRotation at line ${lineNo}: new key "${key.newKeyId}" must be appended to ${ev.repo} ` +
+        `node.json (binding §6/§8.5).`
+      );
+    }
+    const fw = keyWindow(fresh);
+    if (!fw.validFrom || fw.validFrom.getTime() !== effectiveMs) {
+      fail(
+        `KeyRotation at line ${lineNo}: node.json new key "${key.newKeyId}" must have ` +
+        `validFrom=effectiveAt (${key.effectiveAt}) (binding §8.5).`
+      );
+    }
+  }
+}
+
 for (let idx = 0; idx < newLines.length; idx++) {
   const lineNo = baseLines.length + idx + 1;
   let ev;
@@ -455,6 +749,14 @@ for (let idx = 0; idx < newLines.length; idx++) {
     );
   }
 
+  // Key-lifecycle events (KeyRotation/KeyRevocation) have their OWN signer-authorization + binding
+  // rules (contract §8) — validated separately, then skip the release/attestation signer flow.
+  if (ev.type === "KeyRotation" || ev.type === "KeyRevocation") {
+    validateKeyLifecycleEvent(ev, lineNo);
+    console.log(`  ✅ line ${lineNo}: ${ev.type} ${ev.repo} (${ev.key?.action}) — verified`);
+    continue;
+  }
+
   // Signature verification
   console.error(`[validate] Verifying signature for line ${lineNo}...`);
   // For ReleasePublished (and any non-third-party type): signer must be a maintainer of the event's
@@ -463,11 +765,13 @@ for (let idx = 0; idx < newLines.length; idx++) {
   //   (D2 allowlist) and the keyId must resolve to exactly one such node (LDG-007).
   let pubKeyPem;
   const isThirdPartySigned = ["AttestationPublished", "PolicyViolation"].includes(ev.type);
+  // Contract §5.3: resolve THIS event's trusted signature time once, gate the resolved key on it.
+  const windowCheck = windowCheckFor(ev);
 
   if (isThirdPartySigned) {
     const allowlist = ev.type === "PolicyViolation" ? trustedPolicy : trustedAttestors;
     const kinds = ev.type === "PolicyViolation" ? POLICY_KINDS : ATTESTOR_KINDS;
-    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds);
+    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds, windowCheck);
     if (resolved.error) {
       fail(`${resolved.error} (line ${lineNo})`);
     }
@@ -487,7 +791,7 @@ for (let idx = 0; idx < newLines.length; idx++) {
         );
       }
     }
-    pubKeyPem = extractPublicKey(node, ev.signature.keyId);
+    pubKeyPem = extractPublicKey(node, ev.signature.keyId, windowCheck);
   }
 
   const ok = verifyEd25519(pubKeyPem, ev.signature.canonicalHash, ev.signature.value);

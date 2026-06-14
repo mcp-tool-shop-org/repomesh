@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.ja.md">日本語</a> | <a href="README.pt-BR.md">Português (BR)</a> | <a href="README.zh.md">中文</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -206,6 +206,8 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `AttestationPublished` | An attestor verifies a release |
 | `ledger.anchor` | The anchor node seals a partition (Merkle root + XRPL memo) |
 | `attestation.dispute` | A trusted node disputes an attestation (downgrades the verdict) |
+| `KeyRotation` | A maintainer key is rotated to a successor (prospective — past signatures stay valid) |
+| `KeyRevocation` | A maintainer key is revoked (compromise = retroactive invalidity, RFC 5280) |
 
 **Reserved / planned (not yet emitted):**
 
@@ -216,6 +218,36 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `DependencyVulnFound` | A vulnerability is found in dependencies |
 | `InterfaceUpdated` | An interface schema changes |
 | `PolicyViolation` | A network policy is violated |
+
+## Key Rotation & Revocation
+
+Maintainer keys have a lifecycle. A key can be **rotated** to a successor or **revoked**, and
+verification is **time-aware**: a signature is trusted only if the key was valid at the signature's
+trusted time — the XRPL anchor close-time, the same trusted clock the ledger already uses.
+
+```bash
+# Rotate to a successor key (the retired key's past signatures stay valid)
+npx @mcptoolshop/repomesh key rotate --repo your-org/your-repo \
+  --retiring mike-2026-01 --new-key mike-2026-06 --public-key new.pem
+
+# Revoke a compromised key (signatures at/after the invalidity date are rejected)
+npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
+  --key mike-2026-01 --reason compromise --invalid-after 2026-06-18T00:00:00Z
+```
+
+- **Routine rotation** is *prospective* — the retired key's past signatures remain valid; it simply
+  stops signing new releases.
+- **Compromise** is *retroactive* (RFC 5280 §5.3.2) — any signature whose provable anchored time is
+  at/after the invalidity date is rejected, and a signature that cannot be proven to predate it is
+  rejected.
+- A key with **no** lifecycle fields is grandfathered (always valid), so existing nodes verify
+  unchanged.
+- Revocations are signed `KeyRevocation` events; a single-key node whose only key is compromised is
+  recovered by a **governance** (`trustedPolicy`) node signing the revocation. Trust-critical nodes
+  should register **≥2 keys** (TUF §6.1).
+- Even against a tampered `node.json`, a revocation is re-imposed from the signed, XRPL-anchored
+  events — a stripped manifest cannot revive a revoked key. See the [threat model](docs/threat-model.md)
+  for the boundary (verify against the canonical ledger; use `--anchored` for revocation-sensitive checks).
 
 ## Node Kinds
 
@@ -336,7 +368,7 @@ Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
 
 ## Security & Threat Model
 
-RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process.
+RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process, and the [threat model](docs/threat-model.md) for the key-lifecycle trust boundary (why `node.json` authenticity depends on its source, and why revocation-sensitive verification should use `--anchored`).
 
 Hardening:
 

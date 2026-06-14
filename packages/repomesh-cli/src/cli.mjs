@@ -151,6 +151,110 @@ program
     await doctor({ dir: opts.dir, repo: opts.repo, json: opts.json });
   });
 
+// --- key lifecycle (rotate / revoke) — writes to a LOCAL ledger checkout ---
+//
+// These build + sign + append a KeyRotation/KeyRevocation event AND apply the matching
+// node.json maintainer-window edit, so validate-ledger's binding check passes. They write
+// ONLY to the local ledger/node files you point them at (--local <dir> / --dir <dir>,
+// default cwd); they NEVER broadcast to the real network. Use --dry-run to preview.
+//
+// Signing key: --signing-key-id sets signature.keyId; the private PEM comes from
+// --signing-key-file, --signing-key, or the REPOMESH_SIGNING_KEY env var.
+//   rotate -> sign with the RETIRING key (proves possession) or a trustedPolicy node's key.
+//   revoke -> sign with a SURVIVING same-node key or a trustedPolicy node's key.
+const keyCmd = program
+  .command("key")
+  .description(
+    "Key lifecycle: rotate or revoke a maintainer key (writes to a LOCAL ledger checkout).\n" +
+    "  Builds + signs + appends a KeyRotation/KeyRevocation event AND applies the matching\n" +
+    "  node.json maintainer-window edit. Local-only — never broadcasts. Use --dry-run to preview."
+  );
+
+function runKey(action) {
+  return async (opts) => {
+    const { keyCommand } = await import("./key/rotate-revoke.mjs");
+    const explicitLocal = opts.local !== undefined;
+    const root = (typeof opts.local === "string" && opts.local) || opts.dir || process.cwd();
+    const result = keyCommand({
+      action,
+      repo: opts.repo,
+      root,
+      dryRun: !!opts.dryRun,
+      signingKeyId: opts.signingKeyId,
+      signingKey: opts.signingKey,
+      signingKeyFile: opts.signingKeyFile,
+      timestamp: opts.timestamp,
+      // rotate
+      retiringKeyId: opts.retiringKeyId,
+      newKeyId: opts.newKeyId,
+      newPublicKey: opts.newPublicKey,
+      newPublicKeyFile: opts.newPublicKeyFile,
+      effectiveAt: opts.effectiveAt,
+      // revoke
+      revokedKeyId: opts.revokedKeyId,
+      reason: opts.reason,
+      invalidAfter: opts.invalidAfter,
+    });
+    void explicitLocal;
+    if (opts.json) {
+      console.log(JSON.stringify(result));
+    } else if (result.dryRun) {
+      console.log(`--- DRY RUN: key ${action} ${result.repo} (nothing written) ---`);
+      console.log(JSON.stringify(result.event, null, 2));
+      console.log(`\nWould append event to: ${result.eventsPath}`);
+      console.log(`Would edit node.json:  ${result.nodePath}`);
+    } else {
+      console.log(`Key ${action} emitted for ${result.repo}`);
+      console.log(`  appended event -> ${result.eventsPath}`);
+      console.log(`  edited node    -> ${result.nodePath}`);
+    }
+  };
+}
+
+keyCmd
+  .command("rotate")
+  .description(
+    "Rotate a maintainer key: retire the old key (prospective) and mint a new one.\n" +
+    "  node.json effect: retiring key gets validUntil/revokedAt = effectiveAt, reason=rotation;\n" +
+    "  new key appended with validFrom = effectiveAt. Past signatures of the retiring key stay valid."
+  )
+  .requiredOption("--repo <org/repo>", "Target repository whose node.json holds the maintainer")
+  .requiredOption("--retiring-key-id <id>", "keyId of the key being retired (must exist in node.json)")
+  .requiredOption("--new-key-id <id>", "keyId of the new key being minted")
+  .option("--new-public-key <pem>", "PEM string of the new public key")
+  .option("--new-public-key-file <path>", "File containing the new public key PEM")
+  .option("--effective-at <iso>", "Rotation moment (ISO 8601 date-time); defaults to now")
+  .requiredOption("--signing-key-id <id>", "keyId recorded in signature.keyId (rotate: the retiring key, or a trustedPolicy key)")
+  .option("--signing-key-file <path>", "Private key PEM file to sign with (or set REPOMESH_SIGNING_KEY)")
+  .option("--signing-key <pem>", "Private key PEM string to sign with (prefer the file/env form)")
+  .option("--local [dir]", "Local ledger checkout root (default: current dir)")
+  .option("--dir <path>", "Alias for the local ledger root")
+  .option("--timestamp <iso>", "Override the event timestamp (ISO 8601); defaults to now")
+  .option("--dry-run", "Compute + sign but write nothing; print the event and target paths")
+  .option("--json", "Output structured JSON")
+  .action(runKey("rotate"));
+
+keyCmd
+  .command("revoke")
+  .description(
+    "Revoke a maintainer key (reason-dispatched).\n" +
+    "  node.json effect: revoked key gets revokedAt = timestamp, revocationReason = reason, and\n" +
+    "  (reason=compromise) invalidAfter = the RFC 5280 invalidity date (defaults to revokedAt)."
+  )
+  .requiredOption("--repo <org/repo>", "Target repository whose node.json holds the maintainer")
+  .requiredOption("--revoked-key-id <id>", "keyId of the key being revoked (must exist in node.json)")
+  .requiredOption("--reason <reason>", "Revocation reason: rotation | compromise | retirement")
+  .option("--invalid-after <iso>", "RFC 5280 invalidity date (ISO 8601); required for compromise (defaults to timestamp)")
+  .requiredOption("--signing-key-id <id>", "keyId recorded in signature.keyId (revoke: a surviving same-node key, or a trustedPolicy key)")
+  .option("--signing-key-file <path>", "Private key PEM file to sign with (or set REPOMESH_SIGNING_KEY)")
+  .option("--signing-key <pem>", "Private key PEM string to sign with (prefer the file/env form)")
+  .option("--local [dir]", "Local ledger checkout root (default: current dir)")
+  .option("--dir <path>", "Alias for the local ledger root")
+  .option("--timestamp <iso>", "Override the event timestamp (ISO 8601); defaults to now")
+  .option("--dry-run", "Compute + sign but write nothing; print the event and target paths")
+  .option("--json", "Output structured JSON")
+  .action(runKey("revoke"));
+
 // --- Shell completion ---
 
 program
@@ -158,7 +262,7 @@ program
   .description("Output shell completion script (bash/zsh)")
   .option("--shell <shell>", "Shell type: bash, zsh", "bash")
   .action((opts) => {
-    const commands = ["verify-release", "verify-all", "verify-anchor", "init", "doctor", "completion",
+    const commands = ["verify-release", "verify-all", "verify-anchor", "init", "doctor", "key", "completion",
       "build-pages", "build-registry", "build-badges", "build-snippets"];
     const globalFlags = "--quiet --verbose --debug --json --format --fail-on --local --help --cli-version";
     if (opts.shell === "zsh") {

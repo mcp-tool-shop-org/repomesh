@@ -4,11 +4,45 @@
   "title": "RepoMesh Event Envelope",
   "type": "object",
   "additionalProperties": false,
-  "required": ["type", "repo", "version", "commit", "timestamp", "artifacts", "attestations", "signature"],
+  "required": ["type", "repo", "timestamp", "signature"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "ReleasePublished",
+              "AttestationPublished",
+              "BreakingChangeDetected",
+              "HealthCheckFailed",
+              "DependencyVulnFound",
+              "InterfaceUpdated",
+              "PolicyViolation"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": ["version", "commit", "artifacts", "attestations"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": ["KeyRotation", "KeyRevocation"]
+          }
+        }
+      },
+      "then": {
+        "required": ["key"]
+      }
+    }
+  ],
   "properties": {
     "type": {
       "type": "string",
-      "description": "Event envelope type. EMITTED today: ReleasePublished, AttestationPublished (also carries attestation.dispute events), PolicyViolation. RESERVED / PLANNED (declared in the schema but NOT yet emitted by any tool — no code produces them): BreakingChangeDetected, HealthCheckFailed, DependencyVulnFound, InterfaceUpdated. The reserved values are kept so the schema is forward-stable, but the live ledger contains only the emitted types.",
+      "description": "Event envelope type. EMITTED today: ReleasePublished, AttestationPublished (also carries attestation.dispute events), PolicyViolation. RESERVED / PLANNED (declared in the schema but NOT yet emitted by any tool — no code produces them): BreakingChangeDetected, HealthCheckFailed, DependencyVulnFound, InterfaceUpdated. KeyRotation/KeyRevocation are the key-lifecycle events (big-swing #8): they carry a `key` object instead of version/commit/artifacts. The reserved values are kept so the schema is forward-stable, but the live ledger contains only the emitted types.",
       "enum": [
         "ReleasePublished",
         "AttestationPublished",
@@ -16,7 +50,9 @@
         "HealthCheckFailed",
         "DependencyVulnFound",
         "InterfaceUpdated",
-        "PolicyViolation"
+        "PolicyViolation",
+        "KeyRotation",
+        "KeyRevocation"
       ]
     },
     "repo": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$" },
@@ -33,6 +69,7 @@
       "items": { "$ref": "#/$defs/attestation" },
       "default": []
     },
+    "key": { "$ref": "#/$defs/keyLifecycle" },
     "notes": { "type": "string", "maxLength": 2000 },
     "signature": {
       "type": "object",
@@ -65,6 +102,21 @@
         "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute"] },
         "uri": { "type": "string", "minLength": 1, "maxLength": 600 },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional digest of the referenced artifact (e.g. SBOM bytes). When present, verifiers MUST bind trust to this digest (D6). Old events may omit it (grandfathered)." }
+      }
+    },
+    "keyLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": { "type": "string", "enum": ["rotate", "revoke"] },
+        "retiringKeyId": { "type": "string" },
+        "newKeyId": { "type": "string" },
+        "newPublicKey": { "type": "string", "minLength": 32, "maxLength": 600 },
+        "effectiveAt": { "type": "string", "format": "date-time" },
+        "revokedKeyId": { "type": "string" },
+        "reason": { "type": "string", "enum": ["rotation", "compromise", "retirement"] },
+        "invalidAfter": { "type": "string", "format": "date-time" }
       }
     }
   }

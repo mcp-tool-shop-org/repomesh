@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.ja.md">日本語</a> | <a href="README.pt-BR.md">Português (BR)</a> | <a href="README.zh.md">中文</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.md">English</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -15,22 +15,22 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Red de repositorios sintrópica — libro mayor de solo adición, manifiestos de nodo y puntuación para la coordinación de repositorios distribuidos.
+Red de repositorios sintrópicos: un registro de solo anexión, manifiestos de nodos y puntuación para la coordinación distribuida de repositorios.
 
 ## ¿Qué es esto?
 
 RepoMesh convierte una colección de repositorios en una red cooperativa. Cada repositorio es un **nodo** con:
 
 - Un **manifiesto** (`node.json`) que declara lo que proporciona y consume
-- **Eventos firmados** difundidos a un libro mayor de solo adición
+- **Eventos firmados** transmitidos a un registro de solo anexión
 - Un **registro** que indexa todos los nodos y capacidades
-- Un **perfil** que define lo que "terminado" significa para la confianza
+- Un **perfil** que define qué significa "completado" para la confianza
 
-La red impone tres invariantes:
+La red aplica tres invariantes:
 
-1. **Salidas deterministas** — mismas entradas, mismos artefactos
-2. **Proveniencia verificable** — cada lanzamiento está firmado y atestiguado
-3. **Contratos componibles** — las interfaces tienen versiones y son legibles por máquina
+1. **Resultados deterministas:** las mismas entradas, los mismos artefactos
+2. **Procedencia verificable:** cada versión está firmada y certificada
+3. **Contratos componibles:** las interfaces tienen versiones y son legibles por máquina
 
 ## Inicio rápido (1 comando + 2 secretos)
 
@@ -40,54 +40,54 @@ npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source
 npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source --json
 ```
 
-Esto genera todo lo que necesita:
-- `node.json` — el manifiesto de su nodo
-- `repomesh.profile.json` — su perfil elegido
-- `.github/workflows/repomesh-broadcast.yml` — flujo de trabajo de difusión de lanzamientos
+Esto genera todo lo que necesitas:
+- `node.json`: tu manifiesto de nodo
+- `repomesh.profile.json`: tu perfil elegido
+- `.github/workflows/repomesh-broadcast.yml`: flujo de trabajo de transmisión de versiones
 - Par de claves de firma Ed25519 (la clave privada permanece local)
 
-Luego, añada dos secretos a su repositorio:
-1. `REPOMESH_SIGNING_KEY` — su clave privada PEM (impresa por init)
-2. `REPOMESH_LEDGER_TOKEN` — Token de Acceso Personal (PAT) de GitHub con `contents:write` + `pull-requests:write` en este repositorio
+Luego, agrega dos secretos a tu repositorio:
+1. `REPOMESH_SIGNING_KEY`: tu clave privada en formato PEM (impresa por el comando init)
+2. `REPOMESH_LEDGER_TOKEN`: token PAT de GitHub con permisos `contents:write` + `pull-requests:write` en este repositorio
 
-Cree un lanzamiento. La confianza converge automáticamente.
+Publica una versión. La confianza converge automáticamente.
 
-### Opciones de la CLI
+### Indicadores de la CLI
 
-Todos los comandos aceptan: `--quiet`, `--verbose`, `--debug`, `--no-color`. El comando `init` también admite `--json` para una salida legible por máquina.
+Todos los comandos aceptan: `--quiet`, `--verbose`, `--debug`, `--no-color`. El comando `init` también admite `--json` para obtener resultados legibles por máquina.
 
-Los completados de shell están disponibles:
+Las finalizaciones de shell están disponibles:
 
 ```bash
 repomesh completion bash >> ~/.bashrc
 repomesh completion zsh >> ~/.zshrc
 ```
 
-### Sobrescrituras de entorno
+### Anulaciones de entorno
 
 | Variable | Propósito |
 |----------|---------|
-| `REPOMESH_LEDGER_URL` | Sobrescribir endpoint del libro mayor |
-| `REPOMESH_MANIFESTS_URL` | Sobrescribir endpoint de manifiestos |
-| `REPOMESH_FETCH_TIMEOUT` | Tiempo de espera de obtención en ms |
+| `REPOMESH_LEDGER_URL` | Anular el punto final del registro |
+| `REPOMESH_MANIFESTS_URL` | Anular el punto final de los manifiestos |
+| `REPOMESH_FETCH_TIMEOUT` | Tiempo de espera de la solicitud en milisegundos |
 
 ### Perfiles
 
-| Perfil | Evidencia | Verificaciones de garantía | Cuándo usar |
+| Perfil | Evidencia | Comprobaciones de garantía | Cuándo usar |
 |---------|----------|-----------------|----------|
 | `baseline` | Opcional | Ninguno requerido | Herramientas internas, experimentos |
-| `open-source` | SBOM + proveniencia | Auditoría de licencia + escaneo de seguridad | Predeterminado para software de código abierto (OSS) |
-| `regulated` | SBOM + proveniencia | Licencia + seguridad + reproducibilidad | Crítico para el cumplimiento normativo |
+| `open-source` | SBOM + procedencia | Auditoría de licencias + análisis de seguridad | Predeterminado para OSS |
+| `regulated` | SBOM + procedencia | Licencia + seguridad + reproducibilidad | Crítico para el cumplimiento normativo |
 
-### Verificar confianza
+### Verificar la confianza
 
 ```bash
 node registry/scripts/verify-trust.mjs --repo your-org/your-repo
 ```
 
-Muestra la puntuación de integridad, la puntuación de garantía y recomendaciones conscientes del perfil.
+Muestra la puntuación de integridad, la puntuación de garantía y las recomendaciones específicas del perfil.
 
-### Sobrescrituras
+### Anulaciones
 
 Personalización por repositorio sin bifurcar los verificadores:
 
@@ -132,9 +132,9 @@ repomesh/
 
 ## Unión manual (5 minutos)
 
-### 1. Cree el manifiesto de su nodo
+### 1. Crea tu manifiesto de nodo
 
-Añada `node.json` a la raíz de su repositorio:
+Agrega `node.json` a la raíz de tu repositorio:
 
 ```json
 {
@@ -158,70 +158,92 @@ Añada `node.json` a la raíz de su repositorio:
 }
 ```
 
-### 2. Genere un par de claves de firma
+### 2. Genera un par de claves de firma
 
 ```bash
 openssl genpkey -algorithm ED25519 -out repomesh-private.pem
 openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
 ```
 
-Coloque la clave pública PEM en la entrada de mantenedores de su `node.json`.
-Almacene la clave privada como un secreto del repositorio de GitHub (`REPOMESH_SIGNING_KEY`).
+Coloca la clave pública en formato PEM en la entrada `maintainers` de tu `node.json`.
+Guarda la clave privada como un secreto del repositorio de GitHub (`REPOMESH_SIGNING_KEY`).
 
-### 3. Regístrese en la red
+### 3. Regístrate en la red
 
-Abra una Pull Request (PR) a este repositorio añadiendo el manifiesto de su nodo:
+Abre una solicitud de extracción a este repositorio agregando tu manifiesto de nodo:
 
 ```
 ledger/nodes/<your-org>/<your-repo>/node.json
 ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
 ```
 
-### 4. Añada el flujo de trabajo de difusión
+### 4. Agrega el flujo de trabajo de transmisión
 
-Copie `templates/repomesh-broadcast.yml` en la carpeta `.github/workflows/` de su repositorio.
-Establezca el secreto `REPOMESH_LEDGER_TOKEN` (un PAT de grano fino con permisos `contents:write` + `pull-requests:write` en este repositorio).
+Copia `templates/repomesh-broadcast.yml` al directorio `.github/workflows/` de tu repositorio.
+Establece el secreto `REPOMESH_LEDGER_TOKEN` (un token PAT con permisos específicos para `contents:write` + `pull-requests:write` en este repositorio).
 
-Ahora, cada lanzamiento difundirá automáticamente un evento `ReleasePublished` firmado al libro mayor.
+Cada versión ahora transmitirá automáticamente un evento firmado `ReleasePublished` al registro.
 
 ## Reglas del libro mayor
 
-- **Solo adición** — las líneas existentes son inmutables
-- **Válido según esquema** — cada evento se valida contra `schemas/event.schema.json`
-- **Firma válida** — cada evento está firmado por un mantenedor de nodo registrado
-- **Único** — no hay entradas duplicadas de `(repositorio, versión, tipo)`
-- **Marca de tiempo sensata** — no más de 1 hora en el futuro o 1 año en el pasado
+- **Solo anexión:** las líneas existentes son inmutables
+- **Validez del esquema:** cada evento se valida según `schemas/event.schema.json`
+- **Validez de la firma:** cada evento está firmado por un mantenedor registrado del nodo
+- **Único:** no hay entradas duplicadas `(repo, versión, tipo)`
+- **Marca de tiempo correcta:** no más de 1 hora en el futuro ni 1 año en el pasado
 
-## Tipos de evento
+## Tipos de eventos
 
-El libro mayor actualmente emite los tipos de eventos **en vivo** que se indican a continuación. El resto están **reservados / planificados** — el esquema los acepta, pero ningún nodo los emite todavía. Los listamos para que la hoja de ruta sea visible sin implicar una cobertura que no existe (honestidad directa para un producto de confianza).
+El registro actualmente emite los tipos de eventos **activos** que se muestran a continuación. El resto son **reservados/planificados**: el esquema los acepta, pero ningún nodo los emite todavía. Los enumeramos para que la hoja de ruta sea visible sin implicar una cobertura que no existe (honestidad en la puerta de entrada para un producto de confianza).
 
-**En vivo (emitidos hoy):**
+**Activos (emitidos hoy):**
 
 | Tipo | Cuándo |
 |------|------|
 | `ReleasePublished` | Se publica una nueva versión |
-| `AttestationPublished` | Un atestador verifica una publicación |
-| `ledger.anchor` | El nodo ancla sella una partición (raíz de Merkle + memo de XRPL) |
-| `attestation.dispute` | Un nodo de confianza impugna una atestación (degrada el veredicto) |
+| `AttestationPublished` | Un certificador verifica una versión |
+| `ledger.anchor` | El nodo ancla sella una partición (raíz de Merkle + memorándum XRPL) |
+| `attestation.dispute` | Un nodo confiable impugna una certificación (degrada el veredicto) |
+| `KeyRotation` | Una clave de mantenedor se rota a un sucesor (prospectivo: las firmas anteriores siguen siendo válidas). |
+| `KeyRevocation` | Una clave de mantenedor se revoca (compromiso = invalidez retroactiva, RFC 5280). |
 
-**Reservados / planificados (aún no emitidos):**
+**Reservados/planificados (aún no emitidos):**
 
 | Tipo | Significado previsto |
 |------|------------------|
-| `BreakingChangeDetected` | Se introduce un cambio rupturista |
+| `BreakingChangeDetected` | Se introduce un cambio incompatible |
 | `HealthCheckFailed` | Un nodo falla sus propias comprobaciones de estado |
 | `DependencyVulnFound` | Se encuentra una vulnerabilidad en las dependencias |
-| `InterfaceUpdated` | Cambia un esquema de interfaz |
+| `InterfaceUpdated` | Cambia el esquema de la interfaz |
 | `PolicyViolation` | Se viola una política de red |
 
-## Tipos de nodo
+## Rotación y revocación de claves
+
+Las claves de mantenedor tienen un ciclo de vida. Una clave puede ser **rotada** a un sucesor o **revocada**, y la verificación es **consciente del tiempo**: una firma solo se considera válida si la clave era válida en el momento de la firma, que es el mismo reloj de confianza que ya utiliza el libro mayor (el momento de cierre del ancla XRPL).
+
+```bash
+# Rotate to a successor key (the retired key's past signatures stay valid)
+npx @mcptoolshop/repomesh key rotate --repo your-org/your-repo \
+  --retiring mike-2026-01 --new-key mike-2026-06 --public-key new.pem
+
+# Revoke a compromised key (signatures at/after the invalidity date are rejected)
+npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
+  --key mike-2026-01 --reason compromise --invalid-after 2026-06-18T00:00:00Z
+```
+
+- La **rotación rutinaria** es *prospectiva*: las firmas anteriores de la clave retirada siguen siendo válidas; simplemente deja de firmar nuevas versiones.
+- El **compromiso** es *retroactivo* (RFC 5280 §5.3.2): cualquier firma cuyo momento de anclaje comprobable sea en o después de la fecha de invalidez se rechaza, y una firma que no pueda demostrarse que sea anterior a esa fecha también se rechaza.
+- Una clave que **no** tenga campos de ciclo de vida se considera heredada (siempre válida), por lo que los nodos existentes siguen funcionando sin cambios.
+- Las revocaciones se firman como eventos `KeyRevocation`; un nodo de una sola clave cuyo único clave ha sido comprometido se recupera mediante un nodo de **gobernanza** (`trustedPolicy`) que firma la revocación. Los nodos críticos para la confianza deben registrar **≥2 claves** (TUF §6.1).
+- Incluso frente a un archivo `node.json` manipulado, una revocación se vuelve a aplicar a partir de los eventos firmados y anclados en XRPL; un manifiesto despojado no puede revivir una clave revocada. Consulte el [modelo de amenazas](docs/threat-model.md) para conocer el límite (verificar con respecto al libro mayor canónico; utilizar `--anchored` para las comprobaciones sensibles a la revocación).
+
+## Tipos de nodos
 
 | Tipo | Rol |
 |------|------|
 | `registry` | Indexa nodos y capacidades |
-| `attestor` | Verifica afirmaciones (compilaciones, cumplimiento) |
-| `policy` | Hace cumplir las reglas (puntuación, filtrado) |
+| `attestor` | Verifica las afirmaciones (compilaciones, cumplimiento) |
+| `policy` | Aplica reglas (puntuación, control) |
 | `oracle` | Proporciona datos externos |
 | `compute` | Realiza el trabajo (transformaciones, compilaciones) |
 | `settlement` | Finaliza el estado |
@@ -230,35 +252,35 @@ El libro mayor actualmente emite los tipos de eventos **en vivo** que se indican
 
 ## Verificación pública
 
-Cualquiera puede verificar una publicación con un solo comando — **no es necesario clonar**, la CLI obtiene el libro mayor público por usted:
+Cualquiera puede verificar una versión con un comando: no se requiere clonar, la CLI obtiene el libro mayor público por ti:
 
 ```bash
 npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-Esto comprueba:
-1. El evento `ReleasePublished` existe y está firmado (Ed25519) por una clave registrada en el `node.json` **de ese propio repositorio** — una clave registrada en un repositorio diferente no puede validarlo.
-2. El perfil de confianza del repositorio se cumple: toda atestación requerida por el perfil (SBOM, procedencia, licencia, seguridad) está presente, firmada por un atestador de confianza, y su último resultado es `pass`, con al menos un atestador **independiente**. Una publicación con solo una autofirma y sin atestaciones independientes informa `UNVERIFIED`, nunca `PASS`.
-3. Con `--anchored`: la raíz de Merkle de la partición se vuelve a calcular y se compara con el manifiesto, y — cuando la red es accesible — la transacción XRPL en cadena se obtiene y se comprueba (`validated` + `tesSUCCESS`, la cuenta firmante está en la lista de permitidos de anclas de confianza, y el memo en cadena se vincula a la raíz local/hash del manifiesto/recuento). Sin conexión, informa `XRPL NOT verified` en lugar de una transacción falsa; el `--anchored` estricto entonces falla (use `--anchored-or-local` para aceptar un manifiesto verificado localmente sin la prueba en cadena).
+Esto verifica:
+1. Que el evento `ReleasePublished` exista y esté firmado (Ed25519) con una clave registrada en el **repositorio específico** (`node.json`) — una clave registrada en un repositorio diferente no puede validarlo.
+2. Que se cumpla el perfil de confianza del repositorio: que cada atestación requerida por el perfil (SBOM, procedencia, licencia, seguridad) esté presente, firmada por un atestador confiable y que su resultado más reciente sea `pass`, con al menos un atestador **independiente**. Una versión con solo una autofirma y sin atestaciones independientes informa `UNVERIFIED`, nunca `PASS`.
+3. Con `--anchored`: se recalcula la raíz Merkle de la partición y se compara con el manifiesto, y —cuando la red es accesible— se obtiene la transacción XRPL en cadena y se afirma (`validated` + `tesSUCCESS`, la cuenta de firma está en la lista de permisos del ancla de confianza y el memo en cadena se vincula a la raíz/hash/recuento local). Fuera de línea, informa `XRPL NOT verified` en lugar de una transacción falsa; `--anchored` estricto falla entonces (use `--anchored-or-local` para aceptar un manifiesto verificado localmente sin la prueba en cadena).
 
-Para las puertas de CI, elija un formato de salida con `--format <text|json|sarif|markdown>` (`--json` es un alias para `--format json`):
+Para las puertas de enlace de CI, elija un formato de salida con `--format <text|json|sarif|markdown>` (`--json` es un alias para `--format json`):
 
 ```bash
 npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --format json
 ```
 
-El **código de salida** se deriva del veredicto de tres estados, por lo que un paso de CI puede basar su puerta en él directamente:
+El **código de salida** se deriva del veredicto triestatal, por lo que un paso de CI puede usarlo directamente:
 
 | Salida | Veredicto | Significado |
 |------|---------|---------|
 | `0` | PASS | Auténtico y asegurado (o UNVERIFIED cuando se relaja con `--fail-on=fail`). |
-| `1` | FAIL | Fallo grave — firma falsificada/de repositorio incorrecto, atestador no permitido, o una comprobación requerida falló. |
-| `3` | UNVERIFIED | Suave — aún no anclado, sin testigo independiente, o falta una comprobación requerida. |
+| `1` | FAIL | Fallo grave: firma falsificada/de repositorio incorrecto, atestador no incluido en la lista de permisos o una comprobación requerida falló. |
+| `3` | UNVERIFIED | Suave: aún no anclado, sin testigo independiente o falta una comprobación requerida. |
 | `2` | — | Error de uso o fallo interno. |
 
-`--fail-on <fail\|unverified>` establece la estrictitud. El valor predeterminado `unverified` falla tanto en FAIL como en UNVERIFIED; `--fail-on=fail` permite que UNVERIFIED pase (salida 0, con una advertencia) para la adopción en modo de advertencia.
+`--fail-on <fail|unverified>` establece el nivel de rigor. El valor predeterminado `unverified` falla tanto en FAIL como en UNVERIFIED; `--fail-on=fail` permite que UNVERIFIED pase (salida 0, con una advertencia) para la adopción en modo de advertencia.
 
-Verifique un lote completo en una sola carga del libro mayor con `verify-all`, y verifique sin conexión contra una clonación local con `--local`:
+Verifique un lote completo en una sola carga del libro mayor con `verify-all`, y verifique fuera de línea contra un clon local con `--local`:
 
 ```bash
 # Every release in the trust index, warn-mode
@@ -268,7 +290,7 @@ npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
 npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local ./repomesh
 ```
 
-**Intégrelo en una puerta de CI** con la acción compuesta incluida — consulte [Using the GitHub Action](docs/verification.md#using-the-github-action):
+**Incorpórelo en CI** con la acción compuesta incluida; consulte [Uso de la Acción de GitHub](docs/verification.md#using-the-github-action):
 
 ```yaml
 - uses: mcp-tool-shop-org/repomesh/.github/actions/verify@v1
@@ -278,9 +300,9 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
     anchored: "true"
 ```
 
-Vea [docs/verification.md](docs/verification.md) para la guía completa de verificación, el modelo de amenazas y los conceptos clave.
+Consulte [docs/verification.md](docs/verification.md) para obtener la guía completa de verificación, el modelo de amenazas y los conceptos clave.
 
-### Insignias de Confianza
+### Insignias de confianza
 
 Los repositorios pueden incrustar insignias de confianza del registro:
 
@@ -290,7 +312,7 @@ Los repositorios pueden incrustar insignias de confianza del registro:
 [![Anchored](https://raw.githubusercontent.com/mcp-tool-shop-org/repomesh/main/registry/badges/mcp-tool-shop-org/shipcheck/anchored.svg)](https://mcp-tool-shop-org.github.io/repomesh/repos/mcp-tool-shop-org/shipcheck/)
 ```
 
-## Confianza y Verificación
+## Confianza y verificación
 
 ### Verificar una versión
 
@@ -300,15 +322,14 @@ npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --ve
 
 ### Atestiguar una versión
 
-> Atestiguar y ejecutar verificadores son tareas del **operador** que actúan sobre un clon de este libro mayor, por lo que
-> se ejecutan desde una copia de trabajo. Verificar una versión no lo hace — use el comando `npx` anterior.
+> Atestiguar y ejecutar verificadores son tareas de **operador** que actúan sobre un clon de este libro mayor, por lo que se ejecutan desde un checkout. La verificación de una versión no lo hace; use el comando `npx` anterior.
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
 node attestor/scripts/attest-release.mjs --scan-new --dry-run  # preview without writing
 ```
 
-Verificaciones: `sbom.present`, `provenance.present`, `signature.chain`
+Comprobaciones: `sbom.present`, `provenance.present`, `signature.chain`
 
 ### Ejecutar verificadores
 
@@ -317,42 +338,38 @@ node verifiers/license/scripts/verify-license.mjs --scan-new
 node verifiers/security/scripts/verify-security.mjs --scan-new
 ```
 
-Los umbrales del verificador de seguridad (máximas CVE, severidades permitidas) se configuran mediante `verifiers/security/config.json`.
+Los umbrales del verificador de seguridad (CVE máximos, severidades permitidas) se configuran a través de `verifiers/security/config.json`.
 
-### Ejecutar verificaciones de políticas
+### Ejecutar comprobaciones de políticas
 
 ```bash
 node policy/scripts/check-policy.mjs
 ```
 
-Verificaciones: monotonía semver, unicidad del hash de artefactos, capacidades requeridas.
+Comprobaciones: monotonicidad semántica, singularidad del hash de artefactos, capacidades requeridas.
 
-## Seguridad y Modelo de Amenazas
+## Seguridad y modelo de amenazas
 
-RepoMesh toca **eventos del libro mayor** (JSON firmado), **manifiestos de nodos** (claves públicas + capacidades), **índices del registro** (puntuaciones de confianza generadas automáticamente) y **XRPL testnet** (transacciones de anclaje). **No** toca el código fuente de los repositorios de miembros, claves privadas, credenciales de usuario o datos de navegación. Las claves de firma privadas nunca abandonan el ejecutor de CI. El acceso a la red se limita a la API de GitHub (creación de PR), XRPL testnet (anclaje) y OSV.dev (consultas de vulnerabilidades). **No se recopila ni envía telemetría** — cero análisis, cero informes de fallos, cero llamadas a casa. Vea [SECURITY.md](SECURITY.md) para obtener el alcance completo, los permisos requeridos y el proceso de reporte de vulnerabilidades.
+RepoMesh interactúa con los **eventos del libro mayor** (JSON firmado), los **manifiestos de nodos** (claves públicas + capacidades), los **índices del registro** (puntuaciones de confianza generadas automáticamente) y la **red de prueba XRPL** (transacciones de anclaje). No interactúa con el código fuente del repositorio de miembros, las claves privadas, las credenciales de usuario ni los datos de navegación. Las claves de firma privadas nunca abandonan el entorno de ejecución de CI. El acceso a la red se limita a la API de GitHub (creación de solicitudes de extracción), la red de prueba XRPL (anclaje) y OSV.dev (búsqueda de vulnerabilidades). **No se recopilan ni envían datos de telemetría**: cero análisis, cero informes de fallos, cero comunicación con el servidor. Consulte [SECURITY.md](SECURITY.md) para conocer el alcance completo, los permisos necesarios y el proceso de notificación de vulnerabilidades, y el [modelo de amenazas](docs/threat-model.md) para conocer el límite del ciclo de vida de la clave (por qué la autenticidad de `node.json` depende de su origen y por qué la verificación sensible a la revocación debe utilizar `--anchored`).
 
 Endurecimiento:
 
-- Las llamadas a procesos secundarios que interpolan datos variables usan `execFileSync` con argumentos de matriz; las llamadas restantes a `execSync` usan cadenas de comando estáticas y constantes — sin vectores de inyección de shell.
-- El JSON del libro mayor y del registro se analiza dentro de `try`/`catch` con errores estructurados numerados por línea; una línea malformada se omite y se expone, nunca bloquea la herramienta con una pila sin procesar.
-- Se previene el recorrido de rutas en todas las operaciones de archivo (resolución + verificación de límites).
-- Análisis seguro contra ReDoS en todo el código (sin expresiones regulares sin límites).
-- Las claves privadas PEM se excluyen mediante `.gitignore`, nunca se imprimen en stdout o registros de CI, y se escriben con permisos de solo propietario (`0600`).
+- Las llamadas a subprocesos que interpolan datos variables utilizan `execFileSync` con argumentos de matriz; las llamadas restantes a `execSync` utilizan cadenas de comandos estáticas y constantes, sin vectores de inyección de shell.
+- El JSON del libro mayor y el registro se analiza dentro de bloques `try`/`catch` con errores estructurados y numerados por línea; una línea mal formada se omite y se muestra, nunca provocando que la herramienta falle con un rastreo de pila sin procesar.
+- Se evita el recorrido de rutas en todas las operaciones de archivo (resolución + comprobación de límites).
+- Análisis seguro contra ReDoS en todo momento (sin expresiones regulares ilimitadas).
+- Las claves privadas PEM se excluyen a través de `.gitignore`, nunca se imprimen en stdout o en los registros de CI y se escriben con permisos de solo propietario (`0600`).
 
 ## Pruebas
 
-La suite completa de `node --test` cubre firmas Ed25519, validación de esquemas, integridad del árbol de Merkle
-(v1 + RFC-6962 v2), invariantes de solo adición, prevención de recorrido de rutas, verificación
-de anclaje, la lista de permitidos de atestadores confiables y validación de entrada en las capas de CLI, libro mayor,
-anclaje, verificador y herramientas.
+La suite completa `node --test` cubre las firmas Ed25519, la validación de esquemas, la integridad del árbol Merkle (v1 + RFC-6962 v2), las invariantes de solo anexión, la prevención del recorrido de rutas, la verificación del ancla y la lista de permisos del atestador confiable, así como la validación de entrada en todas las capas: CLI, libro mayor, ancla, verificador y herramientas.
 
 ```bash
 # Run every suite and read the exact pass/fail counts from the summary footer:
 node --test $(git ls-files '*.test.mjs')
 ```
 
-El recuento de pruebas crece a medida que se agregan suites — ejecute el comando anterior para obtener el total actual
-en lugar de confiar en un número que queda desactualizado.
+El recuento de pruebas aumenta a medida que se agregan suites; ejecute el comando anterior para obtener el total actual en lugar de confiar en un número que se vuelve obsoleto.
 
 ## Licencia
 
@@ -360,4 +377,4 @@ MIT
 
 ---
 
-Desarrollado por <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>
+Creado por <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>

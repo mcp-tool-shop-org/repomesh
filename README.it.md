@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.ja.md">日本語</a> | <a href="README.pt-BR.md">Português (BR)</a> | <a href="README.zh.md">中文</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.md">English</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -15,16 +15,16 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Rete di repository sintropica: registro ad aggiunta, manifesti dei nodi e punteggio per il coordinamento distribuito dei repository.
+Rete di repository sintropica: registro ad aggiunta esclusiva, manifesti dei nodi e punteggio per il coordinamento distribuito dei repository.
 
 ## Cos'è?
 
 RepoMesh trasforma una raccolta di repository in una rete collaborativa. Ogni repository è un **nodo** con:
 
-- Un **manifesto** (`node.json`) che dichiara cosa fornisce e consuma
-- **Eventi firmati** trasmessi a un registro ad aggiunta
+- Un **manifesto** (`node.json`) che dichiara cosa fornisce e utilizza
+- **Eventi firmati** trasmessi a un registro ad aggiunta esclusiva
 - Un **registro** che indicizza tutti i nodi e le funzionalità
-- Un **profilo** che definisce cosa significa "completato" per la fiducia
+- Un **profilo** che definisce cosa significa "completato" in termini di affidabilità
 
 La rete applica tre invarianti:
 
@@ -50,13 +50,13 @@ Quindi, aggiungi due segreti al tuo repository:
 1. `REPOMESH_SIGNING_KEY`: la tua chiave privata in formato PEM (stampata durante l'inizializzazione)
 2. `REPOMESH_LEDGER_TOKEN`: token GitHub PAT con i permessi `contents:write` e `pull-requests:write` su questo repository
 
-Pubblica una versione. La fiducia converge automaticamente.
+Pubblica una versione. L'affidabilità converge automaticamente.
 
 ### Flag della CLI
 
 Tutti i comandi accettano: `--quiet`, `--verbose`, `--debug`, `--no-color`. Il comando `init` supporta anche `--json` per un output leggibile dalle macchine.
 
-Sono disponibili completamenti della shell:
+Sono disponibili il completamento automatico della shell:
 
 ```bash
 repomesh completion bash >> ~/.bashrc
@@ -79,7 +79,7 @@ repomesh completion zsh >> ~/.zshrc
 | `open-source` | SBOM + provenienza | Audit della licenza + scansione di sicurezza | Predefinito per OSS |
 | `regulated` | SBOM + provenienza | Licenza + sicurezza + riproducibilità | Critico per la conformità |
 
-### Verifica della fiducia
+### Verifica l'affidabilità
 
 ```bash
 node registry/scripts/verify-trust.mjs --repo your-org/your-repo
@@ -89,7 +89,7 @@ Mostra il punteggio di integrità, il punteggio di garanzia e le raccomandazioni
 
 ### Override
 
-Personalizzazione per repository senza la necessità di creare verificatori:
+Personalizzazione per repository senza la necessità di creare fork dei verificatori:
 
 ```json
 // repomesh.overrides.json
@@ -177,7 +177,7 @@ ledger/nodes/<your-org>/<your-repo>/node.json
 ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
 ```
 
-### 4. Aggiungi il flusso di lavoro di trasmissione
+### 4. Aggiungi il flusso di lavoro per la trasmissione
 
 Copia `templates/repomesh-broadcast.yml` nella directory `.github/workflows/` del tuo repository.
 Imposta il segreto `REPOMESH_LEDGER_TOKEN` (un token PAT con permessi granulari, contenente `contents:write` e `pull-requests:write` su questo repository).
@@ -186,15 +186,15 @@ Ogni versione ora trasmetterà automaticamente un evento firmato `ReleasePublish
 
 ## Regole del registro
 
-- **Solo aggiunta:** le righe esistenti sono immutabili
+- **Ad aggiunta esclusiva:** le righe esistenti sono immutabili
 - **Valida rispetto allo schema:** ogni evento è valido rispetto a `schemas/event.schema.json`
-- **Firma valida:** ogni evento è firmato da un manutentore del nodo registrato
+- **Firma valida:** ogni evento è firmato da un manutentore registrato del nodo
 - **Unico:** non ci sono voci duplicate `(repository, versione, tipo)`
 - **Timestamp corretto:** non più di 1 ora nel futuro o 1 anno nel passato
 
-## Tipi di evento
+## Tipi di eventi
 
-Il registro attualmente emette i tipi di eventi "live" elencati di seguito. Il resto sono "riservati / pianificati": lo schema li accetta, ma nessun nodo li emette ancora. Li elenchiamo in modo che la roadmap sia visibile senza implicare una copertura che non esiste (onestà per un prodotto basato sulla fiducia).
+Il registro emette attualmente i tipi di eventi "live" elencati di seguito. Il resto sono "riservati/pianificati": lo schema li accetta, ma nessun nodo li emette ancora. Li elenchiamo in modo che la roadmap sia visibile senza implicare una copertura che non esiste (onestà trasparente per un prodotto basato sull'affidabilità).
 
 **Live (emessi oggi):**
 
@@ -204,8 +204,10 @@ Il registro attualmente emette i tipi di eventi "live" elencati di seguito. Il r
 | `AttestationPublished` | Un attestatore verifica una versione |
 | `ledger.anchor` | Il nodo di ancoraggio sigilla una partizione (radice Merkle + memo XRPL) |
 | `attestation.dispute` | Un nodo affidabile contesta un'attestazione (abbassa il verdetto) |
+| `KeyRotation` | Una chiave del manutentore viene ruotata su un successore (prospettico: le firme passate rimangono valide) |
+| `KeyRevocation` | Una chiave del manutentore viene revocata (compromissione = invalidità retroattiva, RFC 5280) |
 
-**Riservati / pianificati (non ancora emessi):**
+**Riservati/pianificati (non ancora emessi):**
 
 | Tipo | Significato previsto |
 |------|------------------|
@@ -215,31 +217,51 @@ Il registro attualmente emette i tipi di eventi "live" elencati di seguito. Il r
 | `InterfaceUpdated` | Lo schema dell'interfaccia cambia |
 | `PolicyViolation` | Una politica di rete viene violata |
 
+## Rotazione e revoca delle chiavi
+
+Le chiavi del manutentore hanno un ciclo di vita. Una chiave può essere **ruotata** su un successore o **revocata**, e la verifica è **sensibile al tempo**: una firma viene considerata valida solo se la chiave era valida nel momento della firma, ovvero l'ora di chiusura dell'ancoraggio XRPL, lo stesso orologio affidabile che il registro utilizza già.
+
+```bash
+# Rotate to a successor key (the retired key's past signatures stay valid)
+npx @mcptoolshop/repomesh key rotate --repo your-org/your-repo \
+  --retiring mike-2026-01 --new-key mike-2026-06 --public-key new.pem
+
+# Revoke a compromised key (signatures at/after the invalidity date are rejected)
+npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
+  --key mike-2026-01 --reason compromise --invalid-after 2026-06-18T00:00:00Z
+```
+
+- La **rotazione periodica** è *prospettica*: le firme precedenti della chiave ritirata rimangono valide; semplicemente smette di firmare nuove versioni.
+- Il **compromesso** è *retroattivo* (RFC 5280 §5.3.2): qualsiasi firma la cui data di ancoraggio verificabile sia uguale o successiva alla data di invalidità viene rifiutata e una firma che non può essere dimostrata come antecedente a tale data viene anch'essa rifiutata.
+- Una chiave senza campi relativi al ciclo di vita è considerata "ereditata" (sempre valida), quindi i nodi esistenti verificano che rimanga invariata.
+- Le revoche sono eventi `KeyRevocation` firmati; un nodo a chiave singola la cui unica chiave è compromessa viene ripristinato da un nodo di **governance** (`trustedPolicy`) che firma la revoca. I nodi critici per l'affidabilità devono registrare **≥2 chiavi** (TUF §6.1).
+- Anche in caso di manomissione del file `node.json`, una revoca viene reimposta dagli eventi firmati e ancorati a XRPL: un manifesto modificato non può ripristinare una chiave revocata. Consultare il [modello delle minacce](docs/threat-model.md) per i limiti (verificare rispetto al registro canonico; utilizzare `--anchored` per i controlli sensibili alla revoca).
+
 ## Tipi di nodo
 
 | Tipo | Ruolo |
 |------|------|
 | `registry` | Indicizza nodi e funzionalità |
 | `attestor` | Verifica le affermazioni (build, conformità) |
-| `policy` | Applica le regole (punteggio, controllo) |
+| `policy` | Applica le regole (valutazione, controllo) |
 | `oracle` | Fornisce dati esterni |
-| `compute` | Svolge il lavoro (trasformazioni, build) |
+| `compute` | Esegue operazioni (trasformazioni, build) |
 | `settlement` | Finalizza lo stato |
 | `governance` | Prende decisioni |
 | `identity` | Emette/verifica le credenziali |
 
 ## Verifica pubblica
 
-Chiunque può verificare una versione con un solo comando: non è necessario clonare, la CLI recupera il registro pubblico per te:
+Chiunque può verificare una versione con un singolo comando: **non è richiesta alcuna clonazione**, la CLI recupera il registro pubblico per l'utente:
 
 ```bash
 npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-Questo controllo verifica:
-1. Se l'evento `ReleasePublished` esiste ed è firmato (Ed25519) con una chiave registrata per il **repository specifico** nel file `node.json`. Una chiave registrata per un repository diverso non può validarlo.
-2. Se il profilo di fiducia del repository soddisfa i requisiti: tutte le attestazioni richieste dal profilo (SBOM, provenienza, licenza, sicurezza) sono presenti, firmate da un attestatore affidabile e l'ultimo risultato è `pass`, con almeno un attestatore **indipendente**. Un rilascio con solo una firma interna e senza attestazioni indipendenti segnala `UNVERIFIED`, mai `PASS`.
-3. Con `--anchored`: la radice Merkle della partizione viene ricalcolata e confrontata con il manifest, e — quando la rete è raggiungibile — la transazione XRPL on-chain viene recuperata e verificata (`validated` + `tesSUCCESS`, l'account di firma è presente nella lista consentita degli ancoraggi affidabili e il memo on-chain si riferisce alla radice/hash del manifest locale). In modalità offline, segnala `XRPL NOT verified` anziché una transazione fittizia; con `--anchored` viene rilevato un errore (utilizzare `--anchored-or-local` per accettare un manifest verificato localmente senza la prova on-chain).
+Questo controlla:
+1. L'evento `ReleasePublished` esiste ed è firmato (Ed25519) da una chiave registrata nel file `node.json` **del repository stesso**: una chiave registrata in un repository diverso non può convalidarlo.
+2. Il profilo di fiducia del repository è soddisfatto: ogni attestazione richiesta dal profilo (SBOM, provenienza, licenza, sicurezza) è presente, firmata da un attestatore affidabile e il suo risultato più recente è `pass`, con almeno un attestatore **indipendente**. Una versione con solo una firma autonoma e senza attestazioni indipendenti segnala `UNVERIFIED`, mai `PASS`.
+3. Con `--anchored`: la radice di Merkle della partizione viene ricalcolata e confrontata con il manifesto e, quando la rete è raggiungibile, la transazione XRPL on-chain viene recuperata e verificata (`validated` + `tesSUCCESS`, l'account firmatario è presente nella lista consentita degli ancoraggi affidabili e la nota on-chain si riferisce alla radice/hash del manifesto locale/conteggio). In modalità offline, segnala `XRPL NOT verified` anziché una transazione falsa; con `--anchored` viene quindi rilevato un errore (utilizzare `--anchored-or-local` per accettare un manifesto verificato localmente senza la prova on-chain).
 
 Per i controlli CI, scegliere un formato di output con `--format <text|json|sarif|markdown>` (`--json` è un alias per `--format json`):
 
@@ -247,18 +269,18 @@ Per i controlli CI, scegliere un formato di output con `--format <text|json|sari
 npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --format json
 ```
 
-Il **codice di uscita** deriva dal risultato a tre stati, quindi una fase CI può basarsi su questo direttamente:
+Il **codice di uscita** deriva dal verdetto a tre stati, quindi un passaggio CI può basarsi direttamente su questo:
 
-| Uscita | Risultato | Significato |
+| Uscita | Verdetto | Significato |
 |------|---------|---------|
 | `0` | PASS | Autentico e affidabile (o UNVERIFIED quando allentato con `--fail-on=fail`). |
-| `1` | FAIL | Errore grave: firma contraffatta/di un repository errato, attestatore non presente nella lista consentita o un controllo richiesto non è stato superato. |
-| `3` | UNVERIFIED | Minore: non ancora ancorato, nessun testimone indipendente o un controllo richiesto mancante. |
-| `2` | — | Errore di utilizzo o crash interno. |
+| `1` | FAIL | Errore grave: firma contraffatta/proveniente da un repository errato, attestatore non presente nella lista consentita o fallimento di un controllo obbligatorio. |
+| `3` | UNVERIFIED | Leggero: non ancora ancorato, nessuna testimonianza indipendente o mancava un controllo obbligatorio. |
+| `2` | — | Errore di utilizzo o arresto anomalo interno. |
 
-`--fail-on <fail\|unverified>` imposta il livello di rigore. Il valore predefinito `unverified` causa l'errore sia in caso di FAIL che di UNVERIFIED; `--fail-on=fail` consente a UNVERIFIED di passare (uscita 0, con un avviso) per l'adozione in modalità di avviso.
+`--fail-on <fail|unverified>` imposta il livello di rigore. Il valore predefinito `unverified` causa un errore sia in caso di FAIL che di UNVERIFIED; `--fail-on=fail` consente a UNVERIFIED di passare (codice di uscita 0, con un avviso) per l'adozione in modalità di avviso.
 
-Verificare un intero batch in una singola operazione di caricamento del ledger con `verify-all`, e verificare offline rispetto a una copia locale con `--local`:
+Verificare un intero batch caricando tutti i dati nel registro con `verify-all` e verificare offline rispetto a una copia locale con `--local`:
 
 ```bash
 # Every release in the trust index, warn-mode
@@ -268,7 +290,7 @@ npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
 npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local ./repomesh
 ```
 
-**Integrarlo nel CI** con l'azione composita fornita: vedere [Utilizzo dell'azione GitHub](docs/verification.md#using-the-github-action):
+**Integrarlo in CI** con l'azione composita fornita: consultare [Utilizzo dell'azione di GitHub](docs/verification.md#using-the-github-action):
 
 ```yaml
 - uses: mcp-tool-shop-org/repomesh/.github/actions/verify@v1
@@ -278,7 +300,7 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
     anchored: "true"
 ```
 
-Vedere [docs/verification.md](docs/verification.md) per la guida completa alla verifica, il modello di minaccia e i concetti chiave.
+Consultare [docs/verification.md](docs/verification.md) per la guida completa alla verifica, il modello delle minacce e i concetti chiave.
 
 ### Badge di fiducia
 
@@ -292,15 +314,15 @@ I repository possono incorporare badge di fiducia dal registro:
 
 ## Fiducia e verifica
 
-### Verificare un rilascio
+### Verificare una versione
 
 ```bash
 npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-### Attestare un rilascio
+### Attestare una versione
 
-> L'attestazione e l'esecuzione dei verificatori sono attività dell'**operatore** che agiscono su una copia di questo ledger, quindi vengono eseguite da un checkout. La verifica di un rilascio non lo richiede: utilizzare il comando `npx` sopra indicato.
+> L'attestazione e l'esecuzione dei verificatori sono **attività dell'operatore** che agiscono su una copia di questo registro, quindi vengono eseguite da un checkout. La verifica di una versione non lo richiede: utilizzare il comando `npx` sopra indicato.
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
@@ -326,28 +348,27 @@ node policy/scripts/check-policy.mjs
 
 Controlli: monotonicità semantica, unicità dell'hash degli artefatti, funzionalità richieste.
 
-## Sicurezza e modello di minaccia
+## Sicurezza e modello delle minacce
 
-RepoMesh interagisce con gli **eventi del ledger** (JSON firmato), i **manifest dei nodi** (chiavi pubbliche + funzionalità), gli **indici del registro** (punteggi di fiducia generati automaticamente) e la **XRPL testnet** (transazioni di ancoraggio). Non interagisce con il codice sorgente, le chiavi private, le credenziali utente o i dati di navigazione dei repository membri. Le chiavi di firma private non lasciano mai l'ambiente CI. L'accesso alla rete è limitato all'API GitHub (creazione di PR), alla XRPL testnet (ancoraggio) e a OSV.dev (ricerca di vulnerabilità). **Non vengono raccolti o inviati dati di telemetria**: zero analisi, zero segnalazioni di crash, zero comunicazioni verso casa. Vedere [SECURITY.md](SECURITY.md) per l'ambito completo, le autorizzazioni richieste e il processo di segnalazione delle vulnerabilità.
+RepoMesh interagisce con gli **eventi del registro** (JSON firmati), i **manifesti dei nodi** (chiavi pubbliche + funzionalità), gli **indici del registro** (punteggi di fiducia generati automaticamente) e la **testnet XRPL** (transazioni di ancoraggio). Non interagisce con il codice sorgente dei repository membri, le chiavi private, le credenziali degli utenti o i dati di navigazione. Le chiavi di firma private non lasciano mai l'ambiente di esecuzione CI. L'accesso alla rete è limitato all'API GitHub (creazione di PR), alla testnet XRPL (ancoraggio) e a OSV.dev (ricerca di vulnerabilità). **Non vengono raccolti o inviati dati di telemetria**: zero analisi, zero segnalazioni di arresti anomali, zero comunicazioni verso casa. Consultare [SECURITY.md](SECURITY.md) per l'ambito completo, le autorizzazioni richieste e il processo di segnalazione delle vulnerabilità, nonché il [modello delle minacce](docs/threat-model.md) per i limiti del ciclo di vita della chiave (perché l'autenticità di `node.json` dipende dalla sua origine e perché la verifica sensibile alla revoca dovrebbe utilizzare `--anchored`).
 
 Rafforzamento:
 
-- Le chiamate a processi figlio che interpolano dati variabili utilizzano `execFileSync` con argomenti in formato array; le restanti chiamate `execSync` utilizzano stringhe di comando statiche e costanti, senza vettori di injection del codice.
-- Il JSON del ledger e del registro viene analizzato all'interno di blocchi `try`/`catch` con errori strutturati e numerati per riga; una riga non valida viene saltata e segnalata, senza mai causare il crash dello strumento con uno stacktrace grezzo.
-- La traversia dei percorsi è impedita in tutte le operazioni sui file (risoluzione + controllo dei limiti).
-- Analisi sicura contro ReDoS in tutto il codice (nessuna espressione regolare illimitata).
+- Il codice JSON del registro e dell'elenco viene analizzato all'interno di un blocco `try`/`catch` con messaggi di errore strutturati e numerati; una riga non valida viene saltata e segnalata, senza mai causare l'arresto anomalo dello strumento con uno stacktrace grezzo.
+- La traversia del percorso è impedita in tutte le operazioni sui file (risoluzione + controllo dei limiti).
+- L'analisi è protetta contro attacchi ReDoS (nessuna espressione regolare non limitata).
 - Le chiavi private PEM sono escluse tramite `.gitignore`, non vengono mai stampate su stdout o nei log CI e vengono scritte con permessi di sola lettura per il proprietario (`0600`).
 
 ## Test
 
-La suite completa `node --test` copre le firme Ed25519, la convalida dello schema, l'integrità dell'albero di Merkle (v1 + RFC-6962 v2), gli invarianti append-only, la prevenzione della traversia dei percorsi, la verifica degli ancoraggi, la lista consentita degli attestatori affidabili e la convalida degli input in tutti i livelli: CLI, ledger, ancoraggio, verificatore e strumenti.
+La suite completa `node --test` copre le firme Ed25519, la convalida dello schema, l'integrità dell'albero di Merkle (v1 + RFC-6962 v2), gli invarianti append-only, la prevenzione della traversia del percorso, la verifica degli ancoraggi, la lista di controllo dei trusted attestor e la convalida degli input in tutti i livelli: CLI, registro, ancoraggio, verificatore e strumenti.
 
 ```bash
 # Run every suite and read the exact pass/fail counts from the summary footer:
 node --test $(git ls-files '*.test.mjs')
 ```
 
-Il numero di test aumenta man mano che vengono aggiunte nuove suite; eseguire il comando sopra per ottenere il totale corrente anziché fare affidamento su un numero che potrebbe diventare obsoleto.
+Il numero di test aumenta man mano che vengono aggiunte nuove suite; esegui il comando sopra per ottenere il conteggio corrente anziché affidarti a un numero che potrebbe diventare obsoleto.
 
 ## Licenza
 

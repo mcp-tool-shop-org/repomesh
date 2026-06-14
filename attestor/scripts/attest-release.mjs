@@ -12,6 +12,12 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import {
+  isKeyValidForSignature,
+  resolveTrustedSignatureTimeSync,
+  deriveKeyWindowConstraints,
+  mergeStricterWindow,
+} from "../../verifiers/lib/key-window.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 // REPOMESH_LEDGER_PATH / REPOMESH_NODES_PATH allow tests (and alternate ledgers) to
@@ -65,6 +71,187 @@ function findNodeManifest(repoId) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { console.error("Failed to read " + p + ": " + e.message); return null; }
 }
 
+// --- key-lifecycle trusted-time ctx (contract site 10, §5.2/§5.3) ---
+//
+// This is the OFFLINE ctx the sig-chain check feeds to resolveTrustedSignatureTimeSync. It is built
+// from the already-loaded ledger events + the existing bundled-trusted-anchor (D18) set, so the
+// attestor stays fully offline + synchronous (no XRPL/network — that rung is the CLI's online path).
+//
+//   findEarliestAnchorForLeaf(leafHash) -> { anchor } | null
+//     The EARLIEST bundled-trusted ledger.anchor AttestationPublished whose partition timestamp-range
+//     covers the source event that owns `leafHash`. Partition membership is by timestamp range, the
+//     same model registry/scripts/build-anchors.mjs uses (partitionStart/partitionEnd in the anchor's
+//     notes JSON). Returns the anchor EVENT (an AttestationPublished) for the rung-2 trust gate.
+//   isBundledTrustedAnchor(anchorEvent) -> boolean
+//     true iff the anchor's repo is in verifier.policy.json trustedAttestors (the existing D18
+//     bundled-trusted-signer check). A forged/untrusted anchor's timestamp is NOT a trusted clock.
+
+function loadTrustedAttestors() {
+  try {
+    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    return new Set(Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
+  } catch {
+    return new Set();
+  }
+}
+
+// trustedPolicy nodes (§4.3 governance floor) — a node in this set MAY sign a KeyRevocation for ANY
+// node. Falls back to trustedAttestors when the policy omits a dedicated trustedPolicy list, matching
+// validate-ledger's resolution (`policy.trustedPolicy || policy.trustedAttestors`).
+function loadTrustedPolicy() {
+  try {
+    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const list = Array.isArray(policy?.trustedPolicy)
+      ? policy.trustedPolicy
+      : (Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
+    return new Set(list);
+  } catch {
+    return new Set();
+  }
+}
+
+// Re-verify a key-lifecycle event's ed25519 signature against a candidate PEM (reuses the attestor's
+// existing canonical-hash + crypto.verify machinery — the same operation checkSignatureChain runs).
+function verifyEventSig(ev, pem) {
+  try {
+    const stripped = JSON.parse(JSON.stringify(ev));
+    delete stripped.signature;
+    const computed = crypto.createHash("sha256")
+      .update(JSON.stringify(canonicalize(stripped)), "utf8").digest("hex");
+    if (computed !== ev?.signature?.canonicalHash) return false;
+    return crypto.verify(
+      null,
+      Buffer.from(computed, "hex"),
+      String(pem).trim(),
+      Buffer.from(ev?.signature?.value || "", "base64")
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Build the NEW-shape deriveKeyWindowConstraints opts (contract §13.1). The §4 authorization VALIDITY
+// decision now lives ENTIRELY in the shared module (the order-aware forward pass) — this site supplies
+// only pure I/O, reusing its EXISTING machinery (findNodeManifest + verifyEventSig +
+// resolveTrustedSignatureTimeSync). The old per-site makeVerifyAndAuthorize is DELETED (it was a latent
+// drift surface; its surviving-signer / governance / self-revoke logic is subsumed by §13.1 clauses
+// b+c in the shared module). The opts:
+//   verifySignature(ev) -> { ok, signerKeyId, signerNodeRepo }
+//     Resolve the signer's PEM (same-node via findNodeManifest(ev.repo), or a trustedPolicy node) and
+//     verify the event's ed25519 signature with the site's verifyEventSig. signerNodeRepo is the repo
+//     whose node.json holds the signer key (= ev.repo for same-node, or the policy repo).
+//   getMaintainer(keyId, nodeRepo) -> maintainer|null
+//     The node.json read surface: findNodeManifest(nodeRepo) then match by keyId.
+//   timeOf(ev) -> trustedTime  — the OFFLINE sync resolver against THIS ctx (§5.2).
+//   trustedPolicy: Set<nodeRepo> — the governance floor (§4.3), from verifier.policy.json.
+function makeDeriveOpts(timeCtx, trustedPolicy) {
+  const maintainerIn = (manifest, keyId) =>
+    manifest?.maintainers?.find((m) => m.keyId === keyId) || null;
+
+  const verifySignature = (ev) => {
+    const signerKeyId = ev?.signature?.keyId;
+    if (typeof signerKeyId !== "string" || signerKeyId === "") return { ok: false };
+    // Same-node signer (the event's own repo).
+    const sameNodeSigner = maintainerIn(findNodeManifest(ev?.repo), signerKeyId);
+    if (sameNodeSigner?.publicKey && verifyEventSig(ev, sameNodeSigner.publicKey)) {
+      return { ok: true, signerKeyId, signerNodeRepo: ev.repo };
+    }
+    // trustedPolicy node signer (governance floor, §4.3).
+    for (const policyRepo of trustedPolicy) {
+      const psigner = maintainerIn(findNodeManifest(policyRepo), signerKeyId);
+      if (psigner?.publicKey && verifyEventSig(ev, psigner.publicKey)) {
+        return { ok: true, signerKeyId, signerNodeRepo: policyRepo };
+      }
+    }
+    return { ok: false };
+  };
+
+  return {
+    verifySignature,
+    getMaintainer: (keyId, nodeRepo) => maintainerIn(findNodeManifest(nodeRepo), keyId),
+    timeOf: (ev) => resolveTrustedSignatureTimeSync(ev, timeCtx),
+    trustedPolicy,
+  };
+}
+
+function anchorPartitionRange(anchorEvent) {
+  // The partition range is encoded as a trailing JSON metadata block in the anchor's notes
+  // (emit-anchor-event.mjs). Parse it defensively — a malformed/absent block => no usable range.
+  const notes = typeof anchorEvent?.notes === "string" ? anchorEvent.notes : "";
+  const brace = notes.indexOf("{");
+  if (brace === -1) return null;
+  try {
+    const meta = JSON.parse(notes.slice(brace));
+    const start = meta?.partitionStart ? new Date(meta.partitionStart) : null;
+    const end = meta?.partitionEnd ? new Date(meta.partitionEnd) : null;
+    if (start && Number.isNaN(start.getTime())) return null;
+    if (end && Number.isNaN(end.getTime())) return null;
+    return { start, end };
+  } catch {
+    return null;
+  }
+}
+
+function isLedgerAnchorEvent(ev) {
+  return ev?.type === "AttestationPublished" &&
+    Array.isArray(ev.attestations) &&
+    ev.attestations.some(a => a?.type === "ledger.anchor");
+}
+
+export function buildAttestorTimeCtx(events) {
+  const evs = Array.isArray(events) ? events : [];
+  const trusted = loadTrustedAttestors();
+
+  // Index source events by their leaf (signature.canonicalHash) so we can map a leaf -> its
+  // self-asserted timestamp, which is what a partition-by-time-range anchor covers.
+  const sourceByLeaf = new Map();
+  for (const ev of evs) {
+    const h = ev?.signature?.canonicalHash;
+    if (typeof h === "string" && /^[0-9a-fA-F]{64}$/.test(h) && !sourceByLeaf.has(h)) {
+      sourceByLeaf.set(h, ev);
+    }
+  }
+
+  const anchorEvents = evs.filter(isLedgerAnchorEvent);
+
+  function findEarliestAnchorForLeaf(leafHash) {
+    const source = sourceByLeaf.get(leafHash);
+    if (!source) return null;
+    const sourceTime = source.timestamp ? new Date(source.timestamp) : null;
+    if (!sourceTime || Number.isNaN(sourceTime.getTime())) return null;
+
+    let earliest = null;
+    let earliestTs = null;
+    for (const a of anchorEvents) {
+      const range = anchorPartitionRange(a);
+      if (!range) continue;
+      // The source event must fall inside this anchor's partition range (inclusive).
+      if (range.start && sourceTime < range.start) continue;
+      if (range.end && sourceTime > range.end) continue;
+      const at = a.timestamp ? new Date(a.timestamp) : null;
+      if (!at || Number.isNaN(at.getTime())) continue;
+      if (earliestTs === null || at < earliestTs) {
+        earliest = a;
+        earliestTs = at;
+      }
+    }
+    return earliest ? { anchor: earliest } : null;
+  }
+
+  function isBundledTrustedAnchor(anchorEvent) {
+    return trusted.has(anchorEvent?.repo);
+  }
+
+  // Wave-B2 §12.1 + Wave-B3 §13.1: also expose the loaded events + the NEW-shape derive opts
+  // (verifySignature/getMaintainer/timeOf/trustedPolicy) so checkSignatureChain can derive the
+  // signed-event window floor via the ORDER-AWARE forward pass and merge the stricter window. The opts
+  // close over `ctx` (this object) so timeOf resolves trusted time against the same anchor index.
+  const trustedPolicy = loadTrustedPolicy();
+  const ctx = { findEarliestAnchorForLeaf, isBundledTrustedAnchor, events: evs };
+  ctx.deriveOpts = makeDeriveOpts(ctx, trustedPolicy);
+  return ctx;
+}
+
 // --- attestation checks ---
 
 function checkSbomPresent(releaseEvent) {
@@ -106,7 +293,7 @@ function sigChainFail(code, reason, hint) {
   return { kind: "signature.chain", result: "fail", code, reason, hint };
 }
 
-function checkSignatureChain(releaseEvent) {
+function checkSignatureChain(releaseEvent, ctx) {
   // STGB-ATT-009: presence guard — no signature block at all (or missing keyId) cannot be verified.
   const signature = releaseEvent?.signature;
   if (!signature || typeof signature !== "object") {
@@ -141,6 +328,42 @@ function checkSignatureChain(releaseEvent) {
       "keyid-not-found",
       `No maintainer with keyId="${signature.keyId}" in ${releaseEvent.repo}`,
       "Add this keyId to the repo's node.json maintainers, or re-sign with a key that is already registered."
+    );
+  }
+
+  // Contract site 10 (§5.3): AFTER the maintainer is found by keyId and BEFORE its key material is
+  // used, apply the key-window time gate. Resolve the signature's trusted time OFFLINE (sync resolver,
+  // §5.2) from the ctx built off the already-loaded events + the bundled-trusted-anchor set, then call
+  // the shared predicate. On !valid, fail in the SAME structured shape as the other causes, carrying
+  // dec.reason. A GRANDFATHERED (window-less) maintainer is always valid => byte-identical to today,
+  // even when ctx is absent (the resolver yields a time, the predicate short-circuits on grandfather).
+  //
+  // Wave-B2 §12.1 (node.json-STRIP hardening) + Wave-B3 §13.1 (order-aware authorization): derive the
+  // window from the SIGNED, AUTHORIZED KeyRotation/KeyRevocation events in the ledger and merge the
+  // MOST RESTRICTIVE of node.json + derived BEFORE the predicate. The derive is an ORDER-AWARE single
+  // forward pass: a key-lifecycle event counts only if its signature verifies AND its signer is BOTH
+  // authorized (surviving same-node key OR trustedPolicy node) AND itself currently valid at the
+  // event's trusted time against STRICTLY-EARLIER events — closing residual ③ (a compromise-revoked,
+  // node.json-STRIPPED key cannot authorize a LATER rotation that precedes nothing). A tampered
+  // node.json that strips a revoked key's window fields therefore cannot re-grandfather it. With no
+  // key-lifecycle events (or no ctx) the derived map is EMPTY, so mergeStricterWindow(maintainer,
+  // undefined) returns the maintainer UNCHANGED => grandfather stays byte-identical. The events + the
+  // NEW-shape opts (verifySignature/getMaintainer/timeOf/trustedPolicy) come from the ctx
+  // buildAttestorTimeCtx returns — this site carries NO local authorization logic.
+  const c = ctx || {};
+  const constraint = deriveKeyWindowConstraints(
+    c.events,
+    releaseEvent.repo,
+    c.deriveOpts || {}
+  ).get(signature.keyId);
+  const eff = mergeStricterWindow(maintainer, constraint);
+  const tt = resolveTrustedSignatureTimeSync(releaseEvent, c);
+  const dec = isKeyValidForSignature(eff, tt);
+  if (!dec.valid) {
+    return sigChainFail(
+      "key-time-invalid",
+      `Signing key "${signature.keyId}" for ${releaseEvent.repo} is not valid for this signature's trusted time: ${dec.reason}`,
+      "This key was rotated out or revoked before/at this signature's provable time. Re-sign with a currently-valid maintainer key, or (for a routine rotation) verify the signature predates the rotation."
     );
   }
 
@@ -235,10 +458,10 @@ function buildAttestationEvent(releaseEvent, checks) {
 // release event's claims (including its sbom/provenance entries) cannot be trusted — so a "present"
 // presence check must NOT award pass on the strength of an unverified event. We force such presence
 // checks to "fail" and annotate why. signature.chain itself is reported as-is.
-export function computeGatedChecks(release) {
+export function computeGatedChecks(release, ctx) {
   const sbom = checkSbomPresent(release);
   const provenance = checkProvenancePresent(release);
-  const signature = checkSignatureChain(release);
+  const signature = checkSignatureChain(release, ctx);
 
   if (signature.result !== "pass") {
     for (const c of [sbom, provenance]) {
@@ -253,7 +476,7 @@ export function computeGatedChecks(release) {
 
 // --- main (only when invoked directly, not when imported by tests) ---
 
-export { checkSbomPresent, checkProvenancePresent, checkSignatureChain };
+export { checkSbomPresent, checkProvenancePresent, checkSignatureChain, signEvent };
 
 function main() {
 const args = process.argv.slice(2);
@@ -319,10 +542,15 @@ if (doSign) {
 
 const results = [];
 
+// Build the offline trusted-time ctx ONCE from the full loaded ledger (contract site 10). It maps a
+// release's leaf to the earliest bundled-trusted anchor whose partition covers it, so the sig-chain
+// check can time-gate a rotated/revoked key against a PROVABLE (anchored) signature time.
+const timeCtx = buildAttestorTimeCtx(events);
+
 for (const release of targets) {
   console.log(`\nAttesting: ${release.repo}@${release.version}`);
 
-  const checks = computeGatedChecks(release);
+  const checks = computeGatedChecks(release, timeCtx);
 
   for (const c of checks) {
     const mark = c.result === "pass" ? "\u2705" : "\u274C";

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-06-14
+
+Time-aware key rotation and revocation. Closes a live trust bug: key resolution was **untimed**, so a
+compromised-but-still-listed key scored full integrity and verified `VALID`. Additive and
+version-dispatched — keys with no lifecycle fields are grandfathered, so existing ledger and node data
+verifies unchanged. Tests 414 → 709 (0 fail).
+
+### Added
+
+- **Windowed maintainer keys** — optional `validFrom` / `validUntil` / `revokedAt` / `revocationReason`
+  / `invalidAfter` (RFC 5280 invalidity date) fields on `node.json` maintainers.
+- **`KeyRotation` / `KeyRevocation` events** + `repomesh key rotate|revoke` commands that build, sign,
+  append the event, and apply the matching `node.json` window edit. `validate-ledger` validates these
+  events and binds `node.json` window state to them.
+- **[Threat model](docs/threat-model.md)** documenting the `node.json` trust boundary and the
+  `--anchored` recommendation for revocation-sensitive verification.
+
+### Security
+
+- **Time-aware key resolution at all eleven verification sites.** After resolving a key by `keyId`, the
+  verifier checks the signature's trusted time (XRPL anchor close-time → bundled-trusted anchor event →
+  self-asserted) against the key's window. A compromised key with a proper revocation no longer verifies.
+- **Routine rotation is prospective; compromise is retroactive** (RFC 5280 §5.3.2) — a compromised key
+  is distrusted for any signature not provably anchored before the invalidity date.
+- **Tamper-resistant against a stripped `node.json`** — key windows are re-derived from the signed,
+  XRPL-anchored events (order-aware) and merged most-restrictively, so a tampered `node.json` can only
+  add restriction, never revive a revoked key (including in the event-authorization path).
+
+### Notes
+
+- Non-destructive: window-less keys grandfather as always-valid; all existing events keep verifying.
+- Verified across three cross-family (`glm-4.6` / `gpt-oss`) adversarial passes plus forged-window,
+  node.json-strip, and ordering-exploit probes.
+
 ## [2.0.0] - 2026-06-14
 
 A full trust-correctness hardening pass plus a verifier-fleet humanization and adoption layer. The
