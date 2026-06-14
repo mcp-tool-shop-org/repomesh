@@ -23,6 +23,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { merkleRootForAlgo } from "../anchor/xrpl/scripts/merkle.mjs";
 import { verifyAnchorTx } from "../anchor/xrpl/scripts/verify-anchor.mjs";
+// Key-lifecycle trust predicate + trusted-time resolver (the shared stable secret, contract §5).
+// tools/ runs OFFLINE over the local ledger => the SYNC resolver only (no XRPL close-time rung).
+// Imported from the repo-root verifiers/lib mirror (byte-identical to the CLI copy).
+import {
+  isKeyValidForSignature,
+  resolveTrustedSignatureTimeSync,
+  deriveKeyWindowConstraints,
+  mergeStricterWindow,
+} from "../verifiers/lib/key-window.mjs";
 
 const ROOT = process.env.REPOMESH_ROOT || path.resolve(import.meta.dirname, "..");
 const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger", "events", "events.jsonl");
@@ -121,7 +130,10 @@ function readEvents() {
 
 // D1: load + extract a maintainer public key from ONE repo's node.json (mirrors
 // validate-ledger.mjs findNodeManifest + extractPublicKey). Returns null on any miss.
-function findPublicKeyInRepo(repoId, keyId) {
+// keyCtx (contract §5.3, OPTIONAL): { ev, ctx } for the key-lifecycle window gate. When provided,
+// the resolved key is gated at its trusted (offline) signature time AFTER the maintainer is found
+// by keyId and BEFORE it is returned. A windowed key out of window => null. Grandfathered keys pass.
+function findPublicKeyInRepo(repoId, keyId, keyCtx) {
   const [org, repo] = (repoId || "").split("/");
   if (!org || !repo) return null;
   const nodePath = path.join(NODES_DIR, org, repo, "node.json");
@@ -134,7 +146,7 @@ function findPublicKeyInRepo(repoId, keyId) {
     return null;
   }
   const m = (node.maintainers || []).find(m => m.keyId === keyId);
-  if (m?.publicKey) return { publicKey: m.publicKey, nodeId: node.id };
+  if (m?.publicKey) return gateKeyByWindow({ publicKey: m.publicKey, nodeId: node.id, maintainer: m }, keyCtx);
   return null;
 }
 
@@ -143,7 +155,7 @@ function findPublicKeyInRepo(repoId, keyId) {
 // allowed kind {attestor, registry}. A valid signature from a non-allowlisted / wrong-kind node
 // resolves to NO key — its attestation is excluded from the gate AND from independent witnesses.
 // Replaces the old promiscuous cross-node scan that accepted ANY registered node.
-function findPublicKeyAcrossNodes(keyId) {
+function findPublicKeyAcrossNodes(keyId, keyCtx) {
   if (!fs.existsSync(NODES_DIR)) return null;
   const allowlist = effectiveTrustedAttestors();
   for (const nodeId of allowlist) {
@@ -159,18 +171,174 @@ function findPublicKeyAcrossNodes(keyId) {
     }
     const m = (node.maintainers || []).find(m => m.keyId === keyId);
     if (m?.publicKey) {
-      const key = { publicKey: m.publicKey, nodeId: node.id, kind: node.kind };
-      if (isTrustedAttestorNode(key, allowlist)) return key;
+      const key = { publicKey: m.publicKey, nodeId: node.id, kind: node.kind, maintainer: m };
+      // D12 allowlist/kind gate first, then the key-lifecycle window gate (contract §5.3).
+      if (isTrustedAttestorNode(key, allowlist)) return gateKeyByWindow(key, keyCtx);
     }
   }
   return null;
+}
+
+// --- Derive-the-stricter-window hardening (contract §12.1) ------------------------------------
+// Finding ① (node.json-tamper / grandfather-strip bypass): this site reads window state from
+// node.json and (unlike validate-ledger) does NOT run the §8 binding check, so a tampered node.json
+// that STRIPS a revoked key's window fields re-grandfathers it (isWindowed=false => VALID). The
+// defence: derive the window INDEPENDENTLY from the signed KeyRotation/KeyRevocation events and merge
+// the STRICTER of node.json + derived. A tampered node.json can then only ADD restriction, never
+// remove what the signed events assert. tools/ is OFFLINE — everything here is sync. This mirrors
+// packages/repomesh-cli/src/verify/verify-release.mjs behaviorally (the two copies stay identical).
+
+// Read trustedPolicy node ids from the LOCAL verifier.policy.json at ROOT (the governance floor,
+// §4.3). Absence => no governance signer; only Path A (surviving same-node) authorizes.
+function readTrustedPolicyNodes() {
+  const policyPath = path.join(ROOT, "verifier.policy.json");
+  if (!fs.existsSync(policyPath)) return new Set();
+  try {
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
+    return new Set(ids.filter(id => typeof id === "string"));
+  } catch (e) {
+    console.error(`Warning: verifier.policy.json read failed (trustedPolicy ignored): ${e.message}`);
+    return new Set();
+  }
+}
+
+// Resolve a maintainer object by keyId from a node.json under NODES_DIR. Returns the maintainer or null.
+function findMaintainerInNode(orgRepo, keyId) {
+  if (typeof orgRepo !== "string") return null;
+  const [org, repo] = orgRepo.split("/");
+  if (!org || !repo) return null;
+  const nodePath = path.join(NODES_DIR, org, repo, "node.json");
+  if (!fs.existsSync(nodePath)) return null;
+  let node;
+  try { node = JSON.parse(fs.readFileSync(nodePath, "utf8")); } catch { return null; }
+  return (node.maintainers || []).find(m => m.keyId === keyId) || null;
+}
+
+// Verify a signed key-lifecycle event's signature against a PEM public key (own canonical-hash
+// check; mirrors verifySignature's core without re-entering the window gate).
+function verifyKeyEventSig(keyEvent, pem) {
+  try {
+    const ev = JSON.parse(JSON.stringify(keyEvent));
+    const sig = ev.signature;
+    if (!sig || !sig.canonicalHash || !sig.value) return false;
+    delete ev.signature;
+    const canonHash = crypto.createHash("sha256").update(canonicalize(ev), "utf8").digest("hex");
+    if (canonHash !== sig.canonicalHash) return false;
+    return crypto.verify(null, Buffer.from(canonHash, "hex"), pem, Buffer.from(sig.value, "base64"));
+  } catch { return false; }
+}
+
+// Resolve the signing PEM for a key-lifecycle event's signer keyId (§13.1 verifySignature I/O):
+// same-node (the event's own repo) FIRST, then any trustedPolicy node. Returns { pem, nodeRepo } | null.
+function resolveKeyEventSigner(keyEvent, trustedPolicy) {
+  const signerKeyId = keyEvent?.signature?.keyId;
+  if (typeof signerKeyId !== "string" || !signerKeyId) return null;
+  const sameNode = findMaintainerInNode(keyEvent.repo, signerKeyId);
+  if (sameNode?.publicKey && String(sameNode.publicKey).includes("BEGIN PUBLIC KEY")) {
+    return { pem: String(sameNode.publicKey).trim(), nodeRepo: keyEvent.repo };
+  }
+  for (const policyNode of trustedPolicy) {
+    const m = findMaintainerInNode(policyNode, signerKeyId);
+    if (m?.publicKey && String(m.publicKey).includes("BEGIN PUBLIC KEY")) {
+      return { pem: String(m.publicKey).trim(), nodeRepo: policyNode };
+    }
+  }
+  return null;
+}
+
+// Build the NEW-shape opts for the shared module's ORDER-AWARE deriveKeyWindowConstraints (§13.1).
+// The shared module now owns the §4 authorization VALIDITY decision (the order-aware forward pass);
+// this site supplies only I/O, each from the site's EXISTING machinery. The local verifyAndAuthorize
+// implementation is DELETED (a latent drift surface — the signer-validity ordering decision, residual
+// ③, is no longer duplicated here). Behaviorally identical to the packages/repomesh-cli copy.
+//   verifySignature(ev) -> { ok, signerKeyId, signerNodeRepo }
+//       Reuses the site's canonical-hash + ed25519 verify + signer-key resolution (same-node FIRST,
+//       then a trustedPolicy node). A non-resolvable / invalid signer => ok:false (fail-closed).
+//   getMaintainer(keyId, nodeRepo) -> maintainer|null   — from the relevant node.json.
+//   timeOf(ev) -> trustedTime   — the SYNC offline resolver (no anchor in the authorization pass =>
+//       self time; sufficient for the ③ ordering — see the §13.1 note in the packages copy).
+//   trustedPolicy: Set<nodeRepo>   — the governance floor from verifier.policy.json.
+function makeDeriveOpts(events) {
+  const trustedPolicy = readTrustedPolicyNodes();
+  return {
+    verifySignature: (ev) => {
+      const signerKeyId = ev?.signature?.keyId ?? null;
+      const signer = resolveKeyEventSigner(ev, trustedPolicy);
+      if (!signer) return { ok: false, signerKeyId, signerNodeRepo: null };
+      const ok = verifyKeyEventSig(ev, signer.pem);
+      return { ok, signerKeyId, signerNodeRepo: ok ? signer.nodeRepo : null };
+    },
+    getMaintainer: (keyId, nodeRepo) => findMaintainerInNode(nodeRepo, keyId),
+    timeOf: (ev) => resolveTrustedSignatureTimeSync(ev, {
+      findEarliestAnchorForLeaf: () => null, isBundledTrustedAnchor: () => false,
+    }),
+    trustedPolicy,
+  };
+}
+
+// --- Key-lifecycle trust gate (contract §5.3, OFFLINE/SYNC) -----------------------------------
+// Apply the key-lifecycle predicate to a resolved key candidate. Returns the SAME key on valid, or
+// null (the site's existing "no key" shape) on invalid. A window-less (grandfathered) maintainer
+// always passes => byte-identical to today. `keyCtx` = { ev, ctx, events } carries the event + the
+// SYNC resolver ctx + the loaded ledger. Without keyCtx (no events threaded), grandfather-only.
+//
+// §12.1 derive-stricter: BEFORE the predicate, the resolved maintainer's window is merged with the
+// constraint derived from the signed ledger events — the MOST RESTRICTIVE of node.json + signed
+// events. A tampered (stripped) node.json can only ADD restriction. GRANDFATHER stays byte-identical:
+// no key events for key.nodeId => undefined constraint => mergeStricterWindow returns maintainer ===.
+function gateKeyByWindow(key, keyCtx) {
+  if (!key) return key;
+  const maintainer = key.maintainer;
+  if (!maintainer || !keyCtx) return key;
+  const { ev, ctx, events } = keyCtx;
+  let eff = maintainer;
+  if (Array.isArray(events) && events.length) {
+    // §13.1: the shared module runs the ORDER-AWARE forward pass + consolidated §4 authorization; we
+    // supply only I/O via the NEW opts shape (verifySignature/getMaintainer/timeOf/trustedPolicy).
+    const constraint = deriveKeyWindowConstraints(events, key.nodeId, makeDeriveOpts(events)).get(maintainer.keyId);
+    eff = mergeStricterWindow(maintainer, constraint);
+  }
+  const tt = resolveTrustedSignatureTimeSync(ev, ctx);
+  const dec = isKeyValidForSignature(eff, tt);
+  if (!dec.valid) return null; // existing "no key" shape; the caller surfaces its no-key reason
+  return key;
+}
+
+// Build the SYNC resolver ctx for the event being verified (contract §5.2). tools/ is offline-only,
+// so the ctx exposes findEarliestAnchorForLeaf + isBundledTrustedAnchor (both sync) and NO
+// anchorCloseTime (no rung-1). The anchor lookup + the rung-2 trust check use the local ledger.
+function buildKeyWindowCtxSync(ev, events) {
+  const leaf = ev?.signature?.canonicalHash;
+  let anchorEvent = null;
+  if (typeof leaf === "string" && /^[0-9a-fA-F]{64}$/.test(leaf) && Array.isArray(events)) {
+    const found = findAnchorForHash(events, leaf);
+    anchorEvent = found?.anchor || null;
+  }
+  // Rung-2 trust gate (§5.2): the anchor EVENT must be signed by a bundled trusted attestor/anchor
+  // node, else its timestamp is not a trusted clock. verifySignature is sync here; the recursion
+  // guard (no events threaded into the inner call) keeps it bounded.
+  let anchorTrusted = false;
+  if (anchorEvent) {
+    const anchorSig = verifySignature(anchorEvent);
+    anchorTrusted = anchorSig.ok && BUNDLED_TRUSTED_ATTESTORS.includes(anchorSig.nodeId);
+  }
+  return {
+    findEarliestAnchorForLeaf: (l) => (anchorEvent && l === leaf ? { anchor: anchorEvent } : null),
+    isBundledTrustedAnchor: () => anchorTrusted,
+  };
 }
 
 // Verify a single event's signature.
 //  - For ReleasePublished (and any non-third-party type): resolve the key ONLY from ev.repo's
 //    node.json and assert the resolved node id === ev.repo (D1, repo-bound signer).
 //  - For AttestationPublished / PolicyViolation: resolve the key across nodes (third-party signer).
-function verifySignature(event) {
+//
+// `events` (OPTIONAL): when the loaded ledger is threaded, the resolved key is gated at its trusted
+// (offline) signature time via the key-lifecycle window predicate (contract §5.3). Without it, the
+// gate degrades to grandfather-only — byte-identical to today (used for the inner anchor-trust
+// check to avoid unbounded recursion).
+function verifySignature(event, events) {
   const ev = JSON.parse(JSON.stringify(event));
   const sig = ev.signature;
   if (!sig || !sig.keyId) return { ok: false, reason: "event missing signature or keyId" };
@@ -178,13 +346,18 @@ function verifySignature(event) {
   const canonHash = crypto.createHash("sha256").update(canonicalize(ev), "utf8").digest("hex");
   if (canonHash !== sig.canonicalHash) return { ok: false, reason: "canonical hash mismatch" };
 
+  // Build the key-lifecycle window gate ctx (contract §5.3) when ledger events are threaded. §12.1:
+  // also carry `events` so gateKeyByWindow can derive the stricter window from the signed
+  // KeyRotation/KeyRevocation events (independent of a possibly-tampered node.json).
+  const keyCtx = events ? { ev: event, ctx: buildKeyWindowCtxSync(event, events), events } : null;
+
   let key;
   if (THIRD_PARTY_TYPES.has(event.type)) {
-    key = findPublicKeyAcrossNodes(sig.keyId);
+    key = findPublicKeyAcrossNodes(sig.keyId, keyCtx);
     if (!key) return { ok: false, reason: `no public key for keyId=${sig.keyId} in any registered node` };
   } else {
     // Repo-bound: the key MUST belong to a maintainer of the event's own repo.
-    key = findPublicKeyInRepo(event.repo, sig.keyId);
+    key = findPublicKeyInRepo(event.repo, sig.keyId, keyCtx);
     if (!key) {
       return {
         ok: false,
@@ -359,8 +532,10 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     canonicalHash: release.signature?.canonicalHash,
   };
 
-  // 2. Verify signature (repo-bound, D1)
-  const sigResult = verifySignature(release);
+  // 2. Verify signature (repo-bound, D1). Thread `events` so the key-lifecycle window gate
+  // (contract §5.3) rejects a windowed (rotated / revoked / compromised) signing key at its
+  // trusted (offline) signature time. tools/ is offline => the SYNC resolver ladder.
+  const sigResult = verifySignature(release, events);
   result.release.signatureValid = sigResult.ok;
   result.release.signerNode = sigResult.ok ? sigResult.nodeId : null;
   result.release.keyId = release.signature?.keyId;
@@ -395,7 +570,8 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   // attestation signers, not just the presence of attestation records.
   const independentSigners = new Set();
   for (const att of attestationEvents) {
-    const sigOk = verifySignature(att);
+    // Key-lifecycle window gate also applies to attestation signers (contract §5.3).
+    const sigOk = verifySignature(att, events);
     const signerNode = sigOk.ok ? sigOk.nodeId : null;
     if (sigOk.ok && signerNode && signerNode !== result.release.signerNode) {
       independentSigners.add(signerNode);
@@ -544,6 +720,8 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     // carry a valid signature from a node in the bundled trusted attestor/anchor set. verifySignature
     // runs the third-party path, which already enforces the D12 allowlist + kind — so an unsigned or
     // locally-forged anchor (signed by a non-allowlisted key) resolves to no key and is NOT trusted.
+    // NOTE: no `events` threaded — the anchor signer's trust is the D18 concern, not the key-window
+    // gate (the gate's own ctx separately trust-checks the anchor); this also bounds the recursion.
     const anchorSig = verifySignature(anchorEvent);
     anchorSignerTrusted = anchorSig.ok && BUNDLED_TRUSTED_ATTESTORS.includes(anchorSig.nodeId);
 
