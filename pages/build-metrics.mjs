@@ -21,10 +21,17 @@ function readJSON(rel) {
   }
 }
 
-const nodes = readJSON("registry/nodes.json") || [];
-const trust = readJSON("registry/trust.json") || [];
-const verifiers = readJSON("registry/verifiers.json") || { verifiers: [] };
-const anchors = readJSON("registry/anchors.json") || { partitions: [], releaseAnchors: {} };
+// SB-PAGES-01: coerce wrong-type artifacts (truncated/half-written JSON that parses but is
+// the wrong top-level type) to safe defaults so the reductions/lengths below can't crash.
+const asArray = (v) => (Array.isArray(v) ? v : []);
+const asObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+
+const nodes = asArray(readJSON("registry/nodes.json"));
+const trust = asArray(readJSON("registry/trust.json"));
+const verifiersRaw = asObject(readJSON("registry/verifiers.json"));
+const verifiers = { verifiers: asArray(verifiersRaw.verifiers) };
+const anchorsRaw = asObject(readJSON("registry/anchors.json"));
+const anchors = { partitions: asArray(anchorsRaw.partitions), releaseAnchors: asObject(anchorsRaw.releaseAnchors) };
 
 // Current snapshot
 const repos = [...new Set(trust.map(t => t.repo))];

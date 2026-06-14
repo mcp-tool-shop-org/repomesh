@@ -1,0 +1,153 @@
+name: "RepoMesh verify-release"
+description: >-
+  Gate a release on its RepoMesh trust chain. Shells the published CLI
+  (`npx @mcptoolshop/repomesh@<pinned> verify-release`) and maps the tri-state
+  verdict to the job result: PASS=0, FAIL=1, UNVERIFIED=3 (use fail-on to relax
+  UNVERIFIED). Writes a markdown summary to the job summary and can emit SARIF
+  for the Security tab. This action is a thin gate wrapper — all verification
+  logic lives in the CLI it shells.
+author: "mcp-tool-shop"
+
+branding:
+  icon: "shield"
+  color: "green"
+
+# FC8 inputs. `repo` + `version` are required; the rest mirror the documented CLI flags (FC1-FC4).
+inputs:
+  repo:
+    description: "Target repository as org/repo (e.g. mcp-tool-shop-org/shipcheck)."
+    required: true
+  version:
+    description: "Release version to verify (e.g. 1.0.4)."
+    required: true
+  anchored:
+    description: "Also require XRPL anchor inclusion (strict on-chain proof). 'true' to enable."
+    required: false
+    default: "false"
+  fail-on:
+    description: >-
+      Strictness gate (FC1). 'unverified' (default) treats both FAIL and UNVERIFIED as a
+      failing job; 'fail' treats only FAIL as failing (UNVERIFIED becomes a warning, job
+      still passes) — for incremental/warn-mode adoption.
+    required: false
+    default: "unverified"
+  format:
+    description: "Output format for the run log: text | json | sarif | markdown."
+    required: false
+    default: "text"
+  cli-version:
+    description: >-
+      Pinned @mcptoolshop/repomesh version this action shells. Override only to test a
+      different release; the default is pinned for byte-for-byte replayability (PIN_PER_STEP).
+    required: false
+    default: "1.2.0"
+  sarif:
+    description: "When 'true', also write a SARIF report and upload it to the GitHub Security tab."
+    required: false
+    default: "false"
+  sarif-file:
+    description: "Path to write the SARIF report when sarif=true."
+    required: false
+    default: "repomesh.sarif"
+
+# FC8 outputs. `status` is the tri-state verdict (PASS/FAIL/UNVERIFIED); `ok` is a boolean
+# convenience derived from the gated exit code.
+outputs:
+  status:
+    description: "The verdict: PASS, FAIL, or UNVERIFIED."
+    value: ${{ steps.verify.outputs.status }}
+  ok:
+    description: "true when the gate passed under the chosen fail-on policy, false otherwise."
+    value: ${{ steps.verify.outputs.ok }}
+  exit-code:
+    description: "Raw CLI exit code (0 PASS / 1 FAIL / 3 UNVERIFIED / 2 usage-or-internal-error)."
+    value: ${{ steps.verify.outputs.exit_code }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run RepoMesh verify-release (markdown job summary)
+      id: verify
+      shell: bash
+      env:
+        RM_REPO: ${{ inputs.repo }}
+        RM_VERSION: ${{ inputs.version }}
+        RM_ANCHORED: ${{ inputs.anchored }}
+        RM_FAIL_ON: ${{ inputs.fail-on }}
+        RM_FORMAT: ${{ inputs.format }}
+        RM_CLI_VERSION: ${{ inputs.cli-version }}
+        RM_SARIF: ${{ inputs.sarif }}
+        RM_SARIF_FILE: ${{ inputs.sarif-file }}
+      run: |
+        set -uo pipefail
+
+        # Build the argument list. Always emit the markdown summary to the job summary,
+        # regardless of the user-chosen run-log format, so the PR/job summary is always populated.
+        anchored_arg=""
+        if [ "${RM_ANCHORED}" = "true" ]; then
+          anchored_arg="--anchored"
+        fi
+
+        # FC2: shell the PINNED published CLI via npx — never the in-repo dev entrypoint.
+        # FC4: --format markdown produces the job-summary table.
+        # 1) Run once in markdown to populate $GITHUB_STEP_SUMMARY (this run does not gate).
+        echo "### RepoMesh — \`${RM_REPO}@${RM_VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+        npx --yes "@mcptoolshop/repomesh@${RM_CLI_VERSION}" verify-release \
+          --repo "${RM_REPO}" \
+          --version "${RM_VERSION}" \
+          ${anchored_arg} \
+          --fail-on "${RM_FAIL_ON}" \
+          --format markdown >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+
+        # 2) Optional SARIF for the Security tab (FC4 SARIF envelope).
+        if [ "${RM_SARIF}" = "true" ]; then
+          npx --yes "@mcptoolshop/repomesh@${RM_CLI_VERSION}" verify-release \
+            --repo "${RM_REPO}" \
+            --version "${RM_VERSION}" \
+            ${anchored_arg} \
+            --fail-on "${RM_FAIL_ON}" \
+            --format sarif > "${RM_SARIF_FILE}" 2>/dev/null || true
+        fi
+
+        # 3) The gating run: JSON for machine-readable status, exit code drives the gate (FC1).
+        json="$(npx --yes "@mcptoolshop/repomesh@${RM_CLI_VERSION}" verify-release \
+          --repo "${RM_REPO}" \
+          --version "${RM_VERSION}" \
+          ${anchored_arg} \
+          --fail-on "${RM_FAIL_ON}" \
+          --format json 2>/dev/null)"
+        exit_code=$?
+
+        # Extract the tri-state status from the JSON without requiring jq.
+        status="$(printf '%s' "$json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const o=JSON.parse(s);process.stdout.write(String(o.gate?.status||o.status||'').toUpperCase())}catch{process.stdout.write('')}})" 2>/dev/null)"
+
+        # FC1 exit-code map → ok boolean. Under --fail-on, the CLI already folds UNVERIFIED into 0
+        # when relaxed, so a 0 exit always means the gate passed.
+        if [ -z "$status" ]; then
+          case "$exit_code" in
+            0) status="PASS" ;;
+            1) status="FAIL" ;;
+            3) status="UNVERIFIED" ;;
+            *) status="ERROR" ;;
+          esac
+        fi
+        if [ "$exit_code" -eq 0 ]; then ok="true"; else ok="false"; fi
+
+        {
+          echo "status=${status}"
+          echo "ok=${ok}"
+          echo "exit_code=${exit_code}"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "RepoMesh verdict: ${status} (exit ${exit_code}, ok=${ok})"
+
+        # Re-raise the CLI exit code so the step (and the job) fail per the FC1 contract.
+        # exit 2 (usage/internal error) and exit 1 (FAIL) and exit 3 (UNVERIFIED, strict) all fail.
+        exit "$exit_code"
+
+    - name: Upload SARIF to the Security tab
+      if: ${{ always() && inputs.sarif == 'true' && hashFiles(inputs.sarif-file) != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-file }}
+        category: repomesh-verify

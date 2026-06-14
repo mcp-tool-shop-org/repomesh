@@ -16,6 +16,11 @@ permissions:
 jobs:
   anchor:
     runs-on: ubuntu-latest
+    # SB-CI-01 / ANC-B02: hard wall-clock cap. The XRPL post + tx confirmation can stall
+    # if testnet is unreachable; without this an `Atomics`-style wait or a hung websocket
+    # could keep the job alive until the default 6h GitHub Actions ceiling, burning minutes.
+    # 20 minutes is generous for compute-root -> post -> confirm -> rebuild -> PR.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -52,7 +57,12 @@ jobs:
           git config user.email "repomesh-bot@users.noreply.github.com"
           git checkout -b "$BRANCH"
           cat /tmp/repomesh-ci/anchor.jsonl >> ledger/events/events.jsonl
-          git add ledger/events/events.jsonl anchor/xrpl/manifests/*.json
+          # ANC-B02: rebuild registry/anchors.json from the just-appended anchor event so
+          # display surfaces (Pages dashboard, badges, snippets) pick up the new partition's
+          # txHash in the SAME commit. Without this, anchors.json lags by a cycle and live
+          # partitions render txHash:null ("not yet anchored") even after the on-chain post.
+          node registry/scripts/build-anchors.mjs
+          git add ledger/events/events.jsonl anchor/xrpl/manifests/*.json registry/anchors.json
           git commit -m "anchor: XRPL partition $(date -u +%Y-%m-%d)"
           git push origin "$BRANCH"
           gh pr create \

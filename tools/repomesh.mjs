@@ -36,11 +36,14 @@ Options for init:
   --ledger-repo <org/repo>   RepoMesh ledger repo (default: mcp-tool-shop-org/repomesh)
   --key-id <id>              Signing key ID (default: ci-<repo>-<year>)
   --no-pr                    Skip PR creation, print manual instructions
+  --json                     Emit a machine-readable JSON summary (for CI/automation)
 
 Options for verify-release:
   --repo <org/repo>          Target repository (required)
   --version <semver>         Release version (required)
-  --anchored                 Also verify XRPL anchor inclusion
+  --anchored                 Also verify XRPL anchor inclusion (strict: requires on-chain proof)
+  --anchored-or-local        Like --anchored, but accept a locally-recomputed anchor
+                             manifest when the XRPL tx cannot be verified (offline)
   --json                     Output structured JSON (for CI/badges/automations)
 `;
 
@@ -68,7 +71,8 @@ async function main() {
         targetDir: args["target-dir"],
         ledgerRepo: args["ledger-repo"],
         keyId: args.keyId || args["key-id"],
-        noPr: Boolean(args["no-pr"])
+        noPr: Boolean(args["no-pr"]),
+        json: Boolean(args.json),
       });
       break;
     }
@@ -86,7 +90,8 @@ async function main() {
         profileJsonPath: args["profile-json"],
         overridesJsonPath: args["overrides-json"],
         ledgerRepo: args["ledger-repo"],
-        noPr: Boolean(args["no-pr"])
+        noPr: Boolean(args["no-pr"]),
+        targetDir: args["target-dir"]
       });
       break;
     }
@@ -105,13 +110,14 @@ async function main() {
       const { verifyRelease } = await import("./verify-release.mjs");
       const args = parseArgs(process.argv.slice(1));
       if (!args.repo || !args.version) {
-        console.error("Usage: node tools/repomesh.mjs verify-release --repo org/repo --version X.Y.Z [--anchored]");
+        console.error("Usage: node tools/repomesh.mjs verify-release --repo org/repo --version X.Y.Z [--anchored | --anchored-or-local] [--json]");
         process.exit(1);
       }
-      verifyRelease({
+      await verifyRelease({
         repo: args.repo,
         version: args.version,
         anchored: Boolean(args.anchored),
+        anchoredOrLocal: Boolean(args["anchored-or-local"]),
         json: Boolean(args.json),
       });
       break;

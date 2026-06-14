@@ -34,9 +34,9 @@ The network enforces three invariants:
 ## Quick Start (1 command + 2 secrets)
 
 ```bash
-node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source
 # JSON output for CI piping:
-node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source --json
+npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source --json
 ```
 
 This generates everything you need:
@@ -193,10 +193,23 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 
 ## Event Types
 
+The ledger currently emits the **live** event types below. The rest are **reserved / planned** — the
+schema accepts them, but no node emits them yet. We list them so the roadmap is visible without
+implying coverage that does not exist (front-door honesty for a trust product).
+
+**Live (emitted today):**
+
 | Type | When |
 |------|------|
 | `ReleasePublished` | A new version is released |
 | `AttestationPublished` | An attestor verifies a release |
+| `ledger.anchor` | The anchor node seals a partition (Merkle root + XRPL memo) |
+| `attestation.dispute` | A trusted node disputes an attestation (downgrades the verdict) |
+
+**Reserved / planned (not yet emitted):**
+
+| Type | Intended meaning |
+|------|------------------|
 | `BreakingChangeDetected` | A breaking change is introduced |
 | `HealthCheckFailed` | A node fails its own health checks |
 | `DependencyVulnFound` | A vulnerability is found in dependencies |
@@ -218,22 +231,57 @@ Every release will now automatically broadcast a signed `ReleasePublished` event
 
 ## Public Verification
 
-Anyone can verify a release with one command:
+Anyone can verify a release with one command — **no clone required**, the CLI fetches the public
+ledger for you:
 
 ```bash
-git clone https://github.com/mcp-tool-shop-org/repomesh.git && cd repomesh
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
 This checks:
-1. Release event exists and signature is valid (Ed25519)
-2. All attestations present and signed (SBOM, provenance, license, security)
-3. Release is included in an XRPL-anchored Merkle partition
+1. The `ReleasePublished` event exists and is signed (Ed25519) by a key registered to **that repo's own** `node.json` — a key registered to a different repo cannot validate it.
+2. The repo's trust profile is satisfied: every profile-required attestation (SBOM, provenance, license, security) is present, signed by a trusted attestor, and its latest result is `pass`, with at least one **independent** attestor. A release with only a self-signature and no independent attestations reports `UNVERIFIED`, never `PASS`.
+3. With `--anchored`: the partition's Merkle root is recomputed and matched to the manifest, and — when the network is reachable — the on-chain XRPL transaction is fetched and asserted (`validated` + `tesSUCCESS`, the signing account is in the trusted-anchor allowlist, and the on-chain memo binds to the local root/manifest-hash/count). Offline, it reports `XRPL NOT verified` rather than a fake transaction; strict `--anchored` then fails (use `--anchored-or-local` to accept a locally-verified manifest without the on-chain proof).
 
-For CI gates, use `--json`:
+For CI gates, choose an output format with `--format <text|json|sarif|markdown>` (`--json` is an alias
+for `--format json`):
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --json
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --format json
+```
+
+The **exit code** is derived from the tri-state verdict, so a CI step can gate on it directly:
+
+| Exit | Verdict | Meaning |
+|------|---------|---------|
+| `0` | PASS | Authentic and assured (or UNVERIFIED when relaxed by `--fail-on=fail`). |
+| `1` | FAIL | Hard failure — forged/wrong-repo signature, non-allowlisted attestor, or a required check failed. |
+| `3` | UNVERIFIED | Soft — not-yet-anchored, no independent witness, or a required check missing. |
+| `2` | — | Usage error or internal crash. |
+
+`--fail-on <fail\|unverified>` sets strictness. Default `unverified` fails on both FAIL and
+UNVERIFIED; `--fail-on=fail` lets UNVERIFIED pass (exit 0, with a warning) for warn-mode adoption.
+
+Verify a whole batch in one ledger load with `verify-all`, and verify offline against a local clone
+with `--local`:
+
+```bash
+# Every release in the trust index, warn-mode
+npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
+
+# Offline against a local ledger checkout
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local ./repomesh
+```
+
+**Gate it in CI** with the bundled composite action — see
+[Using the GitHub Action](docs/verification.md#using-the-github-action):
+
+```yaml
+- uses: mcp-tool-shop-org/repomesh/.github/actions/verify@v1
+  with:
+    repo: ${{ github.repository }}
+    version: ${{ github.event.release.tag_name }}
+    anchored: "true"
 ```
 
 See [docs/verification.md](docs/verification.md) for the full verification guide, threat model, and key concepts.
@@ -253,10 +301,13 @@ Repos can embed trust badges from the registry:
 ### Verify a release
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
 ### Attest a release
+
+> Attesting and running verifiers are **operator** tasks that act on a clone of this ledger, so they
+> run from a checkout. Verifying a release does not — use the `npx` command above.
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
@@ -286,21 +337,28 @@ Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
 
 RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process.
 
-Hardening (dogfood swarm, 137 findings fixed):
+Hardening:
 
-- All `execSync` calls use array arguments — no shell injection vectors
-- All `JSON.parse` calls are wrapped in try/catch with structured errors
-- Path traversal prevented on all file operations
-- ReDoS-safe parsing throughout (no unbounded regex)
-- PEM private keys excluded via `.gitignore`
+- Child-process calls that interpolate variable data use `execFileSync` with array arguments; the remaining `execSync` calls use static, constant command strings — no shell-injection vectors.
+- Ledger and registry JSON is parsed inside `try`/`catch` with structured, line-numbered errors; a malformed line is skipped and surfaced, never crashes the tool with a raw stack.
+- Path traversal is prevented on all file operations (resolve + boundary check).
+- ReDoS-safe parsing throughout (no unbounded regex).
+- PEM private keys are excluded via `.gitignore`, never printed to stdout or CI logs, and written with owner-only (`0600`) permissions.
 
 ## Testing
 
-58 tests (20 CLI + 27 ledger + 11 tools) covering: Ed25519 signatures, schema validation, Merkle tree integrity, append-only invariants, path traversal prevention, and input validation.
+The full `node --test` suite covers Ed25519 signatures, schema validation, Merkle tree
+integrity (v1 + RFC-6962 v2), append-only invariants, path traversal prevention, anchor
+verification, the trusted-attestor allowlist, and input validation across the CLI, ledger,
+anchor, verifier, and tools layers.
 
 ```bash
-node --test
+# Run every suite and read the exact pass/fail counts from the summary footer:
+node --test $(git ls-files '*.test.mjs')
 ```
+
+The test count grows as suites are added — run the command above for the current total
+rather than relying on a number that drifts out of date.
 
 ## License
 

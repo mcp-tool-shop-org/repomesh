@@ -91,6 +91,8 @@
     },
     "policyViolations": [],
     "disputes": [],
+    "ignoredDisputes": [],
+    "disputed": false,
     "trustScore": 100,
     "integrityScore": 100,
     "assuranceScore": 100,
@@ -105,6 +107,12 @@
       "license.audit",
       "security.scan"
     ],
+    "assuranceScaling": {
+      "rawAchieved": 70,
+      "sumOfPassWeights": 70,
+      "scalingFactor": 1.429,
+      "renormalized": true
+    },
     "assuranceBreakdown": {
       "license.audit": {
         "result": "pass",
@@ -128,6 +136,8 @@
       "security.scan"
     ],
     "missingChecks": [],
+    "verdict": "VERIFIED",
+    "trustSummary": "VERIFIED (integrity 100/100) — all required checks satisfied",
     "assuranceConsensus": {
       "sbom.present": {
         "consensus": "pass",
@@ -135,7 +145,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "Release includes SBOM attestation"
           }
         ]
       },
@@ -145,7 +156,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "Release includes build provenance"
           }
         ]
       },
@@ -155,7 +167,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)"
           }
         ]
       },
@@ -165,7 +178,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "All 0 component licenses are in the allowlist"
           }
         ]
       },
@@ -175,7 +189,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "No dependencies in SBOM; zero attack surface."
           }
         ]
       }
@@ -273,6 +288,8 @@
     },
     "policyViolations": [],
     "disputes": [],
+    "ignoredDisputes": [],
+    "disputed": false,
     "trustScore": 60,
     "integrityScore": 60,
     "assuranceScore": 50,
@@ -287,6 +304,12 @@
       "license.audit",
       "security.scan"
     ],
+    "assuranceScaling": {
+      "rawAchieved": 35,
+      "sumOfPassWeights": 70,
+      "scalingFactor": 1.429,
+      "renormalized": true
+    },
     "assuranceBreakdown": {
       "license.audit": {
         "result": "warn",
@@ -311,6 +334,8 @@
       "sbom.present",
       "provenance.present"
     ],
+    "verdict": "PARTIAL",
+    "trustSummary": "PARTIAL (integrity 60/100) — failed: sbom.present, provenance.present",
     "assuranceConsensus": {
       "sbom.present": {
         "consensus": "fail",
@@ -318,7 +343,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "fail"
+            "result": "fail",
+            "reason": "No SBOM attestation found in release event"
           }
         ]
       },
@@ -328,7 +354,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "fail"
+            "result": "fail",
+            "reason": "No build provenance attestation found in release event"
           }
         ]
       },
@@ -338,7 +365,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "pass"
+            "result": "pass",
+            "reason": "Signature verified against mcp-tool-shop (ci-shipcheck-2026)"
           }
         ]
       },
@@ -348,7 +376,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "warn"
+            "result": "warn",
+            "reason": "SBOM missing from ReleasePublished attestations; cannot audit licenses."
           }
         ]
       },
@@ -358,7 +387,8 @@
         "sources": [
           {
             "node": "mcp-tool-shop-org/repomesh",
-            "result": "warn"
+            "result": "warn",
+            "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan."
           }
         ]
       }

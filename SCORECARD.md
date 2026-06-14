@@ -37,9 +37,16 @@
 
 | Category | Before | After |
 |----------|--------|-------|
-| A. Security | 6/10 | 10/10 |
+| A. Security | 6/10 | TODO (re-derive from `shipcheck audit` after the v2.0.0 amend wave) |
 | B. Error Handling | 5/10 | 9/10 |
 | C. Operator Docs | 7/10 | 10/10 |
 | D. Shipping Hygiene | 3/10 | 9/10 |
 | E. Identity (soft) | 10/10 | 10/10 |
-| **Overall** | **31/50** | **48/50** |
+| **Overall** | **31/50** | TODO (recompute once Security is set) |
+
+> **TODO (coordinator, Phase 10):** the prior "Security 10/10" was untenable while the cross-repo
+> signer-forgery (TOOLS-001), missing attestation gate (CLI-001), and unverified XRPL anchor
+> (REG-001/TOOLS-002) findings were open. Those are fixed in the v2.0.0 amend wave (repo-bound
+> signer resolution, profile-driven fail-closed attestation gate, real on-chain anchor
+> verification, private-key non-logging). Re-run `npx @mcptoolshop/shipcheck audit` after the wave
+> lands and set the Security score + Overall from the ACTUAL gate results — do not estimate.

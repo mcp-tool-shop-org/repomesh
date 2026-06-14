@@ -1,6 +1,16 @@
 {
   "v": 1,
   "description": "Verifier registration policy — defines which checks are open, which are trusted-set, and quorum thresholds.",
+  "trustedAttestors": [
+    "mcp-tool-shop-org/repomesh",
+    "mcp-tool-shop-org/repomesh-license-verifier",
+    "mcp-tool-shop-org/repomesh-security-verifier",
+    "mcp-tool-shop-org/repomesh-repro-verifier",
+    "mcp-tool-shop-org/repomesh-xrpl-anchor"
+  ],
+  "trustedPolicy": [
+    "mcp-tool-shop-org/repomesh"
+  ],
   "checks": {
     "license.audit": {
       "mode": "trusted-set",

@@ -25,24 +25,78 @@ program
 
 program
   .command("verify-release")
-  .description("Verify a release's trust chain and anchor status.\n  Note: Each verification fetches remote data. Use --local with a local clone for repeated/offline use.")
+  .description(
+    "Verify a release's trust chain and anchor status.\n" +
+    "  Note: Each verification fetches remote data. Use --local with a local clone for repeated/offline use.\n" +
+    "  Exit codes: 0=PASS, 1=FAIL (forged/invalid/tampered), 3=UNVERIFIED (not-yet-anchored / no independent witness),\n" +
+    "              2=usage error or crash. --fail-on=fail relaxes UNVERIFIED to exit 0."
+  )
   .requiredOption("--repo <org/repo>", "Target repository")
   .requiredOption("--version <semver>", "Release version")
-  .option("--anchored", "Also verify XRPL anchor inclusion")
-  .option("--json", "Output structured JSON")
+  .option("--anchored", "Also verify XRPL anchor inclusion (strict: requires on-chain XRPL verification)")
+  .option("--anchored-or-local", "Like --anchored but accept a locally-recomputed manifest when XRPL is unreachable (XRPL NOT verified)")
+  .option("--local [dir]", "Verify against a LOCAL ledger checkout (default: current dir). Offline/dev path; wins over auto-detect.")
+  .option("--fail-on <level>", "Which verdict is non-zero: 'unverified' (strict, default) or 'fail' (UNVERIFIED -> exit 0)", "unverified")
+  .option("--format <fmt>", "Output format: text (default), json, sarif, markdown", "text")
+  .option("--json", "Output structured JSON (alias for --format json)")
   .option("--ledger-url <url>", "Custom ledger events URL (defaults to public GitHub ledger; use --local for offline)")
   .option("--nodes-url <url>", "Custom nodes base URL (defaults to public GitHub ledger; use --local for offline)")
   .option("--manifests-url <url>", "Custom manifests base URL (defaults to public GitHub ledger; use --local for offline)")
   .action(async (opts) => {
     const { verifyRelease } = await import("./verify/verify-release.mjs");
+    // commander: --local with no value yields `true`; --local <dir> yields the string.
+    const localProvided = opts.local !== undefined;
+    const localDir = typeof opts.local === "string" ? opts.local : undefined;
     await verifyRelease({
       repo: opts.repo,
       version: opts.version,
-      anchored: opts.anchored,
+      // --anchored-or-local implies anchored (anchor inclusion is checked, on-chain step relaxed).
+      anchored: opts.anchored || opts.anchoredOrLocal,
+      anchoredOrLocal: opts.anchoredOrLocal,
+      local: localProvided ? true : undefined,
+      localDir,
+      failOn: opts.failOn,
+      format: opts.format,
       json: opts.json,
       ledgerUrl: opts.ledgerUrl,
       nodesUrl: opts.nodesUrl,
       manifestsUrl: opts.manifestsUrl,
+    });
+  });
+
+program
+  .command("verify-all")
+  .description(
+    "Batch-verify many releases against ONE ledger load.\n" +
+    "  Source: --manifest <file> (JSON array of {repo,version} or 'org/repo@version' lines) OR --from-registry (trust.json).\n" +
+    "  Exit code = the WORST row's verdict under --fail-on (0=all PASS, 1=any FAIL, 3=any UNVERIFIED, 2=usage error)."
+  )
+  .option("--manifest <file>", "A JSON array of {repo,version}, or a newline list of org/repo@version")
+  .option("--from-registry", "Verify every release listed in registry/trust.json")
+  .option("--anchored", "Also verify XRPL anchor inclusion for every release")
+  .option("--anchored-or-local", "Accept a locally-recomputed manifest when XRPL is unreachable")
+  .option("--local [dir]", "Verify against a LOCAL ledger checkout (default: current dir)")
+  .option("--fail-on <level>", "Which verdict is non-zero: 'unverified' (default) or 'fail'", "unverified")
+  .option("--format <fmt>", "Output format: text (default), json, sarif, markdown", "text")
+  .option("--json", "Output structured JSON (alias for --format json)")
+  .option("--ledger-url <url>", "Custom ledger events URL")
+  .option("--trust-url <url>", "Custom trust.json URL (for --from-registry remote mode)")
+  .action(async (opts) => {
+    const { verifyAll } = await import("./verify/verify-all.mjs");
+    const localProvided = opts.local !== undefined;
+    const localDir = typeof opts.local === "string" ? opts.local : undefined;
+    await verifyAll({
+      manifest: opts.manifest,
+      fromRegistry: opts.fromRegistry,
+      anchored: opts.anchored || opts.anchoredOrLocal,
+      anchoredOrLocal: opts.anchoredOrLocal,
+      local: localProvided ? true : undefined,
+      localDir,
+      failOn: opts.failOn,
+      format: opts.format,
+      json: opts.json,
+      ledgerUrl: opts.ledgerUrl,
+      trustUrl: opts.trustUrl,
     });
   });
 
@@ -104,9 +158,9 @@ program
   .description("Output shell completion script (bash/zsh)")
   .option("--shell <shell>", "Shell type: bash, zsh", "bash")
   .action((opts) => {
-    const commands = ["verify-release", "verify-anchor", "init", "doctor", "completion",
+    const commands = ["verify-release", "verify-all", "verify-anchor", "init", "doctor", "completion",
       "build-pages", "build-registry", "build-badges", "build-snippets"];
-    const globalFlags = "--quiet --verbose --debug --json --help --cli-version";
+    const globalFlags = "--quiet --verbose --debug --json --format --fail-on --local --help --cli-version";
     if (opts.shell === "zsh") {
       console.log(`#compdef repomesh
 _repomesh() {

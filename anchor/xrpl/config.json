@@ -2,5 +2,8 @@
   "network": "testnet",
   "rippledUrl": "wss://s.altnet.rippletest.net:51233",
   "mode": "since-last",
-  "memoFormatVersion": "repomesh-anchor-v1"
+  "memoFormatVersion": "repomesh-anchor-v1",
+  "trustedAnchorAccounts": [
+    "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W"
+  ]
 }

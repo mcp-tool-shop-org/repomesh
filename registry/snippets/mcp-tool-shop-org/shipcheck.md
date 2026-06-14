@@ -17,21 +17,13 @@
 ### Verify Release
 
 ```bash
-# Clone the RepoMesh ledger
-git clone https://github.com/mcp-tool-shop-org/repomesh.git && cd repomesh
-
-# Verify the latest release
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
+# Verify the latest release (no clone required)
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
 ### CI Gate (JSON output)
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --json --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --json --anchored
 ```
 
-### Verify XRPL Anchor
-
-```bash
-node anchor/xrpl/scripts/verify-anchor.mjs --tx 1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1
-```

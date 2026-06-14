@@ -46,6 +46,8 @@ export function generateKeypair(outputDir) {
   try {
     execFileSync('openssl', ['genpkey', '-algorithm', 'ED25519', '-out', privatePath], { stdio: "pipe" });
     execFileSync('openssl', ['pkey', '-in', privatePath, '-pubout', '-out', publicPath], { stdio: "pipe" });
+    // TOOLS-003: tighten private key perms to owner-only (no-op on Windows, harmless).
+    try { fs.chmodSync(privatePath, 0o600); } catch { /* best effort (e.g. Windows) */ }
   } catch (e) {
     console.error(`\u274C Key generation failed: ${e.message}`);
     // Clean up partial files

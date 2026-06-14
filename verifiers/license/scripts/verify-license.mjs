@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   readEvents,
   findReleaseEvent,
@@ -18,28 +19,30 @@ import {
   writeJsonlLine,
   loadSigningKeyFromEnvOrFile
 } from "../../lib/common.mjs";
-import { findSbomUriFromReleaseEvent, fetchCycloneDxComponents } from "../../lib/fetch-sbom.mjs";
+import { findSbomAttestation, fetchCycloneDxComponentsBound } from "../../lib/fetch-sbom.mjs";
+import { loadValidatedOverrides } from "../../lib/load-overrides.mjs";
+import { classifySpdxExpression } from "../../lib/spdx.mjs";
 
 const REPO_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+// SEC-009: a repo cannot self-certify missing/unknown licenses as compliant. A self-applied
+// treatUnknownAs override may only make the result STRICTER ({warn, fail}); "pass" for unknowns is
+// reserved for governance/profile, not the repo's own overrides file.
+const SELF_APPLICABLE_TREAT_UNKNOWN = new Set(["warn", "fail"]);
 
 function loadConfig() {
   const p = path.join(process.cwd(), "verifiers/license/config.json");
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
-// Load per-repo overrides from ledger node snapshot
+// Load + schema-validate per-repo overrides (SEC-003/SEC-009). Returns the `license` sub-block or
+// null. A schema-invalid override file throws (rejected) — never silently swallowed.
 function loadOverrides(repo) {
-  if (!REPO_ID_RE.test(repo)) return null;
-  const [org, repoName] = repo.split("/");
-  const p = path.join(process.cwd(), "ledger/nodes", org, repoName, "repomesh.overrides.json");
-  if (!fs.existsSync(p)) return null;
-  try {
-    const data = JSON.parse(fs.readFileSync(p, "utf8"));
-    return data?.license || null;
-  } catch (e) { console.warn('Warning: failed to load overrides for ' + repo + ': ' + e.message); return null; }
+  const data = loadValidatedOverrides(repo);
+  return data?.license || null;
 }
 
-// Merge base config with per-repo overrides
+// Merge base config with per-repo overrides.
 function mergeConfig(cfg, overrides) {
   if (!overrides) return cfg;
   const merged = { ...cfg };
@@ -55,18 +58,29 @@ function mergeConfig(cfg, overrides) {
     merged.allowlist = merged.allowlist.filter(l => !remove.has(l));
   }
 
-  // Override unknown handling (stored for use in classifyLicenses)
+  // SEC-009: a repo-level override may only TIGHTEN unknown handling. Reject a self-applied
+  // treatUnknownAs:'pass' (missing license is absence of evidence, not compliance).
   if (overrides.treatUnknownAs) {
-    merged.treatUnknownAs = overrides.treatUnknownAs;
+    if (SELF_APPLICABLE_TREAT_UNKNOWN.has(overrides.treatUnknownAs)) {
+      merged.treatUnknownAs = overrides.treatUnknownAs;
+    } else {
+      console.warn(
+        `[license] Ignoring self-applied treatUnknownAs='${overrides.treatUnknownAs}' ` +
+        `(only ${[...SELF_APPLICABLE_TREAT_UNKNOWN].join("/")} permitted from repo overrides; ` +
+        `'pass' requires governance/profile).`
+      );
+    }
   }
 
   return merged;
 }
 
-function classifyLicenses(components, cfg) {
-  const allow = new Set(cfg.allowlist);
-  const coprefix = cfg.copyleftPrefixes || [];
-  const coexact = new Set(cfg.copyleftExact || []);
+export function classifyLicenses(components, cfg) {
+  const ctx = {
+    allow: new Set(cfg.allowlist),
+    coprefix: cfg.copyleftPrefixes || [],
+    coexact: new Set(cfg.copyleftExact || []),
+  };
 
   const findings = {
     copyleft: [],
@@ -81,17 +95,15 @@ function classifyLicenses(components, cfg) {
       continue;
     }
 
+    // SEC-006: parse each license entry as an SPDX expression (AND/OR/parens) before classifying.
+    // Combine a component's entries conservatively: a copyleft entry poisons the component, an
+    // unknown entry makes it unknown, otherwise allowed.
     let hasCopyleft = false;
     let hasUnknown = false;
-
     for (const lic of ls) {
-      const L = String(lic).trim();
-      const isAllowed = allow.has(L);
-      const isCopyleft =
-        coexact.has(L) || coprefix.some(p => L.startsWith(p));
-
-      if (isCopyleft) hasCopyleft = true;
-      else if (!isAllowed) hasUnknown = true;
+      const cls = classifySpdxExpression(lic, ctx);
+      if (cls === "copyleft") hasCopyleft = true;
+      else if (cls === "unknown") hasUnknown = true;
     }
 
     if (hasCopyleft) findings.copyleft.push({ name: c.name, version: c.version, licenses: ls });
@@ -102,7 +114,8 @@ function classifyLicenses(components, cfg) {
   let result = "pass";
   if (findings.copyleft.length > 0) result = "fail";
   else if (findings.unknownOrMissing.length > 0) {
-    // Respect treatUnknownAs override from profile/overrides
+    // Respect treatUnknownAs (already restricted to {warn,fail} for self-applied overrides; profile
+    // governance may set 'pass'). Default to warn.
     result = cfg.treatUnknownAs || "warn";
   }
 
@@ -121,7 +134,8 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
     return { skipped: true, reason: "already attested (license.audit)" };
   }
 
-  const sbomUri = findSbomUriFromReleaseEvent(rel);
+  const sbomAtt = findSbomAttestation(rel);
+  const sbomUri = sbomAtt?.uri || null;
   if (!sbomUri) {
     const ev0 = buildAttestationEvent({
       repo,
@@ -139,7 +153,28 @@ async function runOne({ repo, version, sign, keyId, signingKeyPath, out }) {
   const baseCfg = loadConfig();
   const overrides = loadOverrides(repo);
   const cfg = mergeConfig(baseCfg, overrides);
-  const comps = await fetchCycloneDxComponents(sbomUri);
+
+  // SEC-002 / D6 / D13: bind license auditing to the committed SBOM digest. A missing/mismatched
+  // digest means the audit ran on un-trustable data \u2014 we CANNOT certify, so this is NON-SCORING
+  // ('unscored'), not 'warn'. The scorer awards 0 assurance points and reports the check as missing
+  // (D13: the 'unscored' token is the shared cross-domain contract value).
+  const { components: comps, digestStatus } = await fetchCycloneDxComponentsBound(sbomUri, sbomAtt?.sha256);
+  if (!digestStatus.bound) {
+    const why = digestStatus.reason === "missing"
+      ? "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes"
+      : `SBOM bytes (${digestStatus.actual}) do not match committed sha256 (${digestStatus.expected})`;
+    const ev0 = buildAttestationEvent({
+      repo, version, commit: rel.commit,
+      artifacts: rel.artifacts,
+      attestations: [{ type: "license.audit", uri: "repomesh:attestor:license.audit:unscored" }],
+      notes: `license.audit: unscored \u2014 ${why}. No assurance credit.`
+    });
+    const signed = sign ? signEvent(ev0, loadSigningKeyFromEnvOrFile({ filePath: signingKeyPath }), keyId) : ev0;
+    if (out) writeJsonlLine(out, signed);
+    console.log(`  \u26a0\ufe0f license.audit: ${why} (non-scoring)`);
+    return { result: "unscored", reason: "sbom digest unbound", digestStatus };
+  }
+
   const { result, findings } = classifyLicenses(comps, cfg);
 
   let reason;
@@ -198,31 +233,42 @@ async function scanNew({ sign, keyId, signingKeyPath, out }) {
   return { scanned: targets.length, results };
 }
 
-// --- main ---
-const args = parseArgs(process.argv);
-const repo = args.repo;
-const version = args.version;
-const scanNewFlag = args["scan-new"];
-const out = args.output || null;
-const sign = Boolean(args.sign);
-const keyId = args.keyId || process.env.REPOMESH_KEY_ID || "ci-repomesh-2026";
-const signingKeyPath = args["signing-key"] || null;
+// Exports for tests (pure classification + config merge + override loading). runOne is exported so
+// the unbound-SBOM -> 'unscored' I/O path (D13) is testable end-to-end with a temp ledger + mocked
+// fetch.
+export { mergeConfig, loadOverrides, loadConfig, runOne };
 
-if (scanNewFlag) {
-  scanNew({ sign, keyId, signingKeyPath, out })
-    .then(r => {
-      console.log(`\n${r.scanned} release(s) audited.`);
-      if (out) console.log(`Output written to ${out}`);
-    })
-    .catch(e => { console.error(e); process.exit(1); });
-} else {
-  if (!repo || !version) {
-    console.error("Usage:");
-    console.error("  node verify-license.mjs --repo <org/repo> --version <semver>");
-    console.error("  node verify-license.mjs --scan-new [--sign --output <path>]");
-    process.exit(2);
+// --- main (only when invoked directly, not when imported by tests) ---
+function main() {
+  const args = parseArgs(process.argv);
+  const repo = args.repo;
+  const version = args.version;
+  const scanNewFlag = args["scan-new"];
+  const out = args.output || null;
+  const sign = Boolean(args.sign);
+  const keyId = args.keyId || process.env.REPOMESH_KEY_ID || "ci-repomesh-2026";
+  const signingKeyPath = args["signing-key"] || null;
+
+  if (scanNewFlag) {
+    scanNew({ sign, keyId, signingKeyPath, out })
+      .then(r => {
+        console.log(`\n${r.scanned} release(s) audited.`);
+        if (out) console.log(`Output written to ${out}`);
+      })
+      .catch(e => { console.error(e); process.exit(1); });
+  } else {
+    if (!repo || !version) {
+      console.error("Usage:");
+      console.error("  node verify-license.mjs --repo <org/repo> --version <semver>");
+      console.error("  node verify-license.mjs --scan-new [--sign --output <path>]");
+      process.exit(2);
+    }
+    runOne({ repo, version, sign, keyId, signingKeyPath, out })
+      .then(r => console.log(JSON.stringify(r, null, 2)))
+      .catch(e => { console.error(e); process.exit(1); });
   }
-  runOne({ repo, version, sign, keyId, signingKeyPath, out })
-    .then(r => console.log(JSON.stringify(r, null, 2)))
-    .catch(e => { console.error(e); process.exit(1); });
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
 }

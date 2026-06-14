@@ -7,14 +7,30 @@ import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 
+// TOOLS-006: mirror build-stats.mjs — tolerate missing/malformed registry JSON
+// with a descriptive warning instead of throwing a raw parse error.
 function readJSON(rel) {
   const p = path.join(ROOT, rel);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (err) {
+    console.error(`[timeline] Warning: Failed to parse ${rel}: ${err.message}. Using default.`);
+    return null;
+  }
 }
 
-const trust = readJSON("registry/trust.json") || [];
-const anchors = readJSON("registry/anchors.json") || { partitions: [], releaseAnchors: {} };
+// SB-PAGES-01: coerce wrong-type artifacts (a truncated write that parses as `{}` where an
+// array is expected, etc.) to safe defaults so iteration below can't crash the build.
+const asArray = (v) => (Array.isArray(v) ? v : []);
+const asObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+
+const trust = asArray(readJSON("registry/trust.json"));
+const anchorsRaw = asObject(readJSON("registry/anchors.json"));
+const anchors = {
+  partitions: asArray(anchorsRaw.partitions),
+  releaseAnchors: asObject(anchorsRaw.releaseAnchors),
+};
 
 const events = [];
 

@@ -39,7 +39,10 @@ if (fs.existsSync(MANIFESTS_DIR)) {
     if (!file.endsWith(".json")) continue;
     const manifest = JSON.parse(fs.readFileSync(path.join(MANIFESTS_DIR, file), "utf8"));
 
-    // Find matching anchor event for txHash
+    // ANC-004: bind anchor -> manifest on manifestHash ONLY. The Merkle root is shared across
+    // partitions that cover the same leaves (genesis / date / all all share one root), so matching
+    // on root would bind a single on-chain txHash to several distinct manifests. manifestHash is the
+    // unique partition identity. If no on-chain memo carries this manifestHash, txHash stays null.
     let txHash = null;
     let network = null;
     let walletAddress = null;
@@ -47,17 +50,34 @@ if (fs.existsSync(MANIFESTS_DIR)) {
       if (ev.type !== "AttestationPublished") continue;
       if (!(ev.attestations || []).some(a => a.type === "ledger.anchor")) continue;
       const notes = ev.notes || "";
+      const jsonMatch = notes.match(/\n(\{.*?\})$/s);
+      if (!jsonMatch) {
+        // ANC-B08: this IS a ledger.anchor attestation, but its notes carry no trailing JSON metadata
+        // block. That is a near-miss (format drift) — without this warning the anchor would silently
+        // never bind a txHash to its manifest. Make the drift visible instead of swallowing it.
+        console.warn(
+          `Warning: ledger.anchor attestation at ${ev.timestamp} has no trailing JSON metadata block ` +
+          `in notes — cannot bind a txHash. notes=${JSON.stringify((notes || "").slice(0, 120))}`
+        );
+        continue;
+      }
+      let meta;
       try {
-        const jsonMatch = notes.match(/\n(\{.*?\})$/s);
-        if (!jsonMatch) continue;
-        const meta = JSON.parse(jsonMatch[1]);
-        if (meta.merkleRoot === manifest.root || meta.manifestHash === manifest.manifestHash) {
-          txHash = meta.txHash || null;
-          network = meta.network || null;
-          walletAddress = meta.walletAddress || null;
-          break;
-        }
-      } catch {}
+        meta = JSON.parse(jsonMatch[1]);
+      } catch (parseErr) {
+        // ANC-B08: the trailing block looked like JSON but failed to parse — warn, don't swallow.
+        console.warn(
+          `Warning: ledger.anchor attestation at ${ev.timestamp} has a malformed JSON metadata block ` +
+          `(${parseErr.message}) — cannot bind a txHash.`
+        );
+        continue;
+      }
+      if (meta.manifestHash === manifest.manifestHash) {
+        txHash = meta.txHash || null;
+        network = meta.network || null;
+        walletAddress = meta.walletAddress || null;
+        break;
+      }
     }
 
     partitions.push({

@@ -54,12 +54,21 @@ function findNodeManifest(repoId) {
   }
 }
 
+// Returns -1 | 0 | 1 for an orderable pair, or NaN when either side has a non-integer segment.
+// LDG-005: a non-integer segment is NOT silently coerced to 0 (which would fabricate an ordering
+// and emit a bogus monotonicity verdict). Callers must treat NaN as "unorderable — skip".
 function compareSemver(a, b) {
   const pa = a.split(".").map(Number);
   const pb = b.split(".").map(Number);
   for (let i = 0; i < 3; i++) {
-    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
-    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    const x = pa[i];
+    const y = pb[i];
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
+      console.error(`Warning: skipping semver comparison "${a}" vs "${b}" — non-integer segment.`);
+      return NaN;
+    }
+    if (x < y) return -1;
+    if (x > y) return 1;
   }
   return 0;
 }
@@ -97,7 +106,9 @@ function checkSemverMonotonicity(events) {
       const curr = releases[i];
       const prevClean = prev.version.split(/[-+]/)[0];
       const currClean = curr.version.split(/[-+]/)[0];
-      if (compareSemver(currClean, prevClean) <= 0) {
+      const cmp = compareSemver(currClean, prevClean);
+      if (Number.isNaN(cmp)) continue; // unorderable (malformed version) — already warned, skip
+      if (cmp <= 0) {
         violations.push({
           type: "semver.monotonicity",
           repo,

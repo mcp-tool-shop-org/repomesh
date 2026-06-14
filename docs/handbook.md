@@ -114,7 +114,7 @@ Full schema: `schemas/event.schema.json`
 
 ### AttestationPublished event
 
-A verifier's signed opinion about a release. Contains one or more attestation results (pass/warn/fail) and a signature from the verifier node.
+A verifier's signed opinion about a release. Contains one or more attestation results (`pass`/`warn`/`fail`/`unscored`) and a signature from the verifier node. (`unscored` = the verifier could not run; it earns zero assurance credit — see [Section 5.4](#54-failure-modes).)
 
 ```json
 {
@@ -176,7 +176,7 @@ Before you start:
 ### 3.2 One command onboarding
 
 ```bash
-node tools/repomesh.mjs init --repo your-org/your-repo --profile open-source
+npx @mcptoolshop/repomesh init --repo your-org/your-repo --profile open-source
 ```
 
 This generates:
@@ -408,7 +408,7 @@ for (const rel of releases) {
   if (hasAttestationEvent(events, rel.repo, rel.version, CHECK_TYPE)) continue;
 
   // Your evaluation logic here
-  const result = "pass"; // or "warn" or "fail"
+  const result = "pass"; // or "warn" / "fail" (check ran) — or "unscored" (check could not run; 0 credit)
   const reason = "All good";
 
   const ev = buildAttestationEvent({
@@ -438,17 +438,18 @@ When multiple verifiers attest the same check, the registry resolves consensus u
 
 ### 5.4 Failure modes
 
-Be loud about what went wrong. Use `warn` when the check can't complete but the release isn't necessarily bad.
+Be loud about what went wrong — and be honest about the difference between *"the check ran and the release is iffy"* (`warn`) and *"the check could not run at all"* (`unscored`). This distinction is load-bearing: a transient outage must never earn assurance credit, because a release that was never actually scanned is not a release that was found clean.
 
 | Situation | Result | Notes |
 |---|---|---|
-| API unreachable (OSV, SBOM fetch) | `warn` | "OSV API unreachable — cannot scan" |
-| SBOM missing from release | `warn` | "SBOM not found — cannot audit licenses" |
-| Docker unavailable | `warn` | "Docker not available — cannot verify reproducibility" |
+| API unreachable (OSV, SBOM fetch timeout) | `unscored` | "OSV API unreachable — could not scan" — earns **0 points**, reported as a *missing* check |
+| SBOM missing / unfetchable from release | `unscored` | "SBOM not found — could not audit licenses" — 0 points, missing check |
+| Docker unavailable | `unscored` | "Docker not available — could not verify reproducibility" — 0 points, missing check |
+| Evidence present, minor concern | `warn` | The check **ran**; partial credit. Include specifics: "1 moderate advisory, no fix available" |
 | Evidence present, check passes | `pass` | Include specifics: "42 components, all allowed" |
 | Evidence present, check fails | `fail` | Include what failed: "3 critical vulns found: CVE-..." |
 
-The rule: graceful degradation, loud notes. A `warn` with a clear reason is much better than a silent skip.
+The rule: **`unscored` for could-not-run, `warn`/`fail` only when the check actually ran.** `unscored` scores 0 (treated as a missing check), so a network outage can never inflate a trust score. Always attach a clear `reason` and an actionable `hint` to any non-`pass` result so the operator knows exactly what happened and what to do (re-run when the dependency is reachable). Graceful degradation, loud notes — but degradation never buys credit.
 
 **Do this next:**
 - Copy the starter pattern above
@@ -484,7 +485,7 @@ Each verifier has a `config.json` that controls its behavior. The security verif
 | `ecosystem` | string | `"npm"` | Package ecosystem for vulnerability lookups (OSV) |
 | `severityThreshold` | string | `"moderate"` | Minimum severity that triggers a `fail` result. One of: `critical`, `high`, `moderate`, `low` |
 | `ignoreVulns` | string[] | `[]` | List of vulnerability IDs (e.g., `GHSA-xxx-yyy`) to skip during scanning |
-| `sbomRequired` | boolean | `true` | When `true`, a missing SBOM produces `warn` instead of silently skipping the scan |
+| `sbomRequired` | boolean | `true` | When `true`, a missing/unfetchable SBOM produces `unscored` (0 credit, reported as a missing check) instead of silently skipping the scan |
 
 The license verifier (`verifiers/license/config.json`) controls the license allowlist and copyleft detection. The repro verifier (`verifiers/repro/config.json`) controls the build command, Docker image, and hash algorithm.
 
@@ -496,10 +497,11 @@ Per-repo overrides in `repomesh.overrides.json` (see [Section 4.4](#44-overrides
 
 ### 6.1 Verify a release
 
-**Basic verification** (signature + attestations):
+**Basic verification** (signature + attestations) — no clone required, the CLI fetches the public
+ledger for you:
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4
 ```
 
 Output:
@@ -519,19 +521,34 @@ mcp-tool-shop-org/shipcheck@1.0.4
 **With anchor verification** (adds XRPL proof):
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored
 ```
 
-Adds:
+`--anchored` recomputes the partition's Merkle root locally, matches it to the committed manifest,
+and — when the network is reachable — fetches the on-chain XRPL transaction and asserts it is
+`validated`, succeeded, was signed by a trusted-anchor wallet, and its memo binds to the local
+root/manifest-hash/count. On success it adds:
 
 ```
-  Anchored: YES (partition=2026-02-28, root=d9cc5dd2..., tx=local)
+  Anchored: YES (partition=2026-02-28, root=d9cc5dd2..., tx=A1B2C3...)
 ```
 
-**For CI gates** (structured JSON):
+When the network is unreachable, strict `--anchored` **fails** rather than printing a fabricated
+transaction id:
+
+```
+  XRPL NOT verified — network unavailable; on-chain tx ... was not fetched.
+  Anchored: LOCAL-MANIFEST-ONLY (XRPL NOT verified)
+  Verification: FAIL
+```
+
+Pass `--anchored-or-local` to accept a locally-verified manifest (no on-chain proof) for offline use.
+
+**For CI gates** (structured output). Pick a format with `--format <text|json|sarif|markdown>`
+(`--json` is an alias for `--format json`):
 
 ```bash
-node tools/repomesh.mjs verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --json
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --version 1.0.4 --anchored --format json
 ```
 
 Returns:
@@ -551,25 +568,117 @@ Returns:
     "keyId": "ci-shipcheck-2026"
   },
   "attestations": [
-    { "type": "license.audit", "result": "pass", "signatureValid": true, "signerNode": "mcp-tool-shop-org/repomesh" }
+    { "type": "license.audit", "result": "pass", "signatureValid": true, "signerNode": "mcp-tool-shop-org/repomesh-license-verifier" }
   ],
+  "gate": {
+    "profile": "open-source",
+    "requiredAttestationTypes": ["sbom.present", "provenance.present", "license.audit", "security.scan"],
+    "satisfied": ["sbom.present", "provenance.present", "license.audit", "security.scan"],
+    "missing": [],
+    "failed": [],
+    "independentAttestor": true,
+    "verdict": "PASS"
+  },
   "anchor": {
     "anchored": true,
+    "manifestValid": true,
+    "rootValid": true,
     "partition": "2026-02-28",
     "root": "d9cc5dd2...",
     "manifestHash": "75823866...",
-    "txHash": null,
-    "network": "testnet"
+    "algo": "sha256-merkle-v1",
+    "txHash": "A1B2C3...",
+    "network": "testnet",
+    "xrplVerified": true
   }
 }
 ```
 
-Gate on `ok === true` in your CI. That's the single boolean that means "everything checks out."
+Gate on `ok === true` in your CI. That's the single boolean that means "everything checks out." The
+`gate.verdict` distinguishes `PASS` from `UNVERIFIED` (a self-signed release with no independent
+attestor) and `FAIL`; `anchor.xrplVerified` is `false` whenever the on-chain proof was not fetched
+(offline / `--anchored-or-local`).
+
+#### Exit codes and `--fail-on`
+
+You don't have to parse JSON to gate — the **exit code** mirrors the verdict:
+
+| Exit | Verdict | Meaning |
+|------|---------|---------|
+| `0` | PASS | Authentic and assured (or UNVERIFIED when relaxed by `--fail-on=fail`). |
+| `1` | FAIL | Hard failure — forged/wrong-repo signature, non-allowlisted attestor, or a required check failed. |
+| `3` | UNVERIFIED | Soft — not-yet-anchored, no independent witness, or a required check missing. |
+| `2` | — | Usage error or internal crash. |
+
+`--fail-on <fail|unverified>` chooses strictness. The default `unverified` fails on both FAIL and
+UNVERIFIED. `--fail-on=fail` lets UNVERIFIED pass (exit `0`, status still `UNVERIFIED`, with a printed
+warning) so you can adopt RepoMesh in warn-mode while a repo earns its first independent attestations.
+
+```bash
+# Warn-mode: only a hard FAIL breaks the build
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --fail-on fail
+```
+
+#### SARIF and markdown formats
+
+```bash
+# SARIF 2.1.0 — uploads to the GitHub Security tab
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --format sarif > repomesh.sarif
+
+# Markdown table — for a job summary or PR comment
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --format markdown
+```
+
+#### Verify many releases at once
+
+`verify-all` loads the ledger **once** and verifies a batch, exiting with the worst row's code under
+the chosen `--fail-on`:
+
+```bash
+# A manifest of {repo, version} entries (JSON array or newline org/repo@version list)
+npx @mcptoolshop/repomesh verify-all --manifest releases.json --format markdown
+
+# Every release currently in the trust index
+npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
+```
+
+#### Offline / local verification
+
+For air-gapped or repeated runs, verify against a local ledger checkout. `--local [dir]` (default:
+current directory) skips all network fetches and wins over auto-detection:
+
+```bash
+git clone https://github.com/mcp-tool-shop-org/repomesh.git
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local ./repomesh
+```
+
+#### Gate it with the GitHub Action
+
+A composite action ships in this repo at `.github/actions/verify`. Add this step to a consumer repo's
+release workflow (least-privilege permissions; `security-events: write` is only needed for SARIF):
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: mcp-tool-shop-org/repomesh/.github/actions/verify@v1
+    with:
+      repo: ${{ github.repository }}
+      version: ${{ github.event.release.tag_name }}
+      anchored: "true"
+      fail-on: unverified
+      sarif: "true"
+```
+
+The action shells the **pinned** CLI, maps the exit code to the job result, writes a markdown job
+summary, and (optionally) uploads SARIF. Full input/output reference:
+[docs/verification.md](verification.md#using-the-github-action).
 
 ### 6.2 Verify an anchor
 
 ```bash
-node anchor/xrpl/scripts/verify-anchor.mjs --tx <xrpl-tx-hash>
+npx @mcptoolshop/repomesh verify-anchor --tx <xrpl-tx-hash>
 ```
 
 This fetches the transaction from XRPL, decodes the memo, recomputes the Merkle root from local ledger events, and confirms they match. If they match, it means the ledger contents at anchoring time haven't been altered.
@@ -597,11 +706,13 @@ What success proves:
 
 Depends on your profile. For `open-source`:
 
-| Check | Pass | Warn | Fail | Weight |
-|---|---|---|---|---|
-| license.audit | 30 | 15 | 0 | 30% |
-| security.scan | 40 | 20 | 0 | 40% |
-| repro.build | 30 | 15 | 0 | 30% (optional) |
+| Check | Pass | Warn | Fail | Unscored | Weight |
+|---|---|---|---|---|---|
+| license.audit | 30 | 15 | 0 | 0 | 30% |
+| security.scan | 40 | 20 | 0 | 0 | 40% |
+| repro.build | 30 | 15 | 0 | 0 | 30% (optional) |
+
+`unscored` (the verifier could not run) scores 0 and is reported as a *missing* check — identical credit to a check that was never attempted, so an outage can't inflate the score.
 
 A friendly analogy: integrity is checking someone's ID at the door. Assurance is the safety inspection of what they brought in.
 
@@ -812,10 +923,22 @@ If you find a security issue in RepoMesh itself (not in a repo it tracks):
 
 ### Event types
 
+The ledger emits the **live** types today; the rest are **reserved / planned** — the schema accepts
+them but no node emits them yet. They are listed so the roadmap is visible without overstating coverage.
+
+**Live (emitted today):**
+
 | Type | When | Who signs |
 |---|---|---|
 | `ReleasePublished` | New version released | Repo maintainer |
 | `AttestationPublished` | Verifier checks a release | Verifier node |
+| `ledger.anchor` | A partition is sealed (Merkle root + XRPL memo) | Anchor node |
+| `attestation.dispute` | A trusted node disputes an attestation | Trusted node |
+
+**Reserved / planned (not yet emitted):**
+
+| Type | Intended meaning | Who would sign |
+|---|---|---|
 | `BreakingChangeDetected` | Breaking API change | Repo or policy node |
 | `HealthCheckFailed` | Node health issue | The failing node |
 | `DependencyVulnFound` | Vuln in dependency | Security verifier |
@@ -832,21 +955,26 @@ If you find a security issue in RepoMesh itself (not in a repo it tracks):
 | `license.audit` | All licenses are allowed | License verifier |
 | `security.scan` | No critical/high vulnerabilities | Security verifier |
 | `repro.build` | Artifacts match when rebuilt | Repro verifier |
-| `attestation.dispute` | Flags a bad attestation | Any node |
+| `attestation.dispute` | Flags a bad attestation (downgrades the verdict only when signed by a **trusted** node; untrusted/self disputes are display-only) | Trusted node |
 
 ### CLI command cheat sheet
 
 ```bash
-# Onboarding
-node tools/repomesh.mjs init --repo org/repo --profile open-source
+# Onboarding (published CLI — no clone needed; init generates the keypair and prints the secrets)
+npx @mcptoolshop/repomesh init --repo org/repo --profile open-source
+
+# Verification (published CLI — fetches the public ledger)
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --anchored
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --anchored --format json
+npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --fail-on fail
+npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
+npx @mcptoolshop/repomesh verify-anchor --tx <xrpl-tx-hash>
+
+# Operator / maintainer tasks (run from a clone of this ledger repo)
 node tools/repomesh.mjs keygen
 node tools/repomesh.mjs register-node --repo org/repo
 node tools/repomesh.mjs print-secrets --key-dir repomesh-keys/org-repo
-
-# Verification
-node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.0
-node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.0 --anchored
-node tools/repomesh.mjs verify-release --repo org/repo --version 1.0.0 --anchored --json
 node registry/scripts/verify-trust.mjs --repo org/repo
 node registry/scripts/verify-trust.mjs --repo org/repo --version 1.0.0
 

@@ -8,6 +8,7 @@
   "properties": {
     "type": {
       "type": "string",
+      "description": "Event envelope type. EMITTED today: ReleasePublished, AttestationPublished (also carries attestation.dispute events), PolicyViolation. RESERVED / PLANNED (declared in the schema but NOT yet emitted by any tool — no code produces them): BreakingChangeDetected, HealthCheckFailed, DependencyVulnFound, InterfaceUpdated. The reserved values are kept so the schema is forward-stable, but the live ledger contains only the emitted types.",
       "enum": [
         "ReleasePublished",
         "AttestationPublished",
@@ -62,7 +63,8 @@
       "required": ["type", "uri"],
       "properties": {
         "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute"] },
-        "uri": { "type": "string", "minLength": 1, "maxLength": 600 }
+        "uri": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 digest of the RAW fetched attestation bytes; binds the URI to specific content (SEC-002)." }
       }
     }
   }

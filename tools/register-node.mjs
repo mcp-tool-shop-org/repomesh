@@ -20,21 +20,31 @@ function cleanup() { if (tmpDir && fs.existsSync(tmpDir)) { fs.rmSync(tmpDir, { 
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 process.on('SIGTERM', () => { cleanup(); process.exit(143); });
 
+// SB-TOOLS-02: a real (non-spinning) sleep for the synchronous retry path. The previous
+// backoff was a tight Date.now() polling loop that pinned a CPU core for the entire 2-6s
+// wait. A setTimeout-based async sleep is the usual fix, but registerNode() is intentionally a
+// SYNCHRONOUS function (its callers — init-node, repomesh.mjs, the CLI entrypoint, and the
+// tests — consume its return value directly, not a Promise). Atomics.wait blocks the thread
+// for the requested duration with ZERO CPU spin while preserving that sync contract.
+function sleepSync(ms) {
+  // SharedArrayBuffer is always available in modern Node; Atomics.wait on an unchanged
+  // value simply times out after `ms`, yielding the core to the OS scheduler.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 // Retry wrapper for GitHub API calls (gh CLI)
 function retryExec(cmd, args, opts, maxRetries = 3) {
   for (let i = 0; i < maxRetries; i++) {
     try { return execFileSync(cmd, args, opts); } catch(e) {
       if (i === maxRetries - 1) throw e;
       console.error(`[${i+1}/${maxRetries}] Retrying after error: ${e.message}`);
-      // Simple backoff
-      const ms = 2000 * (i + 1);
-      const end = Date.now() + ms;
-      while (Date.now() < end) { /* busy wait - short duration ok */ }
+      // Exponential-ish backoff, blocking without burning CPU (SB-TOOLS-02).
+      sleepSync(2000 * (i + 1));
     }
   }
 }
 
-export function registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJsonPath, ledgerRepo, noPr }) {
+export function registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJsonPath, ledgerRepo, noPr, targetDir }) {
   const TOTAL_STEPS = 5;
   let step = 0;
   const progress = (msg) => console.error(`[${++step}/${TOTAL_STEPS}] ${msg}`);
@@ -49,7 +59,11 @@ export function registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJ
   if (!SAFE_LEDGER.test(ledger)) {
     throw new Error(`Invalid ledgerRepo: must match ${SAFE_LEDGER}`);
   }
-  const ROOT = process.cwd();
+  // Manual-mode (no-PR) writes land under ROOT. Honor an explicit targetDir (or
+  // REPOMESH_TARGET_DIR) so callers — and tests in particular — can isolate the
+  // generated ledger/nodes/<org>/<repo>/ tree into a tmpdir instead of polluting
+  // the current repo's real ledger. Defaults to process.cwd() (back-compat).
+  const ROOT = targetDir || process.env.REPOMESH_TARGET_DIR || process.cwd();
 
   // Read the files
   progress("Reading node files...");
@@ -192,13 +206,17 @@ export function registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJ
 3. Add \`REPOMESH_LEDGER_TOKEN\` secret (PAT with contents:write + pull-requests:write on ${ledger})
 4. Cut a release \u2014 trust will converge automatically`;
 
+    // SB-TOOLS-03: bound the gh pr create call with a timeout so a hung GitHub API call
+    // (or a network stall) can't block registration indefinitely. Mirrors the 30s clone
+    // timeout above. On timeout, execFileSync throws with .killed/.signal set, which the
+    // surrounding catch turns into a structured { pr:null, error } result (REASON+HINT).
     const prUrl = retryExec("gh", [
       "pr", "create",
       "--repo", ledger,
       "--head", branch,
       "--title", `register: ${org}/${repo}`,
       "--body", prBody,
-    ], { cwd: tmpDir, encoding: "utf8" }).toString().trim();
+    ], { cwd: tmpDir, encoding: "utf8", timeout: 30000 }).toString().trim();
 
     console.log(`\u2705 Registration PR created: ${prUrl}`);
 
@@ -209,12 +227,17 @@ export function registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJ
     return { pr: prUrl, localPath: null };
   } catch (e) {
     const context = { repoId, ledger, branch, tmpDir, action: "register-pr" };
-    console.error(`\u274C Registration failed: ${e.message}`);
+    // SB-TOOLS-03: distinguish a timeout (hung gh call we bounded) from other failures so
+    // the operator gets a recovery hint instead of a bare error.
+    const isTimeout = e.killed || e.signal === "SIGTERM";
+    const reason = isTimeout ? "gh pr create timed out after 30s" : e.message;
+    console.error(`\u274C Registration failed: ${reason}`);
+    if (isTimeout) console.error(`   hint: check network connectivity and gh auth status, then re-run; or pass --no-pr for manual registration steps.`);
     if (process.argv.includes("--debug")) console.error("Context:", JSON.stringify(context));
     // Cleanup on failure
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     tmpDir = null;
-    return { pr: null, error: e.message };
+    return { pr: null, error: reason };
   }
 }
 
@@ -231,12 +254,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
   const profileJsonPath = getArg("--profile-json");
   const overridesJsonPath = getArg("--overrides-json");
   const ledgerRepo = getArg("--ledger-repo");
+  const targetDir = getArg("--target-dir");
   const noPr = args.includes("--no-pr");
 
   if (!repoId || !nodeJsonPath) {
-    console.error("Usage: node register-node.mjs --repo org/repo --node-json path [--profile-json path] [--overrides-json path] [--no-pr]");
+    console.error("Usage: node register-node.mjs --repo org/repo --node-json path [--profile-json path] [--overrides-json path] [--target-dir path] [--no-pr]");
     process.exit(1);
   }
 
-  registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJsonPath, ledgerRepo, noPr });
+  registerNode({ repoId, nodeJsonPath, profileJsonPath, overridesJsonPath, ledgerRepo, noPr, targetDir });
 }

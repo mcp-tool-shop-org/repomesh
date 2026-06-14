@@ -38,7 +38,7 @@ Include:
 ### Data NOT touched
 
 - **Source code of member repos** — RepoMesh never clones, reads, or modifies member repo code; attestors only check metadata (SBOM presence, provenance, license files, known vulns via OSV.dev)
-- **Private keys** — never transmitted, stored, or logged; they exist only in CI secrets and local key directories
+- **Private keys** — never transmitted or logged; they exist only in CI secrets and local key directories. The `init-node` / `keygen` tools write the private PEM to a `.gitignore`d file with owner-only (`0600`) permissions and never echo its contents — onboarding instructs `gh secret set REPOMESH_SIGNING_KEY < <path>`, reading the key from disk into the secret without it ever appearing on screen or in CI logs.
 - **User credentials** — no authentication system; identity is public-key based
 - **Browsing or usage data** — no analytics, tracking, or user profiling
 

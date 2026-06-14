@@ -2,10 +2,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { merkleRootHex, merkleManifest } from "./merkle.mjs";
+import { merkleRootForAlgo } from "./merkle.mjs";
 
 // Manifest version — bump when anchor format changes (future: version negotiation)
 const MANIFEST_VERSION = 1;
+
+// D3/ANC-003: new partitions are anchored with the RFC-6962 algorithm by default.
+// Old v1 manifests remain verifiable (verify-anchor dispatches on manifest.algo); pass
+// `--algo sha256-merkle-v1` only to reproduce a historical v1 partition.
+const DEFAULT_ALGO = "sha256-merkle-v2";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
@@ -58,6 +63,11 @@ function extractPrevRoot(anchorEvent) {
 const args = process.argv.slice(2);
 const mode = args.includes("--all") ? "all" : args.includes("--date") ? "date" : "since-last";
 const dateArg = args.includes("--date") ? args[args.indexOf("--date") + 1] : null;
+const algo = args.includes("--algo") ? args[args.indexOf("--algo") + 1] : DEFAULT_ALGO;
+if (algo !== "sha256-merkle-v1" && algo !== "sha256-merkle-v2") {
+  console.error(`Unknown --algo "${algo}" (expected sha256-merkle-v1 or sha256-merkle-v2).`);
+  process.exit(1);
+}
 
 const events = readEvents();
 if (events.length === 0) { console.error("No events in ledger."); process.exit(1); }
@@ -88,12 +98,12 @@ const range = [leaves[0], leaves[leaves.length - 1]];
 
 let config;
 try { config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")); } catch (e) { console.error("Failed to read " + CONFIG_PATH + ": " + e.message); process.exit(1); }
-const root = merkleRootHex(leaves);
+const root = merkleRootForAlgo(leaves, algo);
 
 // Build manifest base (without manifestHash)
 const manifestBase = {
   v: MANIFEST_VERSION,
-  algo: "sha256-merkle-v1",
+  algo,
   partitionId,
   network: config.network,
   prev,
@@ -133,7 +143,7 @@ const output = {
   eventCount: partition.length,
   prev,
   range,
-  algo: "sha256-merkle-v1",
+  algo,
   leafEncoding: "canonicalHash:hex(32)",
   leafCount: leaves.length,
   root,

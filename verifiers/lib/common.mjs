@@ -22,11 +22,26 @@ function sortKeys(v) {
 export function readEvents(ledgerPath) {
   const p = ledgerPath || path.join(process.cwd(), "ledger/events/events.jsonl");
   if (!fs.existsSync(p)) return [];
-  return fs.readFileSync(p, "utf8")
-    .split("\n")
-    .map(l => l.trim())
-    .filter(Boolean)
-    .map(l => JSON.parse(l));
+  const lines = fs.readFileSync(p, "utf8").split("\n");
+  const events = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      events.push(JSON.parse(line));
+    } catch (e) {
+      // SEC-008: never let a malformed line throw a raw stack. Surface a structured,
+      // line-numbered error and abort — a corrupt ledger must not be silently truncated.
+      const err = new Error(
+        `Malformed JSON in ledger at ${p}:${i + 1}: ${e.message}`
+      );
+      err.code = "REPOMESH_LEDGER_PARSE_ERROR";
+      err.ledgerPath = p;
+      err.lineNumber = i + 1;
+      throw err;
+    }
+  }
+  return events;
 }
 
 export function findReleaseEvent(events, repo, version) {
