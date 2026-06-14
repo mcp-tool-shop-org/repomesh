@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.1.0] - 2026-06-14
+
+### Added
+- **`repomesh key rotate` / `repomesh key revoke`** — sign + append a `KeyRotation`/`KeyRevocation`
+  event and apply the matching `node.json` maintainer-window edit (`--dry-run` supported).
+- Windowed maintainer keys (`validFrom`/`validUntil`/`revokedAt`/`revocationReason`/`invalidAfter`).
+
+### Security
+- **Time-aware key resolution.** `verify-release` now rejects a signature whose XRPL-anchored trusted
+  time falls outside the signing key's validity window — a compromised-but-still-listed key with a
+  proper revocation no longer verifies. Routine rotation is prospective; compromise is retroactive
+  (RFC 5280 §5.3.2, demands a provable anchored time before the invalidity date).
+- **Stripped-`node.json` resistance.** Key windows are re-derived (order-aware) from the signed,
+  anchored `KeyRotation`/`KeyRevocation` events and merged most-restrictively, so a tampered manifest
+  cannot revive a revoked key. See `docs/threat-model.md`; use `--anchored` for revocation-sensitive
+  verification.
+- Grandfathered (window-less) keys verify byte-identical to before.
+
 ## [2.0.0] - 2026-06-14
 
 ### Breaking
