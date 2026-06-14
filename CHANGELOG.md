@@ -5,29 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-06-14
+
+A full trust-correctness hardening pass plus a verifier-fleet humanization and adoption layer. The
+trust model is materially stronger and now **fail-closed**, and the verification surface is legible
+and CI-friendly. Implemented via version-dispatch, so existing committed ledger and anchor data keeps
+verifying unchanged. Tests 58 → 414 (0 fail).
+
+### Breaking
+
+- **Verification is now fail-closed.** `verify-release` returns `UNVERIFIED` (never `PASS`) for a
+  self-signed, wrong-repo-signed, non-allowlisted-attestor, or failed-attestation release, and strict
+  `--anchored` fails when the on-chain anchor cannot be verified. Exit codes are tri-state — PASS=0,
+  FAIL=1, UNVERIFIED=3 (was: any failure = 1). Gate incrementally with `--fail-on <fail|unverified>`.
+- **Attestor authorization enforced.** Only nodes in the trusted-attestor allowlist
+  (`verifier.policy.json`) of the correct kind can produce trust-bearing attestations — enforced in
+  the CLI, at ledger ingress, and in the registry scorer.
+- **Assurance scoring is stricter.** A verifier that could not run scores `unscored` = 0 credit (was
+  `warn` = partial credit); a missing/unverified SBOM digest earns no credit; repo overrides can no
+  longer raise a failing check's weight or drop critical/high from the fail set.
+
+### Security
+
+- Repo-bound signer resolution (release keys resolve only from the releasing repo's `node.json`).
+- Real XRPL anchor verification: trusted-account allowlist + `validated` + `tesSUCCESS` + on-chain
+  memo binding; the Merkle root is recomputed from the manifest's pinned range+count window.
+- OSV CVSS-vector severity decoding so a known critical CVE actually fails; SBOM digest binding.
+- `build-trust` verifies every event signature before scoring; signed disputes from trusted nodes
+  downgrade a release; RFC-6962 (v2) Merkle, version-dispatched alongside legacy v1.
 
 ### Added
 
-- **Composite GitHub Action** (`.github/actions/verify`) — gate a release on its RepoMesh trust
-  chain in one step. Shells the pinned published CLI (`npx @mcptoolshop/repomesh@<version>
-  verify-release`), maps the tri-state verdict to the job result (PASS=0 / FAIL=1 / UNVERIFIED=3),
-  writes a markdown job summary, and can upload SARIF to the Security tab. Inputs
-  `{repo, version, anchored, fail-on, format}`, outputs `{status, ok, exit-code}`. Least-privilege
-  permissions; example consumer workflow in `docs/verification.md`.
+- **GitHub Action** release-gate wrapper (`.github/actions/verify`) — gate a release on its trust
+  chain in one step via the pinned published CLI; tri-state verdict → job result, markdown summary,
+  optional SARIF upload.
+- **`verify-all`** batch verification (one ledger load) · **`--format <text|json|sarif|markdown>`** ·
+  **`--local [dir]`** offline verification · **/repos Trust Index** browse page · per-version
+  **badge proof-chain** pages · **OSV result cache** with bounded concurrency.
 
 ### Changed
 
-- **Docs verify/onboarding path is now `npx @mcptoolshop/repomesh ...`** — no clone required to
-  verify a release or onboard. README, `docs/verification.md`, and `docs/handbook.md` updated; clone
-  is retained only for the offline `--local` path and genuine operator/maintainer tasks. Documented
-  the tri-state exit codes + `--fail-on`, `--format <text|json|sarif|markdown>`, `verify-all`, and
-  `--local`.
-- **Event-type docs now match the live ledger (front-door honesty).** `BreakingChangeDetected`,
-  `HealthCheckFailed`, `DependencyVulnFound`, `InterfaceUpdated`, and `PolicyViolation` are marked
-  *reserved / planned (not yet emitted)* in README + handbook; the live tables list only the types
-  the ledger actually emits (`ReleasePublished`, `AttestationPublished`, `ledger.anchor`,
-  `attestation.dispute`).
+- Every non-`pass` verdict now carries a machine-readable `reason` + a human fix-hint. Graceful
+  degradation throughout (fetch timeouts, partial-failure tolerance, friendly network/purged-tx
+  guidance, no raw stack traces).
+- Onboarding + verification docs use `npx @mcptoolshop/repomesh` — no clone required to verify.
+- Event-type docs marked *reserved / planned (not yet emitted)* to match the live ledger.
 
 ## [1.0.0] - 2026-02-28
 

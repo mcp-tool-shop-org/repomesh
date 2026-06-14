@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.0.0] - 2026-06-14
+
+### Breaking
+- **Verification is fail-closed.** `verify-release` returns `UNVERIFIED` (never `PASS`) for a
+  self-signed, wrong-repo-signed, non-allowlisted-attestor, or failed-attestation release; strict
+  `--anchored` fails when the on-chain anchor cannot be verified.
+- **Tri-state exit codes:** PASS=0, FAIL=1, UNVERIFIED=3 (was: any failure = 1). Gate incrementally
+  with `--fail-on <fail|unverified>` (default `unverified`).
+
+### Security
+- Repo-bound signer resolution (release keys resolve only from the releasing repo's `node.json`).
+- Real XRPL anchor verification: trusted-account allowlist + `validated` + `tesSUCCESS` + on-chain
+  memo binding; the Merkle root is recomputed from the manifest's pinned window.
+- Bundled trusted-attestor allowlist floor — a fetched policy may narrow it but never widen it.
+
+### Added
+- `--local [dir]` offline verification (the documented flag is now implemented).
+- `--format <text|json|sarif|markdown>` (`--json` is an alias for `--format json`).
+- `verify-all` — batch verification from a manifest or the registry, with one ledger load.
+- Every non-`pass` verdict carries a machine-readable `reason` + a human fix-hint.
+- RFC-6962 (v2) Merkle verification, version-dispatched alongside legacy v1.
+
+### Changed
+- Docs use `npx @mcptoolshop/repomesh` — no clone required to verify a release.
+
 ## [1.1.0] - 2026-03-28
 
 ### Security
