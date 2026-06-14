@@ -69,6 +69,15 @@ function loadProfileDef(profileId) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; }
 }
 
+// FC6 (#4 LSP-01): strip the machine "disputed:<64hex>" token from a dispute reason note, keeping
+// the human tail. Mirrors build-trust.mjs's trustSummary exactly: split on " — " (em/en-dash or
+// ASCII hyphen, space-padded), keep everything after the first separator, and fall back to the raw
+// reason when no separator is present.
+function disputeReason(d) {
+  const raw = (d && d.reason) || "";
+  return raw.split(/\s[—–-]\s/).slice(1).join(" — ").trim() || raw || "(no reason given)";
+}
+
 const repoProfile = loadRepoProfile(entry.repo);
 const profileId = entry.profileId || repoProfile?.profileId || null;
 const profileDef = profileId ? loadProfileDef(profileId) : null;
@@ -97,12 +106,16 @@ const integrityChecks = [
   { name: "Has artifacts", key: "hasArtifacts", weight: 15, pass: entry.artifactCount > 0 },
   { name: "No policy violations", key: "noPolicyViolations", weight: 15, pass: (entry.policyViolations || []).length === 0 },
   {
+    // D17: satisfied ONLY on trusted-attestor consensus pass (matches build-trust REG-002). An
+    // inline self-declared sbom earns NO checkmark and NO credit — it is an unverified self-claim.
     name: "SBOM present", key: "sbom.present", weight: 20,
-    pass: inlineTypes.has("sbom") || inlineTypes.has("sbom.present") || attestedKinds.get("sbom.present") === "pass"
+    pass: attestedKinds.get("sbom.present") === "pass",
+    selfClaim: inlineTypes.has("sbom") || inlineTypes.has("sbom.present")
   },
   {
     name: "Provenance present", key: "provenance.present", weight: 20,
-    pass: inlineTypes.has("provenance") || attestedKinds.get("provenance.present") === "pass"
+    pass: attestedKinds.get("provenance.present") === "pass",
+    selfClaim: inlineTypes.has("provenance") || inlineTypes.has("provenance.present")
   },
   { name: "Signature chain verified", key: "signature.chain", weight: 15, pass: attestedKinds.get("signature.chain") === "pass" }
 ];
@@ -116,10 +129,14 @@ const assuranceWeights = {
 
 const expectedAssurance = profileDef?.requiredChecks?.assurance || Object.keys(assuranceWeights);
 
+// D13: only pass/warn/fail carry weight. A non-scoring 'unscored' result (verifier could not
+// certify) earns 0 points and is reported as a MISSING check — same contract as build-trust.
+const SCOREABLE_RESULTS = new Set(["pass", "warn", "fail"]);
+
 const assuranceChecks = expectedAssurance.map((kind) => {
   const weights = assuranceWeights[kind] || { pass: 0, warn: 0, fail: 0 };
   const result = attestedKinds.get(kind) || "pending";
-  const pts = result !== "pending" ? (weights[result] ?? 0) : 0;
+  const pts = SCOREABLE_RESULTS.has(result) ? (weights[result] ?? 0) : 0;
   return {
     name: kind,
     key: kind,
@@ -135,9 +152,24 @@ const integrityScore = entry.integrityScore ?? entry.trustScore ?? 0;
 const assuranceScore = entry.assuranceScore ?? 0;
 
 // Print header
-const iBadge = integrityScore >= 80 ? "\u2705" : integrityScore >= 50 ? "\u26A0\uFE0F" : "\u274C";
+// FC6 (#4 LSP-01): a standing trusted dispute is a LOUDER state than a low score. When the producer
+// (build-trust) marked this release DISPUTED, lead with a prominent \u26D4 banner \u2014 one line per active
+// dispute, showing WHO disputed it and WHY \u2014 before the numeric breakdown.
+const disputed = entry.disputed === true || entry.verdict === "DISPUTED";
+const iBadge = disputed ? "\u26D4" : integrityScore >= 80 ? "\u2705" : integrityScore >= 50 ? "\u26A0\uFE0F" : "\u274C";
 const aBadge = assuranceScore >= 70 ? "\u2705" : assuranceScore >= 30 ? "\u26A0\uFE0F" : "\u274C";
 console.log(`\n${iBadge} ${entry.repo}@${entry.version}`);
+if (disputed) {
+  const disputes = Array.isArray(entry.disputes) ? entry.disputes : [];
+  if (disputes.length > 0) {
+    for (const d of disputes) {
+      console.log(`  \u26D4 DISPUTED by ${d.node}: ${disputeReason(d)}`);
+    }
+  } else {
+    // verdict is DISPUTED but no dispute records survived into trust.json \u2014 still surface it loudly.
+    console.log(`  \u26D4 DISPUTED`);
+  }
+}
 console.log(`  Integrity Score:  ${integrityScore}/100`);
 console.log(`  Assurance Score:  ${assuranceScore}/100`);
 if (profileId) {
@@ -155,7 +187,10 @@ const missingIntegrity = [];
 for (const c of integrityChecks) {
   const mark = c.pass ? "\u2705" : "\u274C";
   const pts = c.pass ? `+${c.weight}` : ` 0`;
-  console.log(`    ${mark} ${c.name.padEnd(28)} ${pts.padStart(3)} pts`);
+  // D17: an inline self-claim that lacks trusted-attestor consensus earns no credit \u2014 label it so
+  // the user understands the failing line is an UNVERIFIED self-declaration, not an absence.
+  const note = !c.pass && c.selfClaim ? "  (unverified self-claim \u2014 no trusted attestor)" : "";
+  console.log(`    ${mark} ${c.name.padEnd(28)} ${pts.padStart(3)} pts${note}`);
   if (c.pass) computedIntegrity += c.weight;
   if (!c.pass) missingIntegrity.push(c);
 }
@@ -177,6 +212,10 @@ for (const c of assuranceChecks) {
   } else if (c.result === "fail") {
     mark = "\u274C";
     ptsStr = ` 0`;
+  } else if (c.result === "unscored") {
+    // D13: verifier could not certify \u2014 0 points, reported as a missing (not satisfied) check.
+    mark = "\u23F3";
+    ptsStr = ` 0`;
   } else {
     mark = "\u23F3";
     ptsStr = ` 0`;
@@ -185,7 +224,8 @@ for (const c of assuranceChecks) {
   const label = `${c.name} (${c.result})${reqTag}`;
   console.log(`    ${mark} ${label.padEnd(38)} ${ptsStr.padStart(3)} / ${c.maxWeight} pts`);
   computedAssurance += c.points;
-  if (c.result === "pending" || c.result === "fail") missingAssurance.push(c);
+  // D13: 'unscored' (non-scoring) is a missing check, alongside pending/fail.
+  if (c.result === "pending" || c.result === "fail" || c.result === "unscored") missingAssurance.push(c);
 }
 console.log(`${"".padEnd(45)}${"---".padStart(6)}`);
 console.log(`${"".padEnd(42)}Total: ${computedAssurance}/100`);
