@@ -25,10 +25,15 @@ name: repomesh-broadcast
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag to broadcast (e.g. v2.0.0)"
+        required: true
 
 # ---- EDIT THESE ----
 env:
-  REPOMESH_KEY_ID: "ci-repo-2026"  # Must match keyId in your node.json
+  REPOMESH_KEY_ID: "ci-repomesh-2026"  # Must match keyId in repomesh's registered node.json maintainer
   REPOMESH_LEDGER_REPO: "mcp-tool-shop-org/repomesh"
 
 jobs:
@@ -43,22 +48,16 @@ jobs:
         with:
           node-version: 22
 
-      # Build your project (adjust as needed)
+      # Build the published workspace package (monorepo: build lives in packages/repomesh-cli)
       - run: npm ci
-      - run: npm run build
+      - run: npm run build --workspaces --if-present
 
-      # Hash release artifacts (adjust dist path for your project)
+      # Hash the published npm tarball (the actual release artifact)
       - name: Hash artifacts
         run: |
           mkdir -p /tmp/repomesh
-          if compgen -G "dist/*.tgz" > /dev/null; then
-            sha256sum dist/*.tgz > /tmp/repomesh/artifact-hashes.txt
-          elif compgen -G "dist/*.js" > /dev/null; then
-            sha256sum dist/*.js > /tmp/repomesh/artifact-hashes.txt
-          else
-            # Fallback: hash package.json as a minimal artifact
-            sha256sum package.json > /tmp/repomesh/artifact-hashes.txt
-          fi
+          npm pack -w @mcptoolshop/repomesh --pack-destination /tmp/repomesh >/dev/null
+          sha256sum /tmp/repomesh/*.tgz > /tmp/repomesh/artifact-hashes.txt
           cat /tmp/repomesh/artifact-hashes.txt
 
       # Generate SBOM (npm built-in, CycloneDX format)
@@ -72,7 +71,7 @@ jobs:
       - name: Generate provenance
         env:
           REPO_ID: ${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
           COMMIT: ${{ github.sha }}
           RUNNER_OS: ${{ runner.os }}
           RUNNER_ARCH: ${{ runner.arch }}
@@ -111,7 +110,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ inputs.version || github.ref_name }}"
           gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
           gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
 
@@ -119,7 +118,7 @@ jobs:
       - name: Create signed event
         env:
           REPO_ID: ${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
           COMMIT: ${{ github.sha }}
           SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           KEY_ID: ${{ env.REPOMESH_KEY_ID }}
@@ -217,7 +216,7 @@ jobs:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
         run: |
           REPO_SLUG="${{ github.event.repository.name }}"
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ inputs.version || github.ref_name }}"
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 
           gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
@@ -243,7 +242,7 @@ jobs:
           ## RepoMesh Broadcast
 
           **Repo:** ${{ github.repository }}
-          **Version:** ${{ github.ref_name }}
+          **Version:** ${{ inputs.version || github.ref_name }}
           **Commit:** ${{ github.sha }}
           **Type:** ReleasePublished
 
