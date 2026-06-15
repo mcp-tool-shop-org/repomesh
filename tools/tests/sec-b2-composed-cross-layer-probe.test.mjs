@@ -55,6 +55,7 @@ import {
   keyWindow,
   isKeyValidForSignature,
   deriveKeyWindowConstraints,
+  __deriveLegacyForTests,
   mergeStricterWindow,
 } from "../../verifiers/lib/key-window.mjs";
 
@@ -441,7 +442,9 @@ describe("Wave-B2 COMPOSED — rotation-preempt: compromise DOMINATES a prior se
     const compromise = sign(keyRevocation("rel-key", C), "rel-key-2", SK.privateKey);
 
     const verifyAndAuthorize = makeVerifyAndAuthorize(nodes);
-    const map = deriveKeyWindowConstraints([rotation, compromise], RELEASE, { verifyAndAuthorize });
+    // Pre-§13.1 order-insensitive derivation (the rotate/revoke FOLD is what this asserts, isolated from
+    // the order-aware authorization) — reached via the explicit test-only export, not the production fn.
+    const map = __deriveLegacyForTests([rotation, compromise], RELEASE, { verifyAndAuthorize });
     const c = map.get("rel-key");
     assert.ok(c, "a constraint was derived for the compromised key");
     assert.equal(c.revocationReason, "compromise", "compromise DOMINATES the prior rotation reason in the fold");
@@ -471,7 +474,7 @@ describe("Wave-B2 COMPOSED — rotation-preempt: compromise DOMINATES a prior se
         newPublicKey: NK.publicKey.trim(), effectiveAt: "2099-01-01T00:00:00.000Z" },
     }, "rel-key", RK.privateKey);
     const verifyAndAuthorize = makeVerifyAndAuthorize(nodes);
-    const c = deriveKeyWindowConstraints([rotation], RELEASE, { verifyAndAuthorize }).get("rel-key");
+    const c = __deriveLegacyForTests([rotation], RELEASE, { verifyAndAuthorize }).get("rel-key");
     const eff = mergeStricterWindow({ keyId: "rel-key", publicKey: RK.publicKey.trim() }, c);
     const sig2026 = isKeyValidForSignature(eff, { time: new Date(POST_C), provable: false, source: "self" });
     assert.equal(sig2026.valid, true, "rotation-only keeps a pre-2099 signature valid — so the compromise dominance is load-bearing");
