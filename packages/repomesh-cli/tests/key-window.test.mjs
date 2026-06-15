@@ -17,6 +17,7 @@ import {
   resolveTrustedSignatureTimeSync,
   resolveTrustedSignatureTime,
   deriveKeyWindowConstraints,
+  __deriveLegacyForTests,
   mergeStricterWindow,
 } from "../src/verify/key-window.mjs";
 
@@ -472,32 +473,44 @@ describe("§12.1 deriveKeyWindowConstraints", () => {
   });
 });
 
-// --- LEGACY back-compat: the pre-B3 { verifyAndAuthorize } opts shape still works -----------
-// Wave-A/B/B2 callers (and their tests, which this owner does NOT touch) pass the OLD opts shape.
-// deriveKeyWindowConstraints keeps the order-insensitive legacy path so every prior test + probe
-// stays green. This locks that contract: { verifyAndAuthorize } behaves byte-for-byte as pre-B3.
-describe("§13.1 legacy { verifyAndAuthorize } opts (back-compat) still derive constraints", () => {
+// --- LEGACY pre-B3 order-insensitive derivation — __deriveLegacyForTests (test-only baseline) ------
+// The pre-§13.1 { verifyAndAuthorize } order-insensitive path is NO LONGER a selectable branch of
+// deriveKeyWindowConstraints (the silent-downgrade footgun is gone — the main fn now fail-closes when
+// verifySignature is absent). The pre-fix behavior is preserved ONLY as the explicit, deliberately-ugly
+// __deriveLegacyForTests export, so these regression baselines still pin what the order-INSENSITIVE
+// derivation did — the thing the §13.1 order-aware pass deliberately diverges from.
+describe("§13.1 __deriveLegacyForTests (pre-B3 order-insensitive baseline)", () => {
   const LEGACY_ALLOW = { verifyAndAuthorize: () => true };
   const LEGACY_DENY = { verifyAndAuthorize: () => false };
 
   it("an authorized revocation derives the compromise constraint (legacy gate)", () => {
-    const c = deriveKeyWindowConstraints([revokeEvent({ invalidAfter: C })], REPO, LEGACY_ALLOW).get("mike-2026-01");
+    const c = __deriveLegacyForTests([revokeEvent({ invalidAfter: C })], REPO, LEGACY_ALLOW).get("mike-2026-01");
     assert.ok(c);
     assert.equal(c.revocationReason, "compromise");
     assert.equal(c.invalidAfter.toISOString(), new Date(C).toISOString());
   });
 
   it("verifyAndAuthorize=false => no constraint; no gate => no constraint (fail-closed)", () => {
-    assert.equal(deriveKeyWindowConstraints([revokeEvent({ invalidAfter: C })], REPO, LEGACY_DENY).size, 0);
-    assert.equal(deriveKeyWindowConstraints([revokeEvent({ invalidAfter: C })], REPO, undefined).size, 0);
+    assert.equal(__deriveLegacyForTests([revokeEvent({ invalidAfter: C })], REPO, LEGACY_DENY).size, 0);
+    assert.equal(__deriveLegacyForTests([revokeEvent({ invalidAfter: C })], REPO, undefined).size, 0);
   });
 
   it("a rotation folds with a later compromise on the SAME key (compromise dominates) — order-insensitive", () => {
     const rotation = rotateEvent({ retiringKeyId: "mike-2026-01", newKeyId: "mike-2026-06", effectiveAt: "2099-01-01T00:00:00Z" });
     const compromise = revokeEvent({ revokedKeyId: "mike-2026-01", reason: "compromise", invalidAfter: C });
-    const c = deriveKeyWindowConstraints([rotation, compromise], REPO, LEGACY_ALLOW).get("mike-2026-01");
+    const c = __deriveLegacyForTests([rotation, compromise], REPO, LEGACY_ALLOW).get("mike-2026-01");
     assert.equal(c.revocationReason, "compromise", "compromise dominates the prior rotation reason under the legacy path too");
     assert.equal(c.invalidAfter.toISOString(), new Date(C).toISOString());
+  });
+
+  it("FOOTGUN ELIMINATED: deriveKeyWindowConstraints IGNORES { verifyAndAuthorize } (fail-closed, no order-insensitive fallback)", () => {
+    // A production miswiring that forgot verifySignature and passed only the legacy gate gets NOTHING via
+    // the production entry point — never the order-insensitive authorization that would reopen residual ③.
+    assert.equal(deriveKeyWindowConstraints([revokeEvent({ invalidAfter: C })], REPO, LEGACY_ALLOW).size, 0,
+      "deriveKeyWindowConstraints fail-closes when verifySignature is absent, even if verifyAndAuthorize is supplied");
+    // The pre-fix behavior is reachable ONLY via the explicit test-only export (proven non-empty above).
+    assert.equal(__deriveLegacyForTests([revokeEvent({ invalidAfter: C })], REPO, LEGACY_ALLOW).size, 1,
+      "the order-insensitive derivation survives ONLY behind the __deriveLegacyForTests name");
   });
 });
 

@@ -312,6 +312,15 @@ function applyEventConstraint(out, ev) {
   }
 }
 
+// Is `ev` a key-lifecycle event (the only kind that contributes a window constraint)?
+function isKeyEvent(ev) {
+  return !!ev && (ev.type === "KeyRotation" || ev.type === "KeyRevocation");
+}
+// Does `ev` belong to `repo`? A null/undefined `repo` filter matches every event.
+function repoMatches(ev, repo) {
+  return repo === undefined || repo === null || ev.repo === repo;
+}
+
 // deriveKeyWindowConstraints(events, repo, opts) -> Map<keyId, constraint>
 //   Replays the repo's KeyRotation/KeyRevocation events into a per-keyId window-constraint map,
 //   ready to feed mergeStricterWindow. Events for other repos, of other types, or whose signer is
@@ -327,9 +336,7 @@ function applyEventConstraint(out, ev) {
 //   compromise-revocation on the SAME key yields a single constraint where compromise dominates
 //   (the §12.3 rotation-preempt case).
 //
-// TWO opts shapes (the SECOND is the Wave-B3 consolidation, §13.1):
-//
-//   NEW — order-aware single forward pass (consolidated §4 authorization). Supply:
+// ONE supported opts shape — the order-aware single forward pass (§13.1 consolidation). Supply:
 //     { verifySignature(ev) -> { ok, signerKeyId, signerNodeRepo },
 //       getMaintainer(keyId, nodeRepo) -> maintainer|null,
 //       timeOf(ev) -> trustedTime,
@@ -345,44 +352,31 @@ function applyEventConstraint(out, ev) {
 //   authorized (path-a fails; path-b only via trustedPolicy). This CONSOLIDATES the §4 authorization
 //   validity decision into the one shared module, deleting the per-site verifyAndAuthorize copies.
 //
-//   LEGACY — order-insensitive (back-compat for Wave-A/B/B2 callers). Supply:
-//     { verifyAndAuthorize(ev) -> boolean }
-//   An event contributes iff verifyAndAuthorize(ev) === true. This path is byte-for-byte equivalent
-//   to the pre-Wave-B3 implementation (no key events => empty map => maintainer unchanged), so every
-//   prior test + probe stays green. No new behavior is introduced for any existing case.
+//   FAIL-CLOSED when verifySignature is absent: the function derives NOTHING (empty map). There is NO
+//   order-insensitive { verifyAndAuthorize } fallback — that pre-§13.1 path was a silent-downgrade
+//   footgun (a miswiring that forgot verifySignature would get order-insensitive authorization, reopening
+//   residual ③). The pre-fix order-insensitive derivation is preserved ONLY as __deriveLegacyForTests
+//   (below), exported for the regression/exploit probes, never selectable here.
 //
 // PURE: no I/O. All trust/authorization/time is delegated to opts.
 export function deriveKeyWindowConstraints(events, repo, opts) {
   const out = new Map();
   if (!Array.isArray(events)) return out;
 
-  const repoMatches = (ev) =>
-    repo === undefined || repo === null || ev.repo === repo;
-  const isKeyEvent = (ev) =>
-    ev && (ev.type === "KeyRotation" || ev.type === "KeyRevocation");
-
   const verifySignature =
     opts && typeof opts.verifySignature === "function" ? opts.verifySignature : null;
 
-  // --- LEGACY order-insensitive path — TEST-BASELINE ONLY (back-compat). -------------------------
-  // SECURITY: this order-INSENSITIVE path does NOT carry the §13.1 residual-③ fix — it trusts whatever
-  // opts.verifyAndAuthorize returns, with NO strictly-earlier-events signer-validity check. It exists
-  // ONLY so regression tests can demonstrate the pre-§13.1 behavior. EVERY production verification site
-  // MUST pass the order-aware { verifySignature, getMaintainer, timeOf, trustedPolicy } opts (all do —
-  // grep-verified). Do NOT wire { verifyAndAuthorize } into any production verifier: it would reopen ③.
-  if (!verifySignature) {
-    const verifyAndAuthorize =
-      opts && typeof opts.verifyAndAuthorize === "function" ? opts.verifyAndAuthorize : null;
-    for (const ev of events) {
-      if (!isKeyEvent(ev) || !repoMatches(ev)) continue;
-      // No gate / unauthorized => NOTHING (fail-closed: no authority => no derived constraint).
-      if (!verifyAndAuthorize || verifyAndAuthorize(ev) !== true) continue;
-      applyEventConstraint(out, ev);
-    }
-    return out;
-  }
+  // FAIL-CLOSED — footgun eliminated (§13.1). The ONLY supported opts shape is the order-aware
+  // { verifySignature, getMaintainer, timeOf, trustedPolicy }. If verifySignature is absent we derive
+  // NOTHING (empty map => mergeStricterWindow returns the maintainer untouched => node.json-only). We do
+  // NOT fall back to an order-INSENSITIVE { verifyAndAuthorize } pass: a production miswiring that forgot
+  // verifySignature must degrade to "no derived constraint" (no false authority), never to the pre-§13.1
+  // behavior that reopens residual ③ (a stripped node.json re-authorizing a compromise-revoked signer).
+  // The pre-fix order-insensitive derivation lives ONLY in __deriveLegacyForTests below — callable by the
+  // regression/exploit probes, never selectable here.
+  if (!verifySignature) return out;
 
-  // --- NEW order-aware single forward pass (§13.1). Consolidated §4 authorization. ---------------
+  // --- order-aware single forward pass (§13.1). Consolidated §4 authorization. -------------------
   const getMaintainer =
     opts && typeof opts.getMaintainer === "function" ? opts.getMaintainer : () => null;
   const timeOf =
@@ -397,7 +391,7 @@ export function deriveKeyWindowConstraints(events, repo, opts) {
   // events only, because E's own constraint is not applied until AFTER it is authorized. No
   // recursion, no fixpoint: every event's authorization depends only on events before it.
   for (const ev of events) {
-    if (!isKeyEvent(ev) || !repoMatches(ev)) continue;
+    if (!isKeyEvent(ev) || !repoMatches(ev, repo)) continue;
 
     // (a) the signature must verify.
     const vs = verifySignature(ev) || {};
@@ -432,6 +426,31 @@ export function deriveKeyWindowConstraints(events, repo, opts) {
     if (!dec.valid) continue;
 
     // Authorized + valid => apply E's constraint into derivedSoFar (rotate/revoke shapes as before).
+    applyEventConstraint(out, ev);
+  }
+  return out;
+}
+
+// __deriveLegacyForTests(events, repo, opts) -> Map<keyId, constraint>  — TEST-ONLY. NOT PRODUCTION.
+//
+// The pre-§13.1 ORDER-INSENSITIVE derivation: an event contributes iff opts.verifyAndAuthorize(ev) ===
+// true, with NO strictly-earlier-events signer-validity check. This is the documented "pre-fix broken
+// behavior" baseline — the residual-③ footgun (a stripped node.json could re-authorize a compromise-
+// revoked signer's later rotation). It is exported under this deliberately-ugly name ONLY so the
+// regression + end-to-end exploit probes can demonstrate the pre-fix behavior and prove the order-aware
+// fix in deriveKeyWindowConstraints is load-bearing. The `__`/`ForTests` name makes any production use
+// glaring in review. PRODUCTION MUST call deriveKeyWindowConstraints with the order-aware opts; wiring
+// { verifyAndAuthorize } into a verifier would reopen ③ — which is exactly why it is no longer a
+// selectable branch of deriveKeyWindowConstraints.
+export function __deriveLegacyForTests(events, repo, opts) {
+  const out = new Map();
+  if (!Array.isArray(events)) return out;
+  const verifyAndAuthorize =
+    opts && typeof opts.verifyAndAuthorize === "function" ? opts.verifyAndAuthorize : null;
+  for (const ev of events) {
+    if (!isKeyEvent(ev) || !repoMatches(ev, repo)) continue;
+    // No gate / unauthorized => NOTHING (fail-closed: no authority => no derived constraint).
+    if (!verifyAndAuthorize || verifyAndAuthorize(ev) !== true) continue;
     applyEventConstraint(out, ev);
   }
   return out;
