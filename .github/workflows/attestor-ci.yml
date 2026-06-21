@@ -166,6 +166,11 @@ jobs:
             cat /tmp/repomesh-ci/violations.jsonl >> ledger/events/events.jsonl
           fi
 
+          # Normalize: concatenating multiple verifier outputs can leave a blank/whitespace-only line
+          # (a source file without a trailing newline, or an empty one), which validate-ledger rejects
+          # (LDG-004). Strip blank lines + guarantee a single trailing newline — one JSON event per line.
+          node -e "const fs=require('fs');const f='ledger/events/events.jsonl';const ls=fs.readFileSync(f,'utf8').split('\n').filter(l=>l.trim().length>0);fs.writeFileSync(f,ls.join('\n')+'\n');"
+
           git add ledger/events/events.jsonl
           git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro, ${{ steps.check.outputs.violations }} violation(s)"
           git push origin "$BRANCH"
