@@ -70,22 +70,38 @@
         "missing": []
       },
       "2.0.0": {
-        "completed": [],
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
         "expected": [],
         "missing": []
       },
       "2.1.0": {
-        "completed": [],
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
         "expected": [],
         "missing": []
       },
       "2.2.0": {
-        "completed": [],
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
         "expected": [],
         "missing": []
       },
       "2.3.0": {
-        "completed": [],
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
         "expected": [],
         "missing": []
       }
