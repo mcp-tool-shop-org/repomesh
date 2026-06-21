@@ -11,6 +11,22 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+// SCORING-A-003: the verdict-band thresholds are a SINGLE shared source of truth, OWNED by the
+// authoritative producer (build-trust.mjs). verify-trust is a CONSUMER: before this it hard-coded
+// green ≥80 / exit-0 ≥50, a THIRD threshold set that disagreed with build-trust's VERIFIED ≥70 /
+// PARTIAL ≥40 on the 70-79 and 40-49 bands (a release the producer called VERIFIED rendered RED here;
+// a PARTIAL release exited 1 / "unusable"). We load the shared bands from build-trust so the
+// consumer's badge + exit decision are identical to the producer's verdict. build-trust always sits
+// next to this script in the real tree; we resolve it relative to this file. A guarded fallback
+// mirrors the SAME canonical values so the consumer still bands correctly if build-trust cannot be
+// loaded (e.g. exercised in an isolated copy) — a parity test pins the mirror to the shared source.
+const CANONICAL_INTEGRITY_BANDS = Object.freeze({ VERIFIED: 70, PARTIAL: 40, GREEN: 70, YELLOW: 40 });
+let INTEGRITY_BANDS = CANONICAL_INTEGRITY_BANDS;
+try {
+  const mod = await import(path.join(import.meta.dirname, "build-trust.mjs"));
+  if (mod?.INTEGRITY_BANDS) INTEGRITY_BANDS = mod.INTEGRITY_BANDS;
+} catch { /* isolated-copy fallback: use the canonical mirror above (pinned by a parity test). */ }
 const TRUST_PATH = path.join(ROOT, "registry", "trust.json");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const NODES_DIR = path.join(ROOT, "ledger", "nodes");
@@ -156,8 +172,13 @@ const assuranceScore = entry.assuranceScore ?? 0;
 // (build-trust) marked this release DISPUTED, lead with a prominent \u26D4 banner \u2014 one line per active
 // dispute, showing WHO disputed it and WHY \u2014 before the numeric breakdown.
 const disputed = entry.disputed === true || entry.verdict === "DISPUTED";
-const iBadge = disputed ? "\u26D4" : integrityScore >= 80 ? "\u2705" : integrityScore >= 50 ? "\u26A0\uFE0F" : "\u274C";
-const aBadge = assuranceScore >= 70 ? "\u2705" : assuranceScore >= 30 ? "\u26A0\uFE0F" : "\u274C";
+// SCORING-A-003: band the integrity badge on the SHARED thresholds (VERIFIED 70 / PARTIAL 40), not the
+// drifted local 80/50, so the consumer's green/yellow/red tier matches the producer's verdict exactly.
+const iBadge = disputed ? "\u26D4"
+  : integrityScore >= INTEGRITY_BANDS.GREEN ? "\u2705"
+  : integrityScore >= INTEGRITY_BANDS.YELLOW ? "\u26A0\uFE0F" : "\u274C";
+const aBadge = assuranceScore >= INTEGRITY_BANDS.GREEN ? "\u2705"
+  : assuranceScore >= 30 ? "\u26A0\uFE0F" : "\u274C";
 console.log(`\n${iBadge} ${entry.repo}@${entry.version}`);
 if (disputed) {
   const disputes = Array.isArray(entry.disputes) ? entry.disputes : [];
@@ -341,4 +362,7 @@ if (entry.expectedChecks?.length > 0) {
 }
 
 console.log();
-process.exit(integrityScore >= 50 ? 0 : 1);
+// SCORING-A-003: exit-0 when the producer's band is at least PARTIAL (>= 40), not the drifted >= 50.
+// A 40-49 PARTIAL release is "usable with gaps" per the producer; the consumer must agree (exit 0). A
+// disputed release is below the cap so it still exits non-zero. Banding now matches build-trust exactly.
+process.exit(integrityScore >= INTEGRITY_BANDS.PARTIAL ? 0 : 1);

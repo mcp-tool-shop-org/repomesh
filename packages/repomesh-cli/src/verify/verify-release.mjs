@@ -572,6 +572,110 @@ async function findAnchorForHash(events, canonicalHash, opts) {
   return null;
 }
 
+// --- LEDGER-A-005: local-ledger immutability via committed anchor manifests -------------------
+// The exploit: drop a signed KeyRevocation event (+ strip node.json window fields) from a LOCAL
+// checkout's ledger so a compromise-revoked key looks live, then verify a post-revocation release.
+// The §12.1 derive-stricter window defence CANNOT see a DELETED event. The committed anchor manifests
+// (anchor/xrpl/manifests/*.json) pin each partition's Merkle root, so dropping/reordering ANY anchored
+// event makes the recomputed root diverge — unforgeable without re-anchoring the partition on-chain.
+// This recomputes every committed manifest's root over the LOADED ledger and FAILS on the first
+// mismatch/truncation/reorder. Self-contained (uses ./merkle.mjs merkleRootForAlgo), and byte-identical
+// in BEHAVIOUR to ledger/scripts/validate-ledger.mjs verifyAnchorManifests (v1+v2 aware) and to the
+// tools/verify-release.mjs copy. LOCAL-only: the manifests are read from opts.root (the checkout the
+// local ledger lives in); the remote path independently commits to order via on-chain --anchored.
+//
+// Returns { ok:true } or { ok:false, file, reason, category }. The category distinguishes:
+//   - "ledger-tamper": the LEDGER itself was truncated/reordered or an anchored event removed (start
+//     not found / slice truncated / partition end moved). This is the LEDGER-A-005 exploit class — the
+//     committed manifest is internally fine but the loaded ledger no longer matches it. The per-release
+//     --anchored path CANNOT catch this for events outside the verified release's own partition, and is
+//     not run at all without --anchored. Always a hard early FAIL.
+//   - "manifest-issue": the ledger SLICE is intact (present, contiguous, correct end) but the manifest's
+//     own root/algo can't be reproduced (forged manifest root, or an unsupported/future algo). When the
+//     verifier is ALSO going to run the per-release anchor path (anchored || anchoredOrLocal), that path
+//     produces the richer, established verdict (rootMatch:false hard-FAIL, or unsupportedAlgo UNVERIFIED)
+//     for the release's own partition — so we defer to it rather than preempt with a generic verdict.
+//     The caller still hard-fails this category when NO anchor path will run (a forged manifest must not
+//     pass a plain local verify either).
+function checkLedgerImmutability(events, opts) {
+  // LOCAL path only — the threat is a tampered local checkout/clone/cache.
+  if (!opts?.local || !opts?.root) return { ok: true };
+  // Resolve strictly from the local checkout root (where this ledger lives). REPOMESH_MANIFESTS_PATH
+  // is a remote URL default for the online path, so it is honored here ONLY when it names a real local
+  // directory — otherwise (unset, or a URL) we use opts.root's committed manifests. This keeps the
+  // check self-contained and prevents a URL-valued env var from silently skipping immutability.
+  const envManifests = process.env.REPOMESH_MANIFESTS_PATH;
+  const useEnvManifests = typeof envManifests === "string"
+    && !/^[a-z]+:\/\//i.test(envManifests) && fs.existsSync(envManifests);
+  const manifestsDir = useEnvManifests
+    ? envManifests
+    : path.join(opts.root, "anchor", "xrpl", "manifests");
+  let manifestFiles;
+  try {
+    if (!fs.existsSync(manifestsDir)) return { ok: true };
+    manifestFiles = fs.readdirSync(manifestsDir).filter(f => f.endsWith(".json"));
+  } catch (e) {
+    debugLog(`anchor manifests dir unreadable (immutability check skipped): ${e.message}`);
+    return { ok: true };
+  }
+  if (manifestFiles.length === 0) return { ok: true };
+
+  const hashes = events.map(e => e?.signature?.canonicalHash);
+  for (const file of manifestFiles) {
+    let manifest;
+    try {
+      // CLI-010: strict parse (rejects duplicate keys / non-finite numbers) for trust-critical input.
+      manifest = parseStrictJson(fs.readFileSync(path.join(manifestsDir, file), "utf8"));
+    } catch (e) {
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} is unreadable/corrupt: ${e.message}` };
+    }
+    const algo = manifest.algo || "sha256-merkle-v1";
+    const { range, count, root } = manifest;
+    if (!Array.isArray(range) || range.length !== 2 || typeof root !== "string" || !Number.isInteger(count)) {
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} is malformed (range/count/root missing)` };
+    }
+    const start = hashes.indexOf(range[0]);
+    if (start === -1) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} pins a partition starting at ${range[0]} ` +
+        `which is no longer present in the ledger (an anchored event was removed)` };
+    }
+    const slice = hashes.slice(start, start + count);
+    if (slice.length !== count || slice.some(h => !h)) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} partition (count=${count}) is truncated` };
+    }
+    if (slice[slice.length - 1] !== range[1]) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} partition end ${range[1]} does not match ` +
+        `the ledger (events were reordered or replaced)` };
+    }
+    // The ledger slice for this partition is INTACT from here on; anything below is a manifest-level
+    // issue (forged root / unsupported algo) the per-release anchor path also detects for the release's
+    // own partition. B-FP-01 parity: a future/unknown algo is "upgrade the CLI", not a tamper MISMATCH.
+    if (!isSupportedMerkleAlgo(algo)) {
+      return { ok: false, file, category: "manifest-issue", reason:
+        `anchor manifest ${file} pins unsupported merkle algo '${algo}' — upgrade the CLI to verify it` };
+    }
+    let computed;
+    try {
+      computed = merkleRootForAlgo(slice, algo);
+    } catch (e) {
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} has an unverifiable algo: ${e.message}` };
+    }
+    if (computed !== root) {
+      return { ok: false, file, category: "manifest-issue", reason:
+        `immutability violation: anchor manifest ${file} Merkle root mismatch ` +
+        `(manifest.root=${root} recomputed=${computed}) — the manifest does not match the ledger slice ` +
+        `(forged manifest root, or an anchored event was modified)` };
+    }
+  }
+  return { ok: true };
+}
+
 // --- Profile resolution (D5) ---
 
 // Structural integrity checks that are NOT attestation types.
@@ -672,6 +776,43 @@ export async function computeVerifyResult({
     console.log(`\nVerifying release: ${repo}@${version}`);
     console.log(`  Mode: ${useLocal ? "local (dev)" : "remote"}`);
     console.log(`  Anchored check: ${anchored ? "yes" : "no"}\n`);
+  }
+
+  // LEDGER-A-005: BEFORE any trust logic, assert the LOCAL ledger has not been truncated/reordered
+  // relative to the committed anchor manifests. Runs on the local path (independent of --anchored)
+  // because the exploit accepts a post-revocation release WITHOUT --anchored — the §12.1 derive-stricter
+  // window defence cannot see a DELETED KeyRevocation, but a dropped/reordered anchored event breaks the
+  // pinned Merkle root. Remote verification independently commits to order via the on-chain --anchored
+  // path, so this LOCAL-only check does not double-fail there.
+  //
+  // Composition with the per-release anchor path (do not double-fail / do not preempt established
+  // verdicts): a "ledger-tamper" category (truncation/reorder/removed anchored event) is ALWAYS a hard
+  // early FAIL — that is the LEDGER-A-005 exploit, and the per-release --anchored path cannot see it for
+  // partitions other than the release's own (or at all without --anchored). A "manifest-issue" category
+  // (forged manifest root or unsupported algo, with the ledger slice intact) is DEFERRED to the
+  // per-release anchor path when that path will run (anchored || anchoredOrLocal), so its richer verdict
+  // shape (rootMatch:false / unsupportedAlgo UNVERIFIED) is preserved; otherwise we still hard-fail it.
+  const immutability = checkLedgerImmutability(events, opts);
+  const deferToAnchorPath = immutability.category === "manifest-issue" && (anchored || anchoredOrLocal);
+  if (!immutability.ok && !deferToAnchorPath) {
+    result.ok = false;
+    // FC1: a tampered local ledger is hard tampering -> FAIL (exit 1). Surface a machine-readable
+    // gate failure so a CI consumer reading result.gate.failures sees the cause.
+    result.gate = {
+      status: "FAIL",
+      failures: [{
+        check: "ledger.immutability",
+        reason: immutability.reason,
+        hint: "The local ledger no longer matches a committed anchor manifest (an anchored event was " +
+          "removed, reordered, or modified). Re-clone the ledger from a trusted source and re-verify.",
+      }],
+    };
+    result.anchor = { immutabilityValid: false, manifest: immutability.file, reason: immutability.reason };
+    if (human) {
+      console.error(`  Ledger immutability: FAIL — ${immutability.reason}`);
+      console.log(`\n  Verification: FAIL — ${immutability.reason}\n`);
+    }
+    return { result, status: "FAIL" };
   }
 
   // 1. Find ReleasePublished event

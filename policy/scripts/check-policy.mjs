@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger", "events", "events.jsonl");
@@ -173,6 +174,35 @@ function checkRegistryNodeCapabilities(events) {
 
 // --- build PolicyViolation event ---
 
+// SPC-A-001: PolicyViolation is in the schema's release-shaped enum, so it inherits
+// `required: [version, commit, artifacts, attestations]` AND `artifacts minItems:1`.
+// An empty `artifacts: []` makes EVERY violation event schema-invalid, so the ledger
+// validator rejects it and a genuine violation (e.g. a semver downgrade) can never be
+// recorded — the entire enforcement path is silently dead. Fix at the emitter: every
+// violation event carries exactly one schema-valid artifact that *describes the
+// violation itself* (a content-addressed, verifiable receipt), so the event validates
+// and the enforcement path is live.
+function buildViolationArtifact(v) {
+  // The artifact is the violation descriptor itself, content-addressed by sha256 of its
+  // canonical JSON. This yields a deterministic, schema-valid `^[0-9a-f]{64}$` digest and
+  // makes the receipt tamper-evident: anyone can recompute the digest from the descriptor.
+  const descriptor = canonicalize({
+    type: v.type,
+    repo: v.repo,
+    version: v.version || "0.0.0",
+    commit: v.commit || "0000000",
+    severity: v.severity,
+    detail: v.detail,
+  });
+  const canonical = JSON.stringify(descriptor);
+  const sha256 = crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+  return {
+    name: `policy-violation:${v.type}`,
+    sha256,
+    uri: `repomesh:policy-violation:${v.type}:${v.severity}`,
+  };
+}
+
 function buildViolationEvent(v) {
   return {
     type: "PolicyViolation",
@@ -180,7 +210,7 @@ function buildViolationEvent(v) {
     version: v.version || "0.0.0",
     commit: v.commit || "0000000",
     timestamp: new Date().toISOString(),
-    artifacts: [],
+    artifacts: [buildViolationArtifact(v)],
     attestations: [
       { type: "policy.check", uri: `repomesh:policy:${v.type}:${v.severity}` }
     ],
@@ -189,8 +219,20 @@ function buildViolationEvent(v) {
   };
 }
 
-// --- main ---
+// --- exports (SPC-A-005: importable for the schema-roundtrip regression test) ---
+// Exporting the emitters lets the test build + sign a real violation event and assert it
+// validates against schemas/event.schema.json — the regression guard proving enforcement
+// is live. The CLI body below only runs when this file is executed directly, not on import.
+export { buildViolationEvent, buildViolationArtifact, signEvent, canonicalize };
 
+// --- main (CLI) ---
+// Guard: only run the CLI when invoked directly (`node check-policy.mjs ...`), never on
+// import. Without this, importing the module for tests would execute the whole pipeline
+// (and `process.exit`) as a side effect.
+const isDirectRun =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
 const args = process.argv.slice(2);
 const repoFilter = args.indexOf("--repo") !== -1 ? args[args.indexOf("--repo") + 1] : null;
 const doSign = args.includes("--sign");
@@ -262,3 +304,4 @@ if (errors.length > 0) {
   console.log(`\n${errors.length} error(s) found. Network health compromised.`);
   process.exit(2);
 }
+} // end isDirectRun (CLI) guard

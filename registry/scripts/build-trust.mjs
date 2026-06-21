@@ -45,6 +45,38 @@ const DEFAULT_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
 const REPO_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
+// SCORING-A-003: the verdict-band thresholds are a SINGLE shared source of truth. build-trust is the
+// AUTHORITATIVE producer (it writes the verdict into trust.json), so its canonical 70/40 thresholds
+// live here and are exported for the consumers (verify-trust.mjs renders the badge + exit code,
+// build-badges.mjs picks the score color). Before this constant existed, verify-trust hard-coded
+// green ≥80 / exit-0 ≥50 and build-badges used green ≥80 / yellow ≥50 — a THIRD threshold set — so a
+// 70-79 release was VERIFIED to the producer but RED+exit-0 to the consumer, and a 40-49 release was
+// PARTIAL to the producer but exit-1 (unusable) to the consumer. The bands now agree across all three:
+//   integrity >= VERIFIED (70) → VERIFIED / green / exit 0
+//   integrity >= PARTIAL  (40) → PARTIAL  / yellow / exit 0
+//   else                       → UNVERIFIED / red / exit 1
+// GREEN/YELLOW are aliases used by the badge color + consumer banner so the visual tiers track the
+// SAME boundaries as the verdict. (A disputed release is a louder, distinct state handled separately.)
+export const INTEGRITY_BANDS = Object.freeze({
+  VERIFIED: 70,
+  PARTIAL: 40,
+  // Aliases for the badge/consumer color tiers — bound to the canonical verdict thresholds above.
+  GREEN: 70,
+  YELLOW: 40,
+});
+
+// SCORING-A-003 helpers — the single mapping from a score to its band/color, reused by build-trust's
+// own output and importable by the consumers so the decision is identical everywhere.
+export function integrityVerdict(score) {
+  return score >= INTEGRITY_BANDS.VERIFIED ? "VERIFIED"
+    : score >= INTEGRITY_BANDS.PARTIAL ? "PARTIAL" : "UNVERIFIED";
+}
+export function bandColor(score) {
+  if (score >= INTEGRITY_BANDS.GREEN) return "#4c1";    // green
+  if (score >= INTEGRITY_BANDS.YELLOW) return "#dfb317"; // yellow
+  return "#e05d44";                                       // red
+}
+
 // Third-party-signed event types resolve their key from a TRUSTED attestor/policy node, not the
 // event's own repo. Their allowed kinds mirror validate-ledger.mjs (D2 / LDG-007).
 const ATTESTOR_KINDS = new Set(["attestor", "registry"]);
@@ -83,7 +115,17 @@ const SCOREABLE_RESULTS = new Set(["pass", "warn", "fail"]);
 // ANC-B10: attestation note lines are written "kind: result — reason". The separator was historically
 // an em-dash (—), but hand-written/ported notes drift to an en-dash (–) or an ASCII hyphen (-). Accept
 // all three so a cosmetic dash variation never silently drops a real attestation result.
-const ATTESTATION_NOTE_RE = /^([^:]+):\s*(pass|warn|fail)\s*[—–-]\s*(.+)$/;
+//
+// SCORING-A-001: 'unscored' is a FIRST-CLASS captured result here, IDENTICAL to the URI path (whose
+// `(\w+)` capture already accepts 'unscored'). Before this, the note regex captured only
+// (pass|warn|fail): a note-line "kind: unscored — reason" failed the full match, fell into the
+// near-miss path (console.warn only), and was NEVER recorded as a source. That made the D13b
+// sticky/poisoning branch unreachable from the note path — in a {unscored, pass} topology the `pass`
+// won and awarded full credit (a latent assurance forge). Capturing 'unscored' here lets a note-form
+// 'unscored' participate in resolveConsensus's poisoning logic and zero assurance, byte-identical to
+// the URI form. Keep the near-miss detector below as a superset so a genuinely malformed line (bad
+// separator / missing reason) still WARNs instead of vanishing.
+const ATTESTATION_NOTE_RE = /^([^:]+):\s*(pass|warn|fail|unscored)\s*[—–-]\s*(.+)$/;
 // Near-miss detector: a line that starts "kind: pass|warn|fail" but did NOT match the full pattern
 // above (e.g. an exotic separator, a stray result token, or no reason). We WARN on these so format
 // drift is visible instead of vanishing into an empty parse.
@@ -831,6 +873,21 @@ export function buildTrust(opts = {}) {
         if (INTEGRITY_WEIGHTS[kind] !== undefined && attestorPassed(kind)) revoked -= INTEGRITY_WEIGHTS[kind];
       }
       entry.integrityScore = Math.max(0, Math.min(revoked, DISPUTE_INTEGRITY_CAP));
+      // SCORING-A-004: a dispute that caps integrity MUST also revisit assuranceScore. Before this, a
+      // disputed release kept whatever assurance it earned, so it could still render a GREEN assurance
+      // badge while the integrity badge was capped to the UNVERIFIED band — a disputed release showing
+      // green assurance. A standing trusted dispute attacks the release's trustworthiness as a whole;
+      // the assurance axis is capped to the SAME ceiling as integrity (DISPUTE_INTEGRITY_CAP = 39),
+      // which is strictly below both the green (70) and yellow (40) tiers, so a disputed release can
+      // never show green assurance. The assuranceScaling.disputed flag records WHY it was capped.
+      if (entry.assuranceScore > DISPUTE_INTEGRITY_CAP) {
+        entry.assuranceScaling = {
+          ...(entry.assuranceScaling || {}),
+          preDisputeAssurance: entry.assuranceScore,
+          disputed: true,
+        };
+        entry.assuranceScore = DISPUTE_INTEGRITY_CAP;
+      }
       // Mark the disputed integrity check as no-longer-completed so the proof chain stays honest.
       entry.completedChecks = completedChecks.filter((c) => !ATTESTOR_GATED_INTEGRITY.has(c));
       for (const kind of ATTESTOR_GATED_INTEGRITY) {
@@ -848,9 +905,9 @@ export function buildTrust(opts = {}) {
     // CLI/dashboard render) and itemize the gaps with their cause.
     // FC6: a standing trusted dispute forces the DISPUTED verdict (a distinct, louder state than the
     // numeric band) — it is never reported as VERIFIED/PARTIAL while unresolved.
-    entry.verdict = entry.disputed ? "DISPUTED"
-      : entry.integrityScore >= 70 ? "VERIFIED"
-      : entry.integrityScore >= 40 ? "PARTIAL" : "UNVERIFIED";
+    // SCORING-A-003: verdict bands come from the shared INTEGRITY_BANDS (via integrityVerdict) so the
+    // producer and both consumers map a score to the SAME band. (Disputed is a louder, distinct state.)
+    entry.verdict = entry.disputed ? "DISPUTED" : integrityVerdict(entry.integrityScore);
     const failed = [];     // attestor RAN and said fail (a fail is a completed-but-failing check)
     const unscored = [];   // verifier could not certify (network/unbound) — 0 points, MISSING
     const absent = [];     // no attestation at all
@@ -916,7 +973,7 @@ export function buildTrust(opts = {}) {
     fs.writeFileSync(path.join(registryDir, "trust.json"), JSON.stringify(output, null, 2) + "\n", "utf8");
     console.log(`Trust index built: ${output.length} release(s).`);
     for (const entry of output) {
-      const iBadge = entry.disputed ? "⛔" : entry.integrityScore >= 70 ? "✅" : entry.integrityScore >= 40 ? "⚠️" : "❌";
+      const iBadge = entry.disputed ? "⛔" : entry.integrityScore >= INTEGRITY_BANDS.VERIFIED ? "✅" : entry.integrityScore >= INTEGRITY_BANDS.PARTIAL ? "⚠️" : "❌";
       const aBadge = entry.assuranceScore > 0
         ? (entry.assuranceScore >= 70 ? " ✅" : entry.assuranceScore >= 30 ? " ⚠️" : " ❌")
         : "";

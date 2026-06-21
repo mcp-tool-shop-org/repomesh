@@ -49,6 +49,18 @@ function sha256hex(str) {
   return crypto.createHash("sha256").update(str, "utf8").digest("hex");
 }
 
+// LEDGER-A-004: convert an XRPL Ripple-epoch close-time (seconds since 2000-01-01T00:00:00Z) to a
+// JS Date. Ripple epoch offset from the Unix epoch is 946684800 s (contract §5.2). The on-chain
+// close-time is the ONLY trustworthy clock for the key-lifecycle compromise gate; the CLI's
+// verify-anchor threads it into the rung-1 'xrpl' resolver. This reference command surfaces it too
+// (it previously never read txObj.date), so an operator running `verify-anchor --tx` sees the real
+// on-chain time, not just the anchor event's self-asserted timestamp. Returns null when absent.
+function rippleDateToCloseTime(rippleEpochSeconds) {
+  if (typeof rippleEpochSeconds !== "number" || !Number.isFinite(rippleEpochSeconds)) return null;
+  const d = new Date((rippleEpochSeconds + 946684800) * 1000);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // Best-effort local Merkle root for operator guidance when the network/tx is unavailable (ANC-B01).
 // Prefers the genesis manifest, then any committed manifest. Returns null if none can be read.
 function localManifestRoot(root) {
@@ -288,10 +300,14 @@ async function main() {
     trustedAnchorAccounts: trustedAccounts,
   });
 
+  // LEDGER-A-004: surface the on-chain ledger close-time (the trustworthy clock). Derived from
+  // txObj.date (Ripple epoch seconds); this reference command previously never read it.
+  const closeTime = rippleDateToCloseTime(txObj?.date);
   console.log(`\n  On-chain tx checks:`);
   console.log(`    validated:           ${verdict.checks.validated ? "OK" : "FAIL"}`);
   console.log(`    TransactionResult:   ${verdict.checks.tesSUCCESS ? "tesSUCCESS" : `FAIL (${txObj?.meta?.TransactionResult})`}`);
   console.log(`    Account allowlisted: ${verdict.checks.account ? `OK (${txObj?.Account})` : `FAIL (${txObj?.Account})`}`);
+  console.log(`    On-chain close-time: ${closeTime ? closeTime.toISOString() + " (trusted clock)" : "(unavailable — txObj.date absent)"}`);
   console.log(`\n  Root check:`);
   console.log(`    Local:  ${localRoot}`);
   console.log(`    Memo:   ${memo.r}`);

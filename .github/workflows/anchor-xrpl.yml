@@ -57,6 +57,14 @@ jobs:
           git config user.email "repomesh-bot@users.noreply.github.com"
           git checkout -b "$BRANCH"
           cat /tmp/repomesh-ci/anchor.jsonl >> ledger/events/events.jsonl
+          # LEDGER-A-001: regenerate the whole-ledger all.json manifest so validate-ledger's
+          # LOCAL immutability coverage spans the just-appended event. The --since-last partition
+          # (computed above) covers the new event ON-CHAIN; all.json keeps the FULL ledger locally
+          # tamper-evident. Without this, all.json goes stale every cycle and post-anchor events
+          # become unverifiable by `npm run validate:ledger` — the coverage gap the 2026-06-20
+          # dogfood swarm closed. (ledger/tests/immutability-coverage.test.mjs is the drift guard.)
+          rm -f anchor/xrpl/manifests/all.json
+          node anchor/xrpl/scripts/compute-root.mjs --all
           # ANC-B02: rebuild registry/anchors.json from the just-appended anchor event so
           # display surfaces (Pages dashboard, badges, snippets) pick up the new partition's
           # txHash in the SAME commit. Without this, anchors.json lags by a cycle and live
