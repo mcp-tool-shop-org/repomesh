@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-06-21
+
+The **verifier-plugin contract** (#7) — extend the trust network with new check kinds + verifier nodes
+by editing data, not code. Additive; existing scoring + validation byte-identical.
+
+### Added
+- **Data-driven check-kinds registry** — per-check weights, attestor-gated set, scoreable-results, and
+  the node-kind→event-type permission map move from hardcoded constants into `verifier.policy.json`
+  (v2). Adding a check kind / verifier is a ~6-line policy edit + a `node.json`, no code change. Guide:
+  [docs/verifier-plugin-contract.md](https://github.com/mcp-tool-shop-org/repomesh/blob/main/docs/verifier-plugin-contract.md).
+- **`registered ≠ trusted`** made explicit — an unregistered check kind earns zero and is flagged; a
+  registered kind still needs a trusted-set consensus pass.
+- **`schemas/verifier.policy.schema.json`** — the policy is schema-validated (v1 + v2); the ledger
+  validator **fails closed** on a malformed trust policy.
+
+### Compatibility
+- `verifier.policy.json` → `v: 2`; every v2 field optional, per-field fallback to the pre-#7 default. A
+  v1 policy is unchanged. `trust.json` regenerates byte-identical to the prior release.
+
 ## [2.2.0] - 2026-06-21
 
 Dogfood-swarm release: a full health pass (bug/security → proactive → humanization → visual) plus an

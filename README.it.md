@@ -165,7 +165,7 @@ Aggiungi `node.json` alla directory principale del tuo repository:
 npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-`keygen` stampa la chiave pubblica e un `keyId` pronti per essere inseriti nella voce relativa ai manutentori nel file `node.json`, e scrive la chiave privata (con permessi 0600) solo nella posizione specificata con l'opzione `--out`; non la scriverà mai in una directory tracciata. Salvala come segreto del repository GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente eseguito manualmente: `openssl genpkey -algorithm ED25519 ...`.)
+`keygen` stampa la chiave pubblica e un `keyId` pronti per essere inseriti nella voce relativa ai manutentori del file `node.json`, e scrive la chiave privata (modalità 0600) solo nel percorso specificato con l'opzione `--out`; non la scrive mai in un percorso tracciato. Salvala come segreto del repository GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente eseguito manualmente: `openssl genpkey -algorithm ED25519 ...`).
 
 > **Registra almeno 2 chiavi per un nodo di importanza critica per la fiducia** (TUF §6.1): una singola chiave non può firmare la propria revoca in caso di compromissione. `repomesh init --second-key` registra un secondo manutentore distinto, in modo che una chiave possa revocare l'altra; `init` avvisa quando un nodo ha solo una chiave attiva.
 
@@ -251,6 +251,14 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | Prende decisioni |
 | `identity` | Emette/verifica le credenziali |
 
+## Estensione della rete: il contratto del plugin di verifica
+
+Nuovi **tipi di controllo** e **nodi di verifica** vengono aggiunti modificando i dati, non il codice. Il registro dei tipi di controllo, i pesi di valutazione e le autorizzazioni per tipo di nodo sono contenuti in
+[`verifier.policy.json`](verifier.policy.json) (convalidato tramite schema, con comportamento predefinito che prevede il blocco). L'aggiunta di un controllo (ad esempio `sast.scan`) consiste in una modifica della policy di circa 6 righe e in un file `node.json`, entrambi sottoposti a revisione in una PR; non è necessaria alcuna modifica del codice.
+
+L'unica costante: **registrato ≠ affidabile**. La registrazione consente a un controllo di partecipare; tuttavia, l'attribuzione di credito richiede comunque il consenso da parte di un insieme di elementi considerati affidabili. Guida completa:
+[docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
+
 ## Verifica pubblica
 
 Chiunque può verificare una versione con un singolo comando: **non è richiesta alcuna clonazione**, la CLI recupera il registro pubblico per l'utente:
@@ -303,9 +311,9 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 
 Consultare [docs/verification.md](docs/verification.md) per la guida completa alla verifica, il modello delle minacce e i concetti chiave.
 
-### Usalo come libreria
+### Utilizzalo come libreria
 
-Il motore di verifica viene esportato come un'API programmatica stabile: incorporalo nei tuoi strumenti invece di utilizzare la riga di comando (CLI).
+Il motore di verifica viene esportato come un'API programmatica stabile; incorporalo nei tuoi strumenti invece di utilizzare la CLI:
 
 ```js
 import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
@@ -316,7 +324,7 @@ process.exitCode = exitCodeForStatus(result.status);
 
 ### Endpoint dello stato della rete
 
-La dashboard pubblica un file [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) leggibile da una macchina, per il monitoraggio esterno: include informazioni sulla freschezza del registro (con un segnale di "registro congelato"), il numero di valutazioni di affidabilità, le partizioni ancorate rispetto a quelle in sospeso e un riepilogo con stato `ok`/`degradato` e relative motivazioni.
+La dashboard pubblica un file [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) leggibile da una macchina, per il polling esterno: include informazioni sulla freschezza del registro (con un segnale di "registro congelato"), il numero di verdetti di fiducia, le partizioni ancorate rispetto a quelle in sospeso e un riepilogo `ok`/`degradato` con le relative motivazioni.
 
 ### Badge di fiducia
 

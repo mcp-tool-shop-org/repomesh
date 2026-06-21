@@ -251,6 +251,14 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | Toma decisiones |
 | `identity` | Emite/verifica credenciales |
 
+## Ampliación de la red: el contrato del complemento verificador
+
+Se añaden nuevos **tipos de comprobación** y **nodos verificadores** editando los datos, no el código. El registro de tipos de comprobación, los pesos de puntuación y los permisos de tipo de nodo se encuentran en
+[`verifier.policy.json`](verifier.policy.json) (validados según un esquema, con funcionamiento seguro por defecto). Añadir una comprobación (por ejemplo, `sast.scan`) implica editar la política en unas 6 líneas y añadir un archivo `node.json`, que se revisa en una solicitud de cambio; no hay cambios en el código.
+
+La única condición invariable: **registrado ≠ confiable**. El registro permite que una comprobación participe; sin embargo, la validación aún requiere el consenso de un conjunto de confianza. Guía completa:
+[docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
+
 ## Verificación pública
 
 Cualquiera puede verificar una versión con un comando: no se requiere clonar, la CLI obtiene el libro mayor público por ti:

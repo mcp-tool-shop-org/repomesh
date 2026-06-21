@@ -165,9 +165,9 @@ Ajoutez `node.json` à la racine de votre référentiel :
 npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-`keygen` affiche la clé publique et un `keyId` prêt à être ajouté dans l’entrée « maintainers » de votre fichier `node.json`, et enregistre la clé privée (mode 0600) uniquement à l’emplacement spécifié par l’option `--out`, jamais dans un chemin suivi. Stockez-la comme un secret du dépôt GitHub (`REPOMESH_SIGNING_KEY`). (Équivalent en utilisant les commandes : `openssl genpkey -algorithm ED25519 ...`.)
+`keygen` affiche la clé publique et un `keyId` prêt à être ajouté dans l’entrée des responsables de votre fichier `node.json`, et enregistre la clé privée (mode 0600) uniquement à l’emplacement spécifié par l’option `--out`, jamais dans un chemin suivi. Stockez-la comme un secret du dépôt GitHub (`REPOMESH_SIGNING_KEY`). (Équivalent en mode manuel : `openssl genpkey -algorithm ED25519 ...`.)
 
-> **Enregistrez au moins 2 clés pour un nœud essentiel à la confiance** (TUF §6.1) : une seule clé ne peut pas signer sa propre révocation en cas de compromission. `repomesh init --second-key` enregistre une deuxième personne responsable distincte, afin qu’une clé puisse révoquer l’autre. La commande `init` affiche un avertissement lorsqu’un nœud n’a qu’une seule clé active.
+> **Enregistrez au moins 2 clés pour un nœud essentiel à la confiance** (TUF §6.1) : une seule clé ne peut pas signer sa propre révocation en cas de compromission. `repomesh init --second-key` enregistre un deuxième responsable distinct, afin qu’une clé puisse révoquer l’autre. La commande `init` affiche un avertissement lorsqu’un nœud n’a qu’une seule clé active.
 
 ### 3. Enregistrez-vous auprès du réseau
 
@@ -251,6 +251,12 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | Prend des décisions |
 | `identity` | Émet/vérifie les informations d’identification |
 
+## Extension du réseau : le contrat du plugin de vérification
+
+De nouveaux **types de vérifications** et de **nœuds de vérification** sont ajoutés en modifiant les données, et non le code. Le registre des types de vérifications, les pondérations de notation et les autorisations des types de nœuds se trouvent dans le fichier [`verifier.policy.json`](verifier.policy.json) (validé par un schéma, fonctionnement sécurisé par défaut). L’ajout d’une vérification (par exemple, `sast.scan`) consiste en une modification du fichier de stratégie d’environ 6 lignes et dans le fichier `node.json`, qui sont examinés dans une demande de fusion (PR) ; il n’y a pas de modification du code.
+
+La seule constante : **enregistré ≠ approuvé**. L’enregistrement permet à une vérification de participer ; l’approbation nécessite toujours un consensus au sein d’un ensemble de confiance. Guide complet : [docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
+
 ## Vérification publique
 
 N’importe qui peut vérifier une version avec une seule commande — **aucune copie n’est requise**, l’interface de ligne de commande récupère le registre public pour vous :
@@ -305,7 +311,7 @@ Voir [docs/verification.md](docs/verification.md) pour le guide complet de véri
 
 ### Utilisez-le comme une bibliothèque
 
-Le moteur de vérification est exporté sous la forme d’une API programmatique stable : intégrez-le dans vos propres outils au lieu d’utiliser l’interface en ligne de commande :
+Le moteur de vérification est exporté sous la forme d’une API programmatique stable : intégrez-le dans vos propres outils au lieu d’utiliser l’interface en ligne de commande (CLI) :
 
 ```js
 import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
@@ -316,7 +322,7 @@ process.exitCode = exitCodeForStatus(result.status);
 
 ### Point de terminaison de l’état du réseau
 
-Le tableau de bord publie un fichier [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) lisible par machine pour une interrogation externe : fraîcheur du registre (avec un signal de registre figé), nombre d’éléments vérifiés, partitions ancrées par rapport aux partitions en attente, et un résumé `ok`/`dégradé` avec les raisons.
+Le tableau de bord publie un fichier [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) lisible par machine pour une interrogation externe : fraîcheur du registre (avec un signal de registre figé), nombre de verdicts de confiance, partitions ancrées par rapport aux partitions en attente, et un résumé `ok`/`dégradé` avec les raisons.
 
 ### Badges de confiance
 
