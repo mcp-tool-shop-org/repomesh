@@ -6,6 +6,15 @@
   "bin": {
     "repomesh": "dist/cli.mjs"
   },
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist/",
     "schemas/",

@@ -5,6 +5,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// FT-O-002: the machine-readable network STATUS endpoint. Wired into this build so a single
+// `node pages/build-pages.mjs` also emits pages/out/status.json (then copied to site/public by
+// pages-ci). buildStatus is the pure core; writeStatus reads the on-disk sources and writes the file.
+import { writeStatus } from "./build-status.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REGISTRY_DIR = path.join(ROOT, "registry");
@@ -953,6 +957,18 @@ if (fs.existsSync(verDocSrc)) {
     }
   }
   fs.writeFileSync(path.join(docsDir, "verification.html"), layout("Verification", html, `<a href="${BASE}/">Home</a> / Docs`), "utf8");
+}
+
+// --- Network STATUS endpoint (FT-O-002) --- (B-2)
+// Emit pages/out/status.json so external systems can poll repomesh's health (a frozen ledger /
+// stale anchor is otherwise invisible outside Actions logs). writeStatus reads the registry +
+// ledger sources itself and writes into OUT_DIR; one timestamp threads through for determinism.
+console.error("[pages] Building status endpoint...");
+try {
+  writeStatus({ outDir: OUT_DIR, now: new Date().toISOString() });
+} catch (err) {
+  // Fail-safe: a status build problem must not break the whole pages build.
+  console.error(`[pages] Warning: status endpoint build failed: ${err.message}`);
 }
 
 console.log(`Pages built: ${fs.readdirSync(OUT_DIR).length} top-level entries.`);

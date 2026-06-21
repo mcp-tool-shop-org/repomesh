@@ -12,6 +12,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  issues: write  # FT-O-003: escalate a crashed verifier run to a tracking issue
 
 jobs:
   attest-and-check:
@@ -178,3 +179,21 @@ jobs:
           Automated attestor + verifier + policy scan. Ledger CI will verify schema and signatures.
           EOF
           )"
+
+      # FT-O-003: escalate beyond ::error:: — open/update ONE tracking issue when a verifier crashes
+      # (the andon halt above), so a degraded attestor pipeline is visible outside the Actions log.
+      - name: Alert on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="⚠ automation: attestor-ci is failing"
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="The attestor/verifier/policy cron failed (a verifier crashed, or the run errored). Attestations may be missing from the ledger. Run: $RUN"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Still failing — $RUN"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label automation-alert 2>/dev/null \
+              || gh issue create --title "$TITLE" --body "$BODY"
+          fi

@@ -172,11 +172,18 @@ program
 
 program
   .command("init")
-  .description("Generate onboarding files for a repo joining RepoMesh")
+  .description(
+    "Generate onboarding files for a repo joining RepoMesh.\n" +
+    "  Separation of duties (TUF §6.1): pass --second-key to ALSO mint+register a distinct second\n" +
+    "  maintainer key so one key can sign the other's revocation. A single-key node still works but\n" +
+    "  surfaces the >=2-key recommendation."
+  )
   .requiredOption("--repo <org/repo>", "Target repository")
   .option("--profile <id>", "Trust profile: baseline (minimal), open-source (recommended), regulated (strict compliance)", "open-source")
   .option("--dir <path>", "Target directory", ".")
   .option("--keyid <id>", "Signing key ID")
+  .option("--second-key", "Also mint + register a DISTINCT second maintainer key (separation of duties, TUF §6.1)")
+  .option("--second-keyid <id>", "Explicit keyId for the second key (default: derived, distinct from the first)")
   .option("--no-pr", "Skip PR instructions")
   .option("--json", "Output structured JSON summary (suppresses decorative output)")
   .action(async (opts) => {
@@ -186,9 +193,60 @@ program
       profile: opts.profile,
       dir: opts.dir,
       keyId: opts.keyid,
+      secondKey: opts.secondKey === true,
+      secondKeyId: opts.secondKeyid,
       noPr: opts.pr === false,
       json: opts.json,
     });
+  });
+
+program
+  .command("keygen")
+  .description(
+    "Mint a DISTINCT ed25519 maintainer keypair (separation of duties: register >=2 keys so one\n" +
+    "  can sign the other's revocation — TUF §6.1). Prints the PUBLIC key + keyId in node.json\n" +
+    "  maintainer shape, ready to paste. The PRIVATE key is a SECRET: by default it is printed once\n" +
+    "  with a loud warning and written NOWHERE; pass --out <file> to persist it (0600). NEVER commit it."
+  )
+  .requiredOption("--repo <org/repo>", "Repo the key is for (used to derive the keyId)")
+  .option("--keyid <id>", "Explicit keyId (must match node.schema.json maintainer.keyId); default derived from --repo")
+  .option("--name <name>", "maintainer.name for the paste-ready block (default: org segment of --repo)")
+  .option("--out <path>", "Write the PRIVATE key PEM to this file (0600). Omit to print it once instead. NEVER a git-tracked path.")
+  .option("--json", "Output structured JSON (keyId, publicKey, maintainer block); private key flagged as a secret")
+  .action(async (opts) => {
+    const { generateKeyMaterial } = await import("./key/keygen.mjs");
+    const res = generateKeyMaterial({ repo: opts.repo, keyId: opts.keyid, name: opts.name, privateKeyOut: opts.out });
+    if (opts.json) {
+      // The private key IS surfaced for the operator, but explicitly flagged. We never write it to a
+      // path unless --out was given, and we tell the consumer that.
+      console.log(JSON.stringify({
+        ok: true,
+        keyId: res.keyId,
+        publicKey: res.publicKey,
+        maintainer: res.maintainer,
+        privateKey: res.privateKey,
+        privateKeyWritten: res.privateKeyWritten,
+        secretWarning: "privateKey is a SECRET — store it in your shell/secret manager; NEVER commit or log it.",
+      }, null, 2));
+    } else {
+      // Human mode: loud secret warning to stderr, paste-ready public block to stdout.
+      console.error("");
+      console.error("⚠ SECURITY: the PRIVATE key below is a SECRET. Store it securely (e.g. a GitHub Actions secret");
+      console.error("  or your secret manager). NEVER commit it, never log it, never paste it into node.json.");
+      console.log(`\nkeyId: ${res.keyId}\n`);
+      console.log("--- node.json maintainer block (PUBLIC — safe to paste) ---");
+      console.log(JSON.stringify(res.maintainer, null, 2));
+      console.log("\n--- PUBLIC KEY (PEM) ---");
+      console.log(res.publicKey);
+      if (res.privateKeyWritten) {
+        console.error(`\n✅ Private key written to ${res.privateKeyWritten} (mode 0600). Move it to a secret store; do not commit.`);
+      } else {
+        console.error("\n--- PRIVATE KEY (SECRET — shown once, store it now) ---");
+        console.error(res.privateKey);
+        console.error("--- end private key ---");
+      }
+      console.error("\nSeparation of duties: register this as a SECOND maintainer key so one key can sign the other's revocation (TUF §6.1).");
+    }
   });
 
 program
@@ -313,7 +371,7 @@ program
   .description("Output shell completion script (bash/zsh)")
   .option("--shell <shell>", "Shell type: bash, zsh", "bash")
   .action((opts) => {
-    const commands = ["verify-release", "verify-all", "verify-anchor", "init", "doctor", "key", "completion",
+    const commands = ["verify-release", "verify-all", "verify-anchor", "init", "keygen", "doctor", "key", "completion",
       "build-pages", "build-registry", "build-badges", "build-snippets"];
     const globalFlags = "--quiet --verbose --debug --json --format --fail-on --local --help --cli-version";
     if (opts.shell === "zsh") {
