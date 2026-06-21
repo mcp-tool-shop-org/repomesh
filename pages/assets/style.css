@@ -9,6 +9,9 @@
   --yellow: #d29922;
   --red: #f85149;
   --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  /* Stage D: declare the scheme so native controls (scrollbars, form widgets,
+     the date picker) render dark to match, instead of defaulting to light. */
+  color-scheme: dark;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
@@ -121,4 +124,40 @@ footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1re
   .dash-hero { flex-direction: column; text-align: center; }
   .hero-rings { justify-content: center; }
   .browse-controls { flex-direction: column; align-items: stretch; }
+}
+
+/* Stage D — accessibility: keyboard focus visibility (WCAG 2.4.7).
+   Every interactive control had a :hover affordance but no visible focus state,
+   so keyboard users could not see where they were. A single accent ring covers
+   links, buttons, tiles, pills, sortable headers, and form controls. */
+a:focus-visible,
+button:focus-visible,
+.copy-btn:focus-visible,
+.cta-primary:focus-visible,
+.cta-secondary:focus-visible,
+.explore-tile:focus-visible,
+.timeline-pill:focus-visible,
+.proof-step:focus-visible,
+#repos-table th[data-sort]:focus-visible,
+#repo-search:focus-visible,
+.browse-filter select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Keep the existing search border highlight, but route the ring through focus-visible
+   so a mouse click doesn't draw it while keyboard focus still does. */
+#repo-search:focus { outline: none; border-color: var(--accent); }
+
+/* Stage D — accessibility: respect reduced-motion (WCAG 2.3.3).
+   The trust-ring draw and the infinite stat-card pulse can trigger vestibular
+   discomfort; honor the OS preference by disabling non-essential motion. The
+   rings still render at their final value (the keyframe end state). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .ring-fill { stroke-dashoffset: var(--ring-target); }
 }
