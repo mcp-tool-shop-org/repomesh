@@ -161,12 +161,13 @@ repomesh/
 ### 2. 生成一个签名密钥对
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-将公钥 PEM 放入您的 `node.json` 的 maintainers 条目中。
-将私钥存储为 GitHub 仓库密钥 (`REPOMESH_SIGNING_KEY`)。
+`keygen` 命令会输出公钥和一个 `keyId`，你可以直接将其添加到你的 `node.json` 文件中的维护者条目中，并且会将私钥（权限模式为 0600）写入你指定的 `--out` 参数所指向的目录——绝不会写入到已跟踪的路径中。请将它存储为 GitHub 代码仓库的密钥 (`REPOMESH_SIGNING_KEY`)。（手动操作等效命令：`openssl genpkey -algorithm ED25519 ...`。）
+
+> **为对信任至关重要的节点注册 ≥2 个密钥**（TUF §6.1）：单个密钥在被攻破后无法签署自身的撤销。`repomesh init --second-key` 命令会注册一个不同的第二个维护者，以便一个密钥可以撤销另一个密钥——`init` 命令会在节点只有一个活动密钥时发出警告。
 
 ### 3. 向网络注册
 
@@ -301,6 +302,21 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 ```
 
 有关完整的验证指南、威胁模型和关键概念，请参见 [docs/verification.md](docs/verification.md)。
+
+### 将其用作库
+
+验证引擎被导出为一个稳定的程序化 API——将它嵌入到你自己的工具中，而不是通过命令行调用：
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### 网络状态端点
+
+仪表板会发布一个机器可读的 [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) 文件，供外部轮询使用——包括账本的新鲜度（带有冻结账本信号）、信任判决计数、已固定与待处理的分区，以及一个 `ok`/`degraded` 汇总信息，并附带原因。
 
 ### 信任徽章
 

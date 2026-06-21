@@ -1,6 +1,6 @@
 {
   "name": "@mcptoolshop/repomesh",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Trust infrastructure for repo networks — verify releases, check anchors, and onboard repos from anywhere.",
   "type": "module",
   "bin": {

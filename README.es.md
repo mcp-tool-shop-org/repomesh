@@ -161,12 +161,13 @@ Agrega `node.json` a la raíz de tu repositorio:
 ### 2. Genera un par de claves de firma
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-Coloca la clave pública en formato PEM en la entrada `maintainers` de tu `node.json`.
-Guarda la clave privada como un secreto del repositorio de GitHub (`REPOMESH_SIGNING_KEY`).
+`keygen` imprime la clave pública y un `keyId` listos para agregarlos a la entrada de los mantenedores en su archivo `node.json`, y escribe la clave privada (modo 0600) solo donde se especifique con `--out`; nunca en una ruta rastreada. Guárdela como un secreto del repositorio de GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente manual: `openssl genpkey -algorithm ED25519 ...`.)
+
+> **Registre ≥2 claves para un nodo crítico para la confianza** (TUF §6.1): una sola clave no puede firmar su propia revocación si se ve comprometida. `repomesh init --second-key` registra un segundo mantenedor distinto, de modo que una clave pueda revocar a la otra; `init` advierte cuando un nodo tiene solo una clave activa.
 
 ### 3. Regístrate en la red
 
@@ -204,7 +205,7 @@ El registro actualmente emite los tipos de eventos **activos** que se muestran a
 | `AttestationPublished` | Un certificador verifica una versión |
 | `ledger.anchor` | El nodo ancla sella una partición (raíz de Merkle + memorándum XRPL) |
 | `attestation.dispute` | Un nodo confiable impugna una certificación (degrada el veredicto) |
-| `KeyRotation` | Una clave de mantenedor se rota a un sucesor (prospectivo: las firmas anteriores siguen siendo válidas). |
+| `KeyRotation` | Una clave de mantenedor se rota hacia un sucesor (potencial; las firmas anteriores siguen siendo válidas). |
 | `KeyRevocation` | Una clave de mantenedor se revoca (compromiso = invalidez retroactiva, RFC 5280). |
 
 **Reservados/planificados (aún no emitidos):**
@@ -219,7 +220,7 @@ El registro actualmente emite los tipos de eventos **activos** que se muestran a
 
 ## Rotación y revocación de claves
 
-Las claves de mantenedor tienen un ciclo de vida. Una clave puede ser **rotada** a un sucesor o **revocada**, y la verificación es **consciente del tiempo**: una firma solo se considera válida si la clave era válida en el momento de la firma, que es el mismo reloj de confianza que ya utiliza el libro mayor (el momento de cierre del ancla XRPL).
+Las claves de los mantenedores tienen un ciclo de vida. Una clave puede ser **rotada** a un sucesor o **revocada**, y la verificación es **consciente del tiempo**: una firma solo se considera confiable si la clave era válida en el momento de confianza de la firma: la hora de cierre del ancla XRPL, el mismo reloj de confianza que ya utiliza el libro mayor.
 
 ```bash
 # Rotate to a successor key (the retired key's past signatures stay valid)
@@ -232,10 +233,10 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 ```
 
 - La **rotación rutinaria** es *prospectiva*: las firmas anteriores de la clave retirada siguen siendo válidas; simplemente deja de firmar nuevas versiones.
-- El **compromiso** es *retroactivo* (RFC 5280 §5.3.2): cualquier firma cuyo momento de anclaje comprobable sea en o después de la fecha de invalidez se rechaza, y una firma que no pueda demostrarse que sea anterior a esa fecha también se rechaza.
-- Una clave que **no** tenga campos de ciclo de vida se considera heredada (siempre válida), por lo que los nodos existentes siguen funcionando sin cambios.
-- Las revocaciones se firman como eventos `KeyRevocation`; un nodo de una sola clave cuyo único clave ha sido comprometido se recupera mediante un nodo de **gobernanza** (`trustedPolicy`) que firma la revocación. Los nodos críticos para la confianza deben registrar **≥2 claves** (TUF §6.1).
-- Incluso frente a un archivo `node.json` manipulado, una revocación se vuelve a aplicar a partir de los eventos firmados y anclados en XRPL; un manifiesto despojado no puede revivir una clave revocada. Consulte el [modelo de amenazas](docs/threat-model.md) para conocer el límite (verificar con respecto al libro mayor canónico; utilizar `--anchored` para las comprobaciones sensibles a la revocación).
+- El **compromiso** es *retroactivo* (RFC 5280 §5.3.2): cualquier firma cuyo tiempo de anclaje comprobable sea en o después de la fecha de invalidez se rechaza, y una firma que no se pueda demostrar que sea anterior a esa fecha también se rechaza.
+- Una clave sin campos de ciclo de vida se considera heredada (siempre válida), por lo que los nodos existentes verifican sin cambios.
+- Las revocaciones se firman como eventos `KeyRevocation`; un nodo de una sola clave cuyo única clave está comprometida se recupera mediante un nodo de **gobernanza** (`trustedPolicy`) que firma la revocación. Los nodos críticos para la confianza deben registrar **≥2 claves** (TUF §6.1).
+- Incluso frente a un archivo `node.json` manipulado, una revocación se vuelve a aplicar a partir de los eventos firmados y anclados en XRPL; un manifiesto modificado no puede reactivar una clave revocada. Consulte el [modelo de amenazas](docs/threat-model.md) para conocer el límite (verificar con respecto al libro mayor canónico; utilizar `--anchored` para las comprobaciones sensibles a la revocación).
 
 ## Tipos de nodos
 
@@ -302,6 +303,21 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 
 Consulte [docs/verification.md](docs/verification.md) para obtener la guía completa de verificación, el modelo de amenazas y los conceptos clave.
 
+### Úselo como una biblioteca
+
+El motor de verificación se exporta como una API programática estable: incorpórelo en sus propias herramientas en lugar de ejecutar comandos en la CLI.
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### Punto final del estado de la red
+
+El panel publica un archivo [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) legible por máquina para consultas externas: frescura del libro mayor (con una señal de libro mayor congelado), recuentos de veredicto de confianza, particiones ancladas frente a pendientes y un resumen `ok`/`degraded` con las razones.
+
 ### Insignias de confianza
 
 Los repositorios pueden incrustar insignias de confianza del registro:
@@ -350,7 +366,7 @@ Comprobaciones: monotonicidad semántica, singularidad del hash de artefactos, c
 
 ## Seguridad y modelo de amenazas
 
-RepoMesh interactúa con los **eventos del libro mayor** (JSON firmado), los **manifiestos de nodos** (claves públicas + capacidades), los **índices del registro** (puntuaciones de confianza generadas automáticamente) y la **red de prueba XRPL** (transacciones de anclaje). No interactúa con el código fuente del repositorio de miembros, las claves privadas, las credenciales de usuario ni los datos de navegación. Las claves de firma privadas nunca abandonan el entorno de ejecución de CI. El acceso a la red se limita a la API de GitHub (creación de solicitudes de extracción), la red de prueba XRPL (anclaje) y OSV.dev (búsqueda de vulnerabilidades). **No se recopilan ni envían datos de telemetría**: cero análisis, cero informes de fallos, cero comunicación con el servidor. Consulte [SECURITY.md](SECURITY.md) para conocer el alcance completo, los permisos necesarios y el proceso de notificación de vulnerabilidades, y el [modelo de amenazas](docs/threat-model.md) para conocer el límite del ciclo de vida de la clave (por qué la autenticidad de `node.json` depende de su origen y por qué la verificación sensible a la revocación debe utilizar `--anchored`).
+RepoMesh interactúa con los **eventos del libro mayor** (JSON firmado), los **manifiestos de los nodos** (claves públicas + capacidades), los **índices del registro** (puntuaciones de confianza generadas automáticamente) y la **red de prueba XRPL** (transacciones de anclaje). No interactúa con el código fuente del repositorio de los miembros, las claves privadas, las credenciales de usuario ni los datos de navegación. Las claves de firma privadas nunca abandonan el entorno de ejecución de CI. El acceso a la red se limita a la API de GitHub (creación de solicitudes de extracción), la red de prueba XRPL (anclaje) y OSV.dev (búsquedas de vulnerabilidades). No se recopilan ni envían **telemetrías**: cero análisis, cero informes de fallos, cero comunicación con el servidor. Consulte [SECURITY.md](SECURITY.md) para conocer el alcance completo, los permisos requeridos y el proceso de notificación de vulnerabilidades, y el [modelo de amenazas](docs/threat-model.md) para conocer el límite del ciclo de vida de la clave (por qué la autenticidad de `node.json` depende de su origen y por qué la verificación sensible a la revocación debe utilizar `--anchored`).
 
 Endurecimiento:
 
