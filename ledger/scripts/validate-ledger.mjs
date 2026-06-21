@@ -27,6 +27,9 @@ import {
   isKeyValidForSignature,
   resolveTrustedSignatureTimeSync,
 } from "../../verifiers/lib/key-window.mjs";
+// SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old
+// indexOf("{") rule, which would have grabbed a brace appearing in the anchor's prose line).
+import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(ROOT, "..");
@@ -293,16 +296,10 @@ function buildOfflineTrustCtx(events, trustedAttestorsSet) {
     const isAnchor = Array.isArray(ev.attestations) &&
       ev.attestations.some((a) => a?.type === "ledger.anchor");
     if (!isAnchor) continue;
-    let range = null;
-    try {
-      const brace = typeof ev.notes === "string" ? ev.notes.indexOf("{") : -1;
-      if (brace !== -1) {
-        const meta = JSON.parse(ev.notes.slice(brace));
-        if (Array.isArray(meta.range) && meta.range.length === 2) range = meta.range;
-      }
-    } catch {
-      // unparseable anchor notes → not usable as a clock
-    }
+    // SEAM-PARSE-001: parse via the canonical parser. Unparseable anchor notes → null → not usable
+    // as a clock (fail-closed, exactly as the prior try/catch did).
+    const meta = parseAnchorPartitionMeta(ev.notes);
+    const range = meta && Array.isArray(meta.range) && meta.range.length === 2 ? meta.range : null;
     if (range) anchors.push({ ev, range });
   }
 

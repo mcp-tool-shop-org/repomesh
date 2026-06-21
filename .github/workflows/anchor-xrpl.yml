@@ -12,6 +12,7 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  issues: write  # FT-O-003: escalate a failed/frozen run to a tracking issue
 
 jobs:
   anchor:
@@ -73,12 +74,43 @@ jobs:
           git add ledger/events/events.jsonl anchor/xrpl/manifests/*.json registry/anchors.json
           git commit -m "anchor: XRPL partition $(date -u +%Y-%m-%d)"
           git push origin "$BRANCH"
-          gh pr create \
+          PR_URL=$(gh pr create \
             --head "$BRANCH" \
             --title "anchor: XRPL partition $(date -u +%Y-%m-%d)" \
             --body "$(cat <<'EOF'
           ## RepoMesh XRPL Anchor
           Merkle root of ledger partition anchored to XRPL testnet.
-          Ledger CI will verify schema and signatures.
+          Ledger CI verifies schema + signatures; this PR auto-merges once validate-ledger is green.
           EOF
-          )"
+          )")
+          echo "Opened $PR_URL"
+          # STGB-CI-001 (close the loop): enable auto-merge so the anchor lands on main as soon as
+          # validate-ledger passes. Without this the daily anchor PRs pile up unmerged, the ledger on
+          # main FREEZES, and the LEDGER-A-001 coverage gap re-forms (exactly what happened 2026-06-15..21).
+          # Degrades gracefully if the repo hasn't enabled auto-merge yet (one-time operator action).
+          gh pr merge --auto --merge "$PR_URL" \
+            || echo "::warning::Could not enable auto-merge on $PR_URL. Enable once: gh api -X PATCH repos/${{ github.repository }} -f allow_auto_merge=true (validate-ledger must be a required check)."
+          # STGB-CI-001 (staleness andon): if anchor PRs accumulate, the ledger on main is likely
+          # frozen — surface it loudly instead of failing silently.
+          OPEN_ANCHORS=$(gh pr list --search "anchor: XRPL partition in:title" --state open --json number --jq 'length' 2>/dev/null || echo 0)
+          if [ "${OPEN_ANCHORS:-0}" -gt 2 ]; then
+            echo "::warning::${OPEN_ANCHORS} anchor PRs are open — the ledger on main may be frozen. Drain oldest-first (gh pr update-branch then merge) and confirm auto-merge is enabled."
+          fi
+
+      # FT-O-003: escalate beyond ::error:: — open/update ONE tracking issue so a failed run or a
+      # frozen ledger is visible outside the Actions log. Deduped by title so it never spams.
+      - name: Alert on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="⚠ automation: anchor-xrpl is failing"
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY="The daily XRPL anchor cron failed. The ledger on main may stop advancing (re-forming the LEDGER-A-001 coverage gap). Run: $RUN"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Still failing — $RUN"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label automation-alert 2>/dev/null \
+              || gh issue create --title "$TITLE" --body "$BODY"
+          fi

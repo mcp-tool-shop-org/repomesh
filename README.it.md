@@ -161,12 +161,13 @@ Aggiungi `node.json` alla directory principale del tuo repository:
 ### 2. Genera una coppia di chiavi di firma
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-Inserisci la chiave pubblica in formato PEM nella voce "maintainers" del tuo `node.json`.
-Archivia la chiave privata come segreto del repository GitHub (`REPOMESH_SIGNING_KEY`).
+`keygen` stampa la chiave pubblica e un `keyId` pronti per essere inseriti nella voce relativa ai manutentori nel file `node.json`, e scrive la chiave privata (con permessi 0600) solo nella posizione specificata con l'opzione `--out`; non la scriverà mai in una directory tracciata. Salvala come segreto del repository GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente eseguito manualmente: `openssl genpkey -algorithm ED25519 ...`.)
+
+> **Registra almeno 2 chiavi per un nodo di importanza critica per la fiducia** (TUF §6.1): una singola chiave non può firmare la propria revoca in caso di compromissione. `repomesh init --second-key` registra un secondo manutentore distinto, in modo che una chiave possa revocare l'altra; `init` avvisa quando un nodo ha solo una chiave attiva.
 
 ### 3. Registrati alla rete
 
@@ -301,6 +302,21 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 ```
 
 Consultare [docs/verification.md](docs/verification.md) per la guida completa alla verifica, il modello delle minacce e i concetti chiave.
+
+### Usalo come libreria
+
+Il motore di verifica viene esportato come un'API programmatica stabile: incorporalo nei tuoi strumenti invece di utilizzare la riga di comando (CLI).
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### Endpoint dello stato della rete
+
+La dashboard pubblica un file [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) leggibile da una macchina, per il monitoraggio esterno: include informazioni sulla freschezza del registro (con un segnale di "registro congelato"), il numero di valutazioni di affidabilità, le partizioni ancorate rispetto a quelle in sospeso e un riepilogo con stato `ok`/`degradato` e relative motivazioni.
 
 ### Badge di fiducia
 

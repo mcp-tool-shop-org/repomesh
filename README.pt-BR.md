@@ -161,12 +161,13 @@ Adicione `node.json` à raiz do seu repo:
 ### 2. Gere um par de chaves de assinatura
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-Coloque a chave pública PEM na entrada de mantenedores em seu `node.json`.
-Armazene a chave privada como um segredo do repo GitHub (`REPOMESH_SIGNING_KEY`).
+`keygen` imprime a chave pública + um `keyId` pronto para ser inserido na entrada de mantenedores do seu arquivo `node.json`, e grava a chave privada (modo 0600) apenas no local especificado por `--out` — nunca em um caminho rastreado. Armazene-a como um segredo do repositório GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente manualmente: `openssl genpkey -algorithm ED25519 ...`).
+
+> **Registre ≥2 chaves para um nó crítico em termos de confiança** (TUF §6.1): uma única chave não pode assinar sua própria revogação se for comprometida. `repomesh init --second-key` registra um segundo mantenedor distinto, para que uma chave possa revogar a outra — `init` avisa quando um nó tem apenas uma chave ativa.
 
 ### 3. Registre-se na rede
 
@@ -303,6 +304,21 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 ```
 
 Consulte o guia completo de verificação, o modelo de ameaças e os conceitos-chave em [docs/verification.md](docs/verification.md).
+
+### Use como uma biblioteca
+
+O mecanismo de verificação é exportado como uma API programática estável — incorpore-o em suas próprias ferramentas, em vez de usar a interface de linha de comando:
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### Ponto de extremidade do status da rede
+
+O painel publica um arquivo legível por máquina [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) para consultas externas — atualização do livro-razão (com um sinal de livro-razão congelado), contagens de verificação de confiança, partições ancoradas versus pendentes e um resumo `ok`/`degradado` com os motivos.
 
 ### Selos de Confiança
 

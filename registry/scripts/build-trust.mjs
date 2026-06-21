@@ -40,6 +40,11 @@ import {
   deriveKeyWindowConstraints,
   mergeStricterWindow,
 } from "../../verifiers/lib/key-window.mjs";
+// SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
+// trailing-JSON regex). The anchor-event-type + range guards stay local to parseAnchorMeta below.
+import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
+// STGB-TRUST-004: atomic temp-file + rename write so a crash mid-write can't tear trust.json.
+import { writeJsonAtomic } from "../../verifiers/lib/common.mjs";
 
 const DEFAULT_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -352,14 +357,11 @@ function getMaintainerFor(keyId, nodeRepo, ctx) {
 function parseAnchorMeta(ev) {
   if (ev.type !== "AttestationPublished") return null;
   if (!(Array.isArray(ev.attestations) ? ev.attestations : []).some((a) => a.type === "ledger.anchor")) return null;
-  const notes = ev.notes || "";
-  const m = notes.match(/\n(\{.*\})\s*$/s);
-  if (!m) return null;
-  try {
-    const meta = JSON.parse(m[1]);
-    if (!Array.isArray(meta.range) || meta.range.length !== 2) return null;
-    return meta;
-  } catch { return null; }
+  // SEAM-PARSE-001: parse the trailing metadata via the canonical parser, then keep this site's own
+  // range guard (an anchor with no valid [lo,hi] range is not usable as a clock here).
+  const meta = parseAnchorPartitionMeta(ev.notes);
+  if (!meta || !Array.isArray(meta.range) || meta.range.length !== 2) return null;
+  return meta;
 }
 
 // Build the offline trusted-time ctx over the loaded events. `ctx` is the signature-verification ctx
@@ -910,16 +912,34 @@ export function buildTrust(opts = {}) {
     entry.verdict = entry.disputed ? "DISPUTED" : integrityVerdict(entry.integrityScore);
     const failed = [];     // attestor RAN and said fail (a fail is a completed-but-failing check)
     const unscored = [];   // verifier could not certify (network/unbound) — 0 points, MISSING
+    const untrusted = [];  // STGB-TRUST-002: attested, but ONLY by node(s) outside the per-check
+                           //   trusted-set — 0 credit (registry is the stricter authority), but the
+                           //   cause is "untrusted attestor", NOT a bare "missing".
     const absent = [];     // no attestation at all
     // Categorize EVERY required check (integrity + assurance) by its observed cause. A 'fail' result
     // lives in completedChecks (it ran), so scanning only missingChecks would hide it — we scan the
     // full expected set and look up each one's attestation result.
     const seen = new Set();
+    // STGB-TRUST-002: name the node(s) that attested a check but were outside its trusted-set. The
+    // node info already lives in attestationSources[check].sources (the resolveConsensus 'untrusted'
+    // branch keeps ALL sources). Distinct, de-duplicated, sorted for a stable summary.
+    const untrustedNodesFor = (check) => {
+      const srcs = entry.attestationSources?.[check]?.sources || [];
+      return [...new Set(srcs.map((s) => s.node).filter(Boolean))].sort();
+    };
     const noteCause = (check) => {
       if (seen.has(check)) return;
       seen.add(check);
       // noPolicyViolations is a synthetic integrity check: a present violation is a FAILED cause.
       if (check === "noPolicyViolations" && entry.policyViolations.length > 0) { failed.push(check); return; }
+      // STGB-TRUST-002: an 'untrusted' consensus is distinct from absent — surface it with the node(s).
+      // (Read consensus from attestationSources, not entry.attestations, so a brand-new cause does not
+      // depend on how the back-compat attestations[] result token was mapped.)
+      if (entry.attestationSources?.[check]?.consensus === "untrusted") {
+        const nodes = untrustedNodesFor(check);
+        untrusted.push(nodes.length ? `${check} (attested by untrusted node ${nodes.join(", ")})` : check);
+        return;
+      }
       const att = entry.attestations.find((a) => a.kind === check);
       if (att?.result === "fail") { failed.push(check); return; }
       if (att?.result === "unscored") { unscored.push(check); return; }
@@ -940,6 +960,10 @@ export function buildTrust(opts = {}) {
     }
     if (failed.length) parts.push(`failed: ${failed.join(", ")}`);
     if (unscored.length) parts.push(`unscored (verifier could not run): ${unscored.join(", ")}`);
+    // STGB-TRUST-002: an actionable, distinct cause — the check WAS attested, just not by a node in
+    // its trusted-set, so it earns no credit. Naming the node tells the operator to add it to the
+    // check's trustedNodes (or get a trusted attestor to re-attest), not to "publish the missing check".
+    if (untrusted.length) parts.push(`attested by untrusted node(s): ${untrusted.join(", ")}`);
     if (absent.length) parts.push(`missing: ${absent.join(", ")}`);
     entry.trustSummary = parts.length
       ? `${entry.verdict} (integrity ${entry.integrityScore}/100) — ${parts.join("; ")}`
@@ -970,7 +994,8 @@ export function buildTrust(opts = {}) {
     });
 
   if (write) {
-    fs.writeFileSync(path.join(registryDir, "trust.json"), JSON.stringify(output, null, 2) + "\n", "utf8");
+    // STGB-TRUST-004: atomic write (same /100 2-space-indent + trailing-newline output as before).
+    writeJsonAtomic(path.join(registryDir, "trust.json"), JSON.stringify(output, null, 2) + "\n");
     console.log(`Trust index built: ${output.length} release(s).`);
     for (const entry of output) {
       const iBadge = entry.disputed ? "⛔" : entry.integrityScore >= INTEGRITY_BANDS.VERIFIED ? "✅" : entry.integrityScore >= INTEGRITY_BANDS.PARTIAL ? "⚠️" : "❌";

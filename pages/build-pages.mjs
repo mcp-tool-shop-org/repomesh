@@ -5,6 +5,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// FT-O-002: the machine-readable network STATUS endpoint. Wired into this build so a single
+// `node pages/build-pages.mjs` also emits pages/out/status.json (then copied to site/public by
+// pages-ci). buildStatus is the pure core; writeStatus reads the on-disk sources and writes the file.
+import { writeStatus } from "./build-status.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REGISTRY_DIR = path.join(ROOT, "registry");
@@ -95,6 +99,48 @@ function anchorTxBadge(txHash) {
     : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)" title="Merkle root committed locally; awaiting the next XRPL anchor cycle">Not yet anchored</span>`;
 }
 
+// STGB-SP-001 (Stage C honesty fix) — the trust substrate must not overstate its own trust.
+// A release moves through THREE honest anchor states, and they must never collapse into a
+// single green "Anchored on XRPL" badge:
+//   "anchored" — the mapped partition record exists AND carries a real, non-null on-chain
+//                txHash. ONLY this state earns the green "Anchored on XRPL" badge.
+//   "pending"  — the partition record exists (the Merkle root is committed) but txHash is
+//                null: the anchor has NOT landed on-chain yet. This is the state that was
+//                falsely shown as green before — it is a distinct, honest "Pending anchor".
+//   "none"     — there is no partition record for this release at all.
+// Previously "anchored" was computed from partition MEMBERSHIP alone (`!!rec`), decoupled
+// from whether the anchor actually landed on-chain — which advertised finality that did not
+// exist. The /anchors page already reported these honestly as "Not yet anchored"; this makes
+// the dashboard agree with it.
+export function releaseAnchorState(rec) {
+  if (!rec) return "none";
+  return rec.txHash ? "anchored" : "pending";
+}
+
+// One source of truth for the release-level anchor badge across home, /repos, the repo page,
+// and the health hero. Green "Anchored on XRPL" is reserved for a real on-chain tx; "pending"
+// and "none" render an honest, visually distinct non-green state.
+export function anchorStateBadge(state) {
+  if (state === "anchored") {
+    return `<span class="score score-green" title="Included in a partition recorded on-chain on XRPL">Anchored on XRPL</span>`;
+  }
+  if (state === "pending") {
+    return `<span class="score" style="background:rgba(210,153,34,0.12);color:var(--yellow)" title="Merkle root committed; the partition has not been anchored on XRPL yet (awaiting the next anchor cycle)">Pending anchor</span>`;
+  }
+  return `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)" title="Not yet included in an anchored partition">Not anchored</span>`;
+}
+
+// Compact badge variant for the /repos table cell (shorter labels for a dense column).
+function anchorStateCellBadge(state) {
+  if (state === "anchored") {
+    return `<span class="score score-green" title="Included in a partition recorded on-chain on XRPL">Anchored</span>`;
+  }
+  if (state === "pending") {
+    return `<span class="score" style="background:rgba(210,153,34,0.12);color:var(--yellow)" title="Merkle root committed; not yet anchored on XRPL">Pending</span>`;
+  }
+  return `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)" title="Not yet anchored on XRPL">Not yet</span>`;
+}
+
 function copyBlock(cmd) {
   return `<div class="copy-wrap"><button class="copy-btn">Copy</button><pre>${esc(cmd)}</pre></div>`;
 }
@@ -156,12 +202,17 @@ export function buildRepoRows(trust, anchors) {
   const rows = [];
   for (const e of Array.isArray(trust) ? trust : []) {
     const rec = anchorRecordFor(anchors, e.repo, e.version);
+    const anchorState = releaseAnchorState(rec);
     rows.push({
       repo: e.repo,
       version: e.version,
       integrity: e.integrityScore ?? 0,
       assurance: e.assuranceScore ?? 0,
-      anchored: !!rec,
+      // STGB-SP-001: `anchored` now means ON-CHAIN anchored (record present AND real txHash) —
+      // NOT mere partition membership. `anchorState` carries the three-state distinction so a
+      // "pending" anchor (root committed, txHash null) is never advertised as on-chain finality.
+      anchored: anchorState === "anchored",
+      anchorState,
       verdict: e.verdict ?? "UNVERIFIED",
       timestamp: e.timestamp ?? null,
       commit: e.commit ?? null,
@@ -200,6 +251,7 @@ export function renderReposIndex(rows) {
   data-integrity="${esc(r.integrity)}"
   data-assurance="${esc(r.assurance)}"
   data-anchored="${r.anchored ? "1" : "0"}"
+  data-anchor-state="${esc(r.anchorState || (r.anchored ? "anchored" : "none"))}"
   data-verdict="${esc(r.verdict)}"
   data-timestamp="${esc(r.timestamp)}">
   <td><a href="${repoHref}">${esc(r.repo)}</a></td>
@@ -207,9 +259,7 @@ export function renderReposIndex(rows) {
   <td><span class="score ${verdictClass(r.verdict)}" title="Trust verdict">${esc(r.verdict)}</span></td>
   <td><span class="score ${scoreClass(r.integrity)}">${esc(r.integrity)}/100</span></td>
   <td><span class="score ${scoreClass(r.assurance)}">${esc(r.assurance)}/100</span></td>
-  <td>${r.anchored
-        ? `<span class="score score-green" title="Included in an XRPL-anchored partition">Anchored</span>`
-        : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)" title="Not yet anchored on XRPL">Not yet</span>`}</td>
+  <td>${anchorStateCellBadge(r.anchorState || (r.anchored ? "anchored" : "none"))}</td>
   <td class="card-meta">${esc(r.timestamp)}</td>
 </tr>`;
   }).join("\n");
@@ -341,7 +391,9 @@ function stepStatusClass(status) {
 export function renderVersionPage({ entry, org, name, anchorRec }) {
   const repo = entry.repo;
   const version = entry.version;
-  const anchored = !!anchorRec;
+  // STGB-SP-002: --anchored is only truthful when the partition actually landed on-chain
+  // (real txHash). A pending record (txHash null) must NOT suggest --anchored.
+  const anchored = releaseAnchorState(anchorRec) === "anchored";
   const chain = buildProofChain(entry, anchorRec);
 
   let body = `<h2>${esc(repo)} <span style="color:var(--text-muted)">@</span> ${esc(version)}</h2>`;
@@ -397,6 +449,111 @@ export function renderVersionPage({ entry, org, name, anchorRec }) {
   body += `<p style="margin-top:1rem"><a href="${BASE}/repos/${esc(org)}/${esc(name)}/">← All ${esc(repo)} releases</a></p>`;
 
   return body;
+}
+
+// Trust ring SVG — module-scope so the exported renderHealthHero (called by the test suite)
+// can use it. (Previously declared inside the side-effecting main block, where it would not
+// exist during an import-only run.)
+function trustRingSvg(label, score, color, size = 120) {
+  const s = Number.isFinite(score) ? score : 0;
+  const r = (size - 8) / 2;
+  const c = size / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (s / 100) * circ;
+  return `<svg class="trust-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
+  <circle class="ring-fill" cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+    stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}"
+    stroke-linecap="round" transform="rotate(-90 ${c} ${c})"
+    style="--ring-target:${offset.toFixed(1)}"/>
+  <text x="${c}" y="${c - 6}" text-anchor="middle" fill="var(--text)" font-size="22" font-weight="700">${esc(s)}</text>
+  <text x="${c}" y="${c + 14}" text-anchor="middle" fill="var(--text-muted)" font-size="11">${esc(label)}</text>
+</svg>`;
+}
+
+// STGB-SP-005/006 + STGB-SP-001 — the home "Latest Verified Releases" card. Pure & exported so
+// the honesty rules (verdict badge legible, anchor state honest, trust-negative states visible)
+// are unit-tested. Every ledger-derived string flows through esc().
+//   SP-005: each card carries a verdict badge so PARTIAL / VERIFIED / DISPUTED is legible.
+//   SP-006: a DISPUTED release (or one carrying disputes / policyViolations) surfaces those
+//           trust-negative facts instead of rendering a misleading all-clear card.
+//   SP-001: the anchor badge is the honest three-state badge (no false "Anchored on XRPL").
+export function renderLatestReleaseCard(entry, anchors) {
+  const [org, name] = String(entry.repo || "").split("/");
+  const rec = anchorRecordFor(anchors, entry.repo, entry.version);
+  const anchorState = releaseAnchorState(rec);
+  const repoHref = org && name ? `${BASE}/repos/${esc(org)}/${esc(name)}/` : "#";
+
+  // Trust-negative facts (SP-006): a verdict of DISPUTED, an explicit `disputed` flag, recorded
+  // disputes, or policy violations. Any of these means the card must NOT read as a clean pass.
+  const disputes = Array.isArray(entry.disputes) ? entry.disputes : [];
+  const policyViolations = Array.isArray(entry.policyViolations) ? entry.policyViolations : [];
+  const isDisputed = String(entry.verdict || "").toUpperCase() === "DISPUTED"
+    || entry.disputed === true || disputes.length > 0 || policyViolations.length > 0;
+
+  let card = `<div class="card${isDisputed ? " card-disputed" : ""}">
+  <div class="card-title"><a href="${repoHref}">${esc(entry.repo)}</a> @ ${esc(entry.version)}</div>
+  <div class="card-meta">${esc(entry.timestamp)} &middot; commit ${esc(String(entry.commit || "").slice(0, 7))}</div>
+  <div class="badge-row" style="margin-top:0.5rem">
+    <span class="score ${verdictClass(entry.verdict)}" title="Trust verdict">${esc(entry.verdict || "UNVERIFIED")}</span>
+    <span class="score ${scoreClass(entry.integrityScore)}">Integrity ${esc(entry.integrityScore ?? 0)}/100</span>
+    <span class="score ${scoreClass(entry.assuranceScore)}">Assurance ${esc(entry.assuranceScore ?? 0)}/100</span>
+    ${anchorStateBadge(anchorState)}
+  </div>`;
+
+  // SP-006: render the trust-negative detail so a human sees WHY trust is withheld.
+  if (isDisputed) {
+    const reasons = [];
+    for (const d of disputes) {
+      reasons.push(`Dispute: ${esc(d.reason || d.detail || "flagged by a network participant")}${d.by ? ` (by ${esc(d.by)})` : ""}`);
+    }
+    for (const pv of policyViolations) {
+      reasons.push(`Policy violation: ${esc(pv.policy || pv.id || "policy")}${pv.detail ? ` — ${esc(pv.detail)}` : ""}`);
+    }
+    if (reasons.length === 0) reasons.push("This release is disputed.");
+    card += `<div class="card-meta" style="margin-top:0.5rem;color:var(--red)">${reasons.map((r) => `<div>⚠ ${r}</div>`).join("")}</div>`;
+  }
+
+  card += `</div>`;
+  return card;
+}
+
+// STGB-SP-001 + STGB-SP-002 — the health dashboard hero. Pure & exported. Takes the
+// metrics.latestRelease object, which now carries an `anchorState` (anchored | pending | none).
+//   SP-001: the anchored badge reflects the honest three-state — green "Anchored on XRPL" only
+//           for a real on-chain tx; otherwise "Pending anchor" / "Not anchored".
+//   SP-002: the copy-paste command is the canonical npx form, and --anchored is suggested ONLY
+//           when the release is truly on-chain anchored.
+export function renderHealthHero(latestRelease) {
+  if (!latestRelease) return "";
+  const lr = latestRelease;
+  const integrity = lr.integrity ?? 0;
+  const assurance = lr.assurance ?? 0;
+  // Back-compat: prefer the explicit anchorState; fall back to the legacy `anchored` boolean.
+  const anchorState = lr.anchorState || (lr.anchored ? "anchored" : "none");
+  const onChain = anchorState === "anchored";
+  const intColor = integrity >= 80 ? "var(--green)" : integrity >= 50 ? "var(--yellow)" : "var(--red)";
+  const assColor = assurance >= 80 ? "var(--green)" : assurance >= 50 ? "var(--yellow)" : "var(--red)";
+
+  return `<div class="dash-hero">
+  <div class="hero-rings">
+    ${trustRingSvg("Integrity", integrity, intColor)}
+    ${trustRingSvg("Assurance", assurance, assColor)}
+  </div>
+  <div class="hero-meta">
+    <div class="hero-title">${esc(lr.repo)}@${esc(lr.version)}</div>
+    <div class="card-meta">${esc(lr.timestamp)} &middot; commit ${esc(String(lr.commit || "").slice(0, 7))}</div>
+    <div class="badge-row" style="margin-top:0.5rem">
+      <span class="score ${scoreClass(integrity)}">Integrity ${esc(integrity)}/100</span>
+      <span class="score ${scoreClass(assurance)}">Assurance ${esc(assurance)}/100</span>
+      ${anchorStateBadge(anchorState)}
+    </div>
+    <div class="card-meta" style="margin-top:0.35rem">Integrity = is this release authentic? &middot; Assurance = is it safe? (license + vulnerability scans)</div>
+    <div class="hero-cta">
+      ${copyBlock(npxVerifyCommand(lr.repo, lr.version, onChain))}
+    </div>
+  </div>
+</div>`;
 }
 
 // ============================================================================
@@ -459,21 +616,10 @@ for (const entry of trust) {
     byRepo[entry.repo] = entry;
   }
 }
-for (const [repo, entry] of Object.entries(byRepo)) {
-  const [org, name] = repo.split("/");
-  const anchorKey = `${repo}@${entry.version}`;
-  const isAnchored = !!anchors.releaseAnchors?.[anchorKey];
-  const anchorLabel = isAnchored ? `<span class="score score-green">Anchored</span>` : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)">Not anchored</span>`;
-
-  homeBody += `<div class="card">
-  <div class="card-title"><a href="${BASE}/repos/${org}/${name}/">${esc(repo)}</a> @ ${esc(entry.version)}</div>
-  <div class="card-meta">${esc(entry.timestamp)} &middot; commit ${esc(entry.commit?.slice(0, 7))}</div>
-  <div class="badge-row" style="margin-top:0.5rem">
-    <span class="score ${scoreClass(entry.integrityScore)}">Integrity ${entry.integrityScore}/100</span>
-    <span class="score ${scoreClass(entry.assuranceScore)}">Assurance ${entry.assuranceScore}/100</span>
-    ${anchorLabel}
-  </div>
-</div>`;
+for (const [, entry] of Object.entries(byRepo)) {
+  // STGB-SP-001/005/006: one pure, honest card per repo — verdict badge legible, anchor state
+  // honest (no false "Anchored on XRPL"), and DISPUTED / policy-violation states surfaced.
+  homeBody += renderLatestReleaseCard(entry, anchors);
 }
 
 // Verifier status
@@ -534,22 +680,6 @@ fs.writeFileSync(path.join(anchorsDir, "index.html"), layout("Anchors", anchorsB
 // --- Dashboard (Health) page --- (B-2)
 console.error("[pages] Building health dashboard...");
 
-function trustRingSvg(label, score, color, size = 120) {
-  const r = (size - 8) / 2;
-  const c = size / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (score / 100) * circ;
-  return `<svg class="trust-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-  <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
-  <circle class="ring-fill" cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="6"
-    stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${circ.toFixed(1)}"
-    stroke-linecap="round" transform="rotate(-90 ${c} ${c})"
-    style="--ring-target:${offset.toFixed(1)}"/>
-  <text x="${c}" y="${c - 6}" text-anchor="middle" fill="var(--text)" font-size="22" font-weight="700">${score}</text>
-  <text x="${c}" y="${c + 14}" text-anchor="middle" fill="var(--text-muted)" font-size="11">${esc(label)}</text>
-</svg>`;
-}
-
 function sparklineSvg(history, key, w = 80, h = 24) {
   const vals = history.map(s => s[key] ?? 0);
   if (vals.length < 2) return "";
@@ -573,37 +703,24 @@ const del = metrics.deltas || {};
 const hist = metrics.history || [];
 const latestRelease = metrics.latestRelease;
 
-let healthBody = `<div class="dash-subtitle">Updated on every push. Cryptographically anchored on XRPL.</div>`;
+// STGB-SP-001 (Stage C honesty): the subtitle is conditional on real on-chain anchoring.
+// Claiming the network is "cryptographically anchored on XRPL" while every partition's txHash
+// is null overstates trust. State the honest aggregate: only claim XRPL anchoring when at
+// least one partition has actually landed on-chain; otherwise say roots are committed and
+// pending the next anchor cycle.
+const anyOnChain = (anchors.partitions || []).some((p) => p && p.txHash);
+let healthBody = `<div class="dash-subtitle">Updated on every push. ${anyOnChain
+  ? "Cryptographically anchored on XRPL."
+  : "Merkle roots committed; XRPL anchoring pending the next anchor cycle."}</div>`;
 
-// Hero: Latest Release with trust rings
+// Hero: Latest Release with trust rings.
+// STGB-SP-001: derive the honest anchor state from the anchors registry directly (record
+// present AND real txHash) rather than trusting a possibly-stale metrics.latestRelease.anchored
+// boolean — the hero must never advertise on-chain finality that does not exist.
 if (latestRelease) {
-  const intColor = latestRelease.integrity >= 80 ? "var(--green)" : latestRelease.integrity >= 50 ? "var(--yellow)" : "var(--red)";
-  const assColor = latestRelease.assurance >= 80 ? "var(--green)" : latestRelease.assurance >= 50 ? "var(--yellow)" : "var(--red)";
-  // Stage D: an unanchored latest release reads "Not yet anchored on XRPL" rather than a
-  // vaguer "Pending anchor", and carries a tooltip explaining what that state means.
-  const anchoredBadge = latestRelease.anchored
-    ? `<span class="score score-green" title="This release is included in an XRPL-anchored partition">Anchored on XRPL</span>`
-    : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)" title="Trust scores are computed; the partition will be anchored on XRPL on the next anchor cycle">Not yet anchored on XRPL</span>`;
-
-  healthBody += `<div class="dash-hero">
-  <div class="hero-rings">
-    ${trustRingSvg("Integrity", latestRelease.integrity, intColor)}
-    ${trustRingSvg("Assurance", latestRelease.assurance, assColor)}
-  </div>
-  <div class="hero-meta">
-    <div class="hero-title">${esc(latestRelease.repo)}@${esc(latestRelease.version)}</div>
-    <div class="card-meta">${esc(latestRelease.timestamp)} &middot; commit ${esc(latestRelease.commit?.slice(0, 7))}</div>
-    <div class="badge-row" style="margin-top:0.5rem">
-      <span class="score ${scoreClass(latestRelease.integrity)}">Integrity ${latestRelease.integrity}/100</span>
-      <span class="score ${scoreClass(latestRelease.assurance)}">Assurance ${latestRelease.assurance}/100</span>
-      ${anchoredBadge}
-    </div>
-    <div class="card-meta" style="margin-top:0.35rem">Integrity = is this release authentic? &middot; Assurance = is it safe? (license + vulnerability scans)</div>
-    <div class="hero-cta">
-      ${copyBlock(`node tools/repomesh.mjs verify-release --repo ${latestRelease.repo} --version ${latestRelease.version}${latestRelease.anchored ? " --anchored" : ""}`)}
-    </div>
-  </div>
-</div>`;
+  const heroRec = anchors.releaseAnchors?.[`${latestRelease.repo}@${latestRelease.version}`] ?? null;
+  const heroAnchorState = releaseAnchorState(heroRec);
+  healthBody += renderHealthHero({ ...latestRelease, anchorState: heroAnchorState });
 }
 
 // Stat Cards
@@ -732,8 +849,9 @@ for (const node of nodes) {
     body += `<h3>Releases</h3>`;
     for (const entry of repoReleases) {
       const anchorKey = `${entry.repo}@${entry.version}`;
-      const isAnchored = !!anchors.releaseAnchors?.[anchorKey];
-      const anchorLabel = isAnchored ? `<span class="score score-green">Anchored</span>` : `<span class="score" style="background:rgba(139,148,158,0.15);color:var(--text-muted)">Pending</span>`;
+      // STGB-SP-001: honest three-state badge — green "Anchored on XRPL" only for a real
+      // on-chain txHash; a committed-but-not-on-chain record reads "Pending anchor".
+      const anchorLabel = anchorStateBadge(releaseAnchorState(anchors.releaseAnchors?.[anchorKey] ?? null));
 
       // FC10: each release links to its per-version deep "what this proves" page.
       const verHref = `${BASE}/repos/${esc(org)}/${esc(name)}/${esc(encodeURIComponent(entry.version))}/`;
@@ -771,7 +889,9 @@ for (const node of nodes) {
     // Verify commands
     const latest = repoReleases[0];
     const latestAnchorKey = `${latest.repo}@${latest.version}`;
-    const latestAnchored = !!anchors.releaseAnchors?.[latestAnchorKey];
+    // STGB-SP-002: only suggest --anchored when the release is truly on-chain (real txHash),
+    // never from bare partition membership.
+    const latestAnchored = releaseAnchorState(anchors.releaseAnchors?.[latestAnchorKey] ?? null) === "anchored";
 
     body += `<h3>Verify</h3>`;
     // FC2: npx form, no clone, no `node tools/repomesh.mjs`.
@@ -837,6 +957,18 @@ if (fs.existsSync(verDocSrc)) {
     }
   }
   fs.writeFileSync(path.join(docsDir, "verification.html"), layout("Verification", html, `<a href="${BASE}/">Home</a> / Docs`), "utf8");
+}
+
+// --- Network STATUS endpoint (FT-O-002) --- (B-2)
+// Emit pages/out/status.json so external systems can poll repomesh's health (a frozen ledger /
+// stale anchor is otherwise invisible outside Actions logs). writeStatus reads the registry +
+// ledger sources itself and writes into OUT_DIR; one timestamp threads through for determinism.
+console.error("[pages] Building status endpoint...");
+try {
+  writeStatus({ outDir: OUT_DIR, now: new Date().toISOString() });
+} catch (err) {
+  // Fail-safe: a status build problem must not break the whole pages build.
+  console.error(`[pages] Warning: status endpoint build failed: ${err.message}`);
 }
 
 console.log(`Pages built: ${fs.readdirSync(OUT_DIR).length} top-level entries.`);

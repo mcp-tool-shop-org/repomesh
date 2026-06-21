@@ -161,12 +161,17 @@ Add `node.json` to your repo root:
 ### 2. Generate a signing keypair
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-Put the public key PEM in your `node.json` maintainers entry.
-Store the private key as a GitHub repo secret (`REPOMESH_SIGNING_KEY`).
+`keygen` prints the public key + a `keyId` ready to drop into your `node.json` maintainers entry, and
+writes the private key (mode 0600) only where you point `--out` — never to a tracked path. Store it as a
+GitHub repo secret (`REPOMESH_SIGNING_KEY`). (Equivalent by hand: `openssl genpkey -algorithm ED25519 ...`.)
+
+> **Register ≥2 keys for a trust-critical node** (TUF §6.1): a single key cannot sign its own
+> revocation if compromised. `repomesh init --second-key` registers a distinct second maintainer so one
+> key can revoke the other — `init` warns when a node has only one active key.
 
 ### 3. Register with the network
 
@@ -318,6 +323,24 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 ```
 
 See [docs/verification.md](docs/verification.md) for the full verification guide, threat model, and key concepts.
+
+### Use it as a library
+
+The verification engine is exported as a stable programmatic API — embed it in your own tooling
+instead of shelling out to the CLI:
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### Network status endpoint
+
+The dashboard publishes a machine-readable [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json)
+for external polling — ledger freshness (with a frozen-ledger signal), trust-verdict counts, anchored vs.
+pending partitions, and an `ok`/`degraded` rollup with reasons.
 
 ### Trust Badges
 

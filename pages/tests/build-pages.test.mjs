@@ -87,14 +87,20 @@ describe("FC9 — buildRepoRows (forward-compat data shape)", () => {
     assert.equal(r.version, "1.0.4");
     assert.equal(r.integrity, 100);
     assert.equal(r.assurance, 100);
-    assert.equal(r.anchored, true, "1.0.4 is in releaseAnchors → anchored true");
+    // STGB-SP-001 (Stage C honesty fix): "anchored" now means ON-CHAIN anchored — the
+    // partition record exists AND carries a real txHash. The 1.0.4 fixture record has
+    // txHash:null, so it is NOT anchored; it is in the distinct "pending" state. This
+    // assertion previously baked in the bug (expected anchored:true for a txHash:null record).
+    assert.equal(r.anchored, false, "1.0.4 record has txHash:null → NOT on-chain anchored");
+    assert.equal(r.anchorState, "pending", "membership without on-chain tx is the honest 'pending' state");
     assert.equal(r.timestamp, "2026-02-28T05:05:35.855Z");
   });
 
-  it("marks a release with no anchor record as not anchored", () => {
+  it("marks a release with no anchor record as not anchored (none state)", () => {
     const rows = buildRepoRows(trust, anchors);
     const r = rows.find((x) => x.version === "1.0.3");
     assert.equal(r.anchored, false);
+    assert.equal(r.anchorState, "none", "no partition record at all → 'none', not 'pending'");
   });
 
   it("carries the verdict through unchanged (additive — never mutates trust verdicts)", () => {

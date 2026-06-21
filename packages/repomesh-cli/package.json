@@ -1,10 +1,19 @@
 {
   "name": "@mcptoolshop/repomesh",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Trust infrastructure for repo networks — verify releases, check anchors, and onboard repos from anywhere.",
   "type": "module",
   "bin": {
     "repomesh": "dist/cli.mjs"
+  },
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/",

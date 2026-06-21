@@ -13,7 +13,31 @@ const PKG_ROOT = path.resolve(__dirname, "..");
 function out(msg) { console.log(clean(msg)); }
 function err(msg) { console.error(clean(msg)); }
 
-export async function init({ repo, profile, dir, keyId, noPr, json }) {
+// deriveKeygenAdvisory(node) — the TUF §6.1 separation-of-duties (SoD) recommendation.
+//
+// Trust-critical nodes SHOULD register >=2 maintainer keys so one key can sign the OTHER key's
+// revocation (no single key is both the only signer and the only thing that can revoke itself —
+// the untimed-key trust footgun). Single-key stays ALLOWED (node.schema.json maintainers minItems:1)
+// — this is a clear ADVISORY, never a hard error.
+//
+// A REVOKED key does not count toward the threshold: a node with one active + one revoked key still
+// has only ONE usable signer, so the advisory still fires.
+//
+// returns: { advise: boolean, activeKeyCount: number, message: string }
+export function deriveKeygenAdvisory(node) {
+  const maintainers = Array.isArray(node?.maintainers) ? node.maintainers : [];
+  const active = maintainers.filter((m) => m && m.keyId && !m.revokedAt);
+  const activeKeyCount = active.length;
+  const advise = activeKeyCount < 2;
+  const message = advise
+    ? `⚠ Separation of duties (TUF §6.1): this node has ${activeKeyCount} active maintainer key${activeKeyCount === 1 ? "" : "s"}. ` +
+      `Trust-critical nodes should register at least 2 keys so one can sign the other's revocation. ` +
+      `Mint a second distinct key: npx @mcptoolshop/repomesh keygen --repo <org/repo>`
+    : `✅ Separation of duties: ${activeKeyCount} active maintainer keys registered (>=2 recommended).`;
+  return { advise, activeKeyCount, message };
+}
+
+export async function init({ repo, profile, dir, keyId, secondKey, secondKeyId, noPr, json }) {
   const [org, repoName] = (repo || "").split("/");
   if (!org || !repoName) {
     console.error(`Error: --repo must be org/repo format. Got: "${repo || ""}". Example: mcp-tool-shop-org/my-tool`);
@@ -96,6 +120,40 @@ export async function init({ repo, profile, dir, keyId, noPr, json }) {
       out(`\u2705 Created node.json`);
       out(`  \u2192 Edit the "description", "provides", and "interfaces" fields`);
     }
+  }
+
+  // 2a. Optional SECOND key (separation of duties, TUF §6.1). Mints a DISTINCT ed25519 key and
+  // registers it as a second maintainer so one key can sign the other's revocation. The second
+  // private key is written into the SAME gitignored keys dir (repomesh-keys/, added to .gitignore
+  // in step 7) with 0600 perms — never to a git-tracked path.
+  let secondKeyResult = null;
+  if (secondKey) {
+    const { generateKeyMaterial } = await import("./key/keygen.mjs");
+    // Default keyId derived + distinct from the first; explicit --second-keyid wins.
+    const mat = generateKeyMaterial({ repo, keyId: secondKeyId, name: org, suffix: "signer-b" });
+    if (nodeJson.maintainers?.some(m => m.keyId === mat.keyId)) {
+      console.error(`Error: --second-keyid "${mat.keyId}" already exists in node.json maintainers (must be DISTINCT).`);
+      process.exit(2);
+    }
+    nodeJson.maintainers = nodeJson.maintainers || [];
+    nodeJson.maintainers.push(mat.maintainer);
+    fs.writeFileSync(nodeJsonPath, JSON.stringify(nodeJson, null, 2) + "\n", "utf8");
+    const secondPrivPath = path.join(keysDir, `private.${mat.keyId}.pem`);
+    fs.writeFileSync(secondPrivPath, mat.privateKey + "\n", { encoding: "utf8", mode: 0o600 });
+    try { fs.chmodSync(secondPrivPath, 0o600); } catch { /* non-POSIX */ }
+    secondKeyResult = { keyId: mat.keyId, privatePath: secondPrivPath };
+    if (!json) {
+      out(`✅ Registered SECOND maintainer key (separation of duties): keyId=${mat.keyId}`);
+      out(`  Private key -> ${secondPrivPath} (gitignored, 0600). Move it to a SEPARATE secret store from the first.`);
+    }
+  }
+
+  // 2b. Separation-of-duties advisory (TUF §6.1) — surfaced after node.json is settled so it
+  // reflects the actual registered key count (a single-key node gets the >=2-key recommendation).
+  const sod = deriveKeygenAdvisory(nodeJson);
+  if (!json && sod.advise) {
+    err('');
+    err(sod.message);
   }
 
   // 3. Create profile + overrides
@@ -187,6 +245,10 @@ export async function init({ repo, profile, dir, keyId, noPr, json }) {
       profile: profileId,
       keyId: resolvedKeyId,
       nodeJsonPath: path.resolve(nodeJsonPath),
+      keyCount: sod.activeKeyCount,
+      sodAdvisory: sod.advise,
+      secondKeyId: secondKeyResult ? secondKeyResult.keyId : null,
+      secondKeyPrivatePath: secondKeyResult ? path.resolve(secondKeyResult.privatePath) : null,
     }));
   } else {
     out(`\n${"=".repeat(60)}`);

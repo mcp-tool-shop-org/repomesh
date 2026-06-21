@@ -1,4 +1,26 @@
 #!/usr/bin/env node
+//
+// compute-root.mjs — compute the Merkle root + manifest for the partition to be anchored next.
+//
+// ──────────────────────────────────────────────────────────────────────────────────────────────
+// ANCHORING CADENCE (STGB-ANCHOR-006)
+// ──────────────────────────────────────────────────────────────────────────────────────────────
+// The default mode is `since-last`: each anchor covers exactly the events appended to the ledger
+// SINCE the previous `ledger.anchor` attestation. Run compute-root.mjs + post-anchor.mjs ONCE PER
+// release wave (the unit of attested work), not per individual event and not on a wall-clock timer:
+//   - too FREQUENT (per-event) wastes XRPL tx fees and floods the ledger with one-leaf partitions;
+//   - too RARE (months between anchors) means a longer window of un-anchored, only-locally-trusted
+//     events, and an oversized partition whose memo can bump the 700-byte on-chain limit indirectly
+//     via the range markers and whose recompute is slower for verifiers.
+// The cadence is the SINCE-LAST chain: anchor N covers (anchor N-1, now]. Each manifest links to the
+// previous root via `prev`, so a steady per-wave cadence keeps the chain dense and cheap to verify.
+// Operators with bursty release activity can instead use `--date YYYY-MM-DD` (daily partitions) or
+// `--all` (a single genesis snapshot); since-last remains the recommended default.
+//
+// OVERSIZED-PARTITION WARNING: a `since-last` partition that has grown unusually large (see
+// OVERSIZED_PARTITION_LEAVES below) is a signal the cadence has lapsed — this script WARNS (it does
+// not block) so the operator can decide to anchor now and tighten the cadence going forward.
+// ──────────────────────────────────────────────────────────────────────────────────────────────
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -6,6 +28,11 @@ import { merkleRootForAlgo } from "./merkle.mjs";
 
 // Manifest version — bump when anchor format changes (future: version negotiation)
 const MANIFEST_VERSION = 1;
+
+// STGB-ANCHOR-006 — soft cap that flags a likely-lapsed cadence. Not a hard limit (the Merkle tree
+// and the memo's fixed-size root/range handle large partitions fine); it is a legibility nudge so a
+// partition that has silently grown across many missed waves gets a visible WARN, not silence.
+const OVERSIZED_PARTITION_LEAVES = 5000;
 
 // D3/ANC-003: new partitions are anchored with the RFC-6962 algorithm by default.
 // Old v1 manifests remain verifiable (verify-anchor dispatches on manifest.algo); pass
@@ -91,6 +118,16 @@ if (partition.length === 0) {
 
 const leaves = partition.map(ev => ev.signature?.canonicalHash).filter(h => typeof h === "string" && /^[0-9a-fA-F]{64}$/.test(h));
 if (leaves.length === 0) { console.error("No valid canonical hashes."); process.exit(1); }
+
+// STGB-ANCHOR-006 — warn (do not block) on an oversized since-last partition: a likely-lapsed
+// cadence. Written to stderr so the JSON on stdout (parsed by post-anchor / CI) stays clean.
+if (mode === "since-last" && leaves.length > OVERSIZED_PARTITION_LEAVES) {
+  console.error(
+    `\n  WARNING: this since-last partition has ${leaves.length} leaves (> ${OVERSIZED_PARTITION_LEAVES}). ` +
+    `The anchoring cadence has likely lapsed — that is a long window of only-locally-trusted events. ` +
+    `Anchor now (post-anchor.mjs), then anchor once per release wave going forward to keep the chain dense.\n`
+  );
+}
 
 const lastAnchorForPrev = findLastAnchor(events);
 const prev = extractPrevRoot(lastAnchorForPrev?.event) || null;

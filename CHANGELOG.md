@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-06-21
+
+Dogfood-swarm release: a full health pass (bug/security → proactive → humanization → visual) plus an
+adopter/operator feature pass. Additive — existing ledger and node data verify unchanged. Tests 709 → 912.
+
+### Added
+- **Programmatic library API** — `import { verifyRelease, computeVerifyResult, verifyAll, buildSarif, exitCodeForStatus, isKeyValidForSignature, verifyAnchorTx } from "@mcptoolshop/repomesh"`. Usable as a library, not only a CLI.
+- **`repomesh keygen`** + `init --second-key` — mint distinct ed25519 maintainer keys (secret never written to a tracked path) with a TUF §6.1 ≥2-key separation-of-duties advisory for single-key nodes.
+- **`status.json`** — a machine-readable network-health endpoint on the dashboard (ledger freshness + frozen-ledger signal, trust-verdict counts, anchored-vs-pending partitions, `ok`/`degraded` rollup).
+
+### Fixed
+- **Ledger tamper-evidence covered only the first 8 of 47 events.** `validate-ledger` now verifies v1 **and** v2 (RFC-6962) manifests; a whole-ledger `all.json` is committed and kept current by the anchor cron; `verify-release` recomputes the committed roots — so a reordered or truncated ledger (e.g. a dropped `KeyRevocation`) is caught locally.
+- **The trust dashboard showed "Anchored on XRPL" for releases never posted on-chain** — "Anchored" now requires a real on-chain `txHash`; otherwise "Pending anchor".
+- **The two `verify-release` copies disagreed** on a failing non-required attestation — now identical.
+- **`PolicyViolation` events could never schema-validate** (enforcement was silently inert) — fixed at the emitter.
+- **Uniform exit-code contract** (0/1/2/3): usage errors + XRPL outages no longer report as a trust FAIL to CI gates; enum flags validated; remote trust fetches require `https`; remote-without-`--anchored` warns on revocation-sensitive verification.
+- **Anchor write-path legibility** — network-aware explorer URIs, structured errors, on-chain close-time in the receipt.
+
+### Security
+- **Key-window predicate fails closed** on a non-usable signature time; `revocationReason` canonicalized (a mis-cased `"Compromise"` can no longer dodge the compromise gate).
+- `docs/threat-model.md` documents two-layer tamper-evidence (local-evident vs on-chain-proof), the offline-vs-online clock ceiling, and the trust-root separation-of-duties posture.
+
+### Ops / CI
+- Daily anchor cron auto-merges on green + staleness andon (the anchor PRs had piled up unmerged, freezing the ledger — the root cause of the coverage gap above); attestor-ci verifier fail-open closed; both crons escalate failures to a deduped tracking issue.
+
 ## [2.1.0] - 2026-06-14
 
 Time-aware key rotation and revocation. Closes a live trust bug: key resolution was **untimed**, so a

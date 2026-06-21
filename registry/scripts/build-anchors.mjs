@@ -4,6 +4,11 @@
 
 import fs from "node:fs";
 import path from "node:path";
+// SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old non-greedy
+// trailing-JSON regex). build-anchors keeps its own format-drift warning when the parser returns null.
+import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
+// STGB-TRUST-004: atomic temp-file + rename write so a crash mid-write can't tear anchors.json.
+import { writeJsonAtomic } from "../../verifiers/lib/common.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
@@ -50,25 +55,14 @@ if (fs.existsSync(MANIFESTS_DIR)) {
       if (ev.type !== "AttestationPublished") continue;
       if (!(ev.attestations || []).some(a => a.type === "ledger.anchor")) continue;
       const notes = ev.notes || "";
-      const jsonMatch = notes.match(/\n(\{.*?\})$/s);
-      if (!jsonMatch) {
-        // ANC-B08: this IS a ledger.anchor attestation, but its notes carry no trailing JSON metadata
-        // block. That is a near-miss (format drift) — without this warning the anchor would silently
-        // never bind a txHash to its manifest. Make the drift visible instead of swallowing it.
+      // SEAM-PARSE-001: canonical parse. ANC-B08: a ledger.anchor attestation whose notes carry no
+      // parseable trailing JSON metadata block is a near-miss (format drift) — without this warning
+      // the anchor would silently never bind a txHash to its manifest. Make the drift visible.
+      const meta = parseAnchorPartitionMeta(notes);
+      if (!meta) {
         console.warn(
-          `Warning: ledger.anchor attestation at ${ev.timestamp} has no trailing JSON metadata block ` +
-          `in notes — cannot bind a txHash. notes=${JSON.stringify((notes || "").slice(0, 120))}`
-        );
-        continue;
-      }
-      let meta;
-      try {
-        meta = JSON.parse(jsonMatch[1]);
-      } catch (parseErr) {
-        // ANC-B08: the trailing block looked like JSON but failed to parse — warn, don't swallow.
-        console.warn(
-          `Warning: ledger.anchor attestation at ${ev.timestamp} has a malformed JSON metadata block ` +
-          `(${parseErr.message}) — cannot bind a txHash.`
+          `Warning: ledger.anchor attestation at ${ev.timestamp} has no parseable trailing JSON ` +
+          `metadata block in notes — cannot bind a txHash. notes=${JSON.stringify((notes || "").slice(0, 120))}`
         );
         continue;
       }
@@ -126,10 +120,7 @@ for (const ev of events) {
 }
 
 const output = { partitions, releaseAnchors };
-fs.writeFileSync(
-  path.join(REGISTRY_DIR, "anchors.json"),
-  JSON.stringify(output, null, 2) + "\n",
-  "utf8"
-);
+// STGB-TRUST-004: atomic write (same /100 2-space-indent + trailing-newline output as before).
+writeJsonAtomic(path.join(REGISTRY_DIR, "anchors.json"), JSON.stringify(output, null, 2) + "\n");
 
 console.log(`Anchor index built: ${partitions.length} partition(s), ${Object.keys(releaseAnchors).length} anchored release(s).`);

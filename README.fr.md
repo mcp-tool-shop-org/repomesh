@@ -161,12 +161,13 @@ Ajoutez `node.json` à la racine de votre référentiel :
 ### 2. Générez une paire de clés de signature
 
 ```bash
-openssl genpkey -algorithm ED25519 -out repomesh-private.pem
-openssl pkey -in repomesh-private.pem -pubout -out repomesh-public.pem
+# Mint an ed25519 key and a paste-ready node.json maintainer block:
+npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-Placez la clé publique au format PEM dans l’entrée « maintainers » de votre fichier `node.json`.
-Stockez la clé privée en tant que secret du référentiel GitHub (`REPOMESH_SIGNING_KEY`).
+`keygen` affiche la clé publique et un `keyId` prêt à être ajouté dans l’entrée « maintainers » de votre fichier `node.json`, et enregistre la clé privée (mode 0600) uniquement à l’emplacement spécifié par l’option `--out`, jamais dans un chemin suivi. Stockez-la comme un secret du dépôt GitHub (`REPOMESH_SIGNING_KEY`). (Équivalent en utilisant les commandes : `openssl genpkey -algorithm ED25519 ...`.)
+
+> **Enregistrez au moins 2 clés pour un nœud essentiel à la confiance** (TUF §6.1) : une seule clé ne peut pas signer sa propre révocation en cas de compromission. `repomesh init --second-key` enregistre une deuxième personne responsable distincte, afin qu’une clé puisse révoquer l’autre. La commande `init` affiche un avertissement lorsqu’un nœud n’a qu’une seule clé active.
 
 ### 3. Enregistrez-vous auprès du réseau
 
@@ -301,6 +302,21 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 ```
 
 Voir [docs/verification.md](docs/verification.md) pour le guide complet de vérification, le modèle de menace et les concepts clés.
+
+### Utilisez-le comme une bibliothèque
+
+Le moteur de vérification est exporté sous la forme d’une API programmatique stable : intégrez-le dans vos propres outils au lieu d’utiliser l’interface en ligne de commande :
+
+```js
+import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
+
+const result = await verifyRelease({ repo: "org/repo", version: "1.0.0", local: "./repomesh" });
+process.exitCode = exitCodeForStatus(result.status);
+```
+
+### Point de terminaison de l’état du réseau
+
+Le tableau de bord publie un fichier [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) lisible par machine pour une interrogation externe : fraîcheur du registre (avec un signal de registre figé), nombre d’éléments vérifiés, partitions ancrées par rapport aux partitions en attente, et un résumé `ok`/`dégradé` avec les raisons.
 
 ### Badges de confiance
 

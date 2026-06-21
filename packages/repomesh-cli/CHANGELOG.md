@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.2.0] - 2026-06-21
+
+Dogfood-swarm release: a full health pass (bug/security → proactive → humanization → visual) plus an
+adopter/operator feature pass. Additive — existing ledger and node data verify unchanged. Tests 709 → 912.
+
+### Added
+- **Programmatic library API** — `import { verifyRelease, computeVerifyResult, verifyAll, buildSarif, exitCodeForStatus, isKeyValidForSignature, verifyAnchorTx } from "@mcptoolshop/repomesh"`. repomesh is now usable as a library, not only a CLI.
+- **`repomesh keygen`** — mint a distinct ed25519 maintainer key (paste-ready node.json block; the private key is never written to a tracked path). `repomesh init --second-key` registers a second key, and a TUF §6.1 advisory nudges single-key nodes toward the ≥2-key separation-of-duties posture.
+- **`status.json`** — a machine-readable network-health endpoint on the dashboard (ledger freshness + a frozen-ledger signal, trust-verdict counts, anchored-vs-pending partitions, an `ok`/`degraded` rollup with reasons).
+
+### Fixed
+- **Ledger tamper-evidence covered only the first 8 of 47 events.** `validate-ledger` skipped v2 (RFC-6962) manifests and only the genesis partition was committed. It now verifies v1 **and** v2 manifests, a whole-ledger `all.json` is committed and kept current by the anchor cron, and `verify-release` recomputes the committed roots — so a reordered or truncated ledger (e.g. a dropped `KeyRevocation`) is caught locally.
+- **The trust dashboard showed "Anchored on XRPL" for releases never posted on-chain.** "Anchored" now requires a real on-chain `txHash`; an un-posted partition renders an honest "Pending anchor".
+- **The two `verify-release` copies disagreed** on a failing non-required attestation — now identical.
+- **`PolicyViolation` events could never schema-validate** (the enforcement path was silently inert) — fixed at the emitter.
+- **Uniform exit-code contract** (0 pass / 1 trust-FAIL / 2 operator-or-environment error / 3 unverified): a usage typo or an XRPL outage no longer reports as a trust failure to CI gates. Enum flags are validated, remote trust fetches require `https`, and a warning fires when verifying revocation-sensitive material in remote mode without `--anchored`.
+- **Anchor write-path legibility** — network-aware explorer URIs (no testnet links baked into mainnet records), structured connect/seed/sign errors, and the on-chain close-time surfaced in the receipt.
+
+### Security
+- **Key-window predicate fails closed** on a non-usable (NaN/Invalid-Date) signature time, and `revocationReason` is canonicalized so a mis-cased `"Compromise"` can no longer take the prospective branch and dodge the compromise gate.
+- `docs/threat-model.md` documents the two-layer tamper-evidence model (local tamper-evident vs on-chain tamper-proof), the offline-vs-online clock provability ceiling, and the trust-root separation-of-duties posture.
+
 ## [2.1.0] - 2026-06-14
 
 ### Added
