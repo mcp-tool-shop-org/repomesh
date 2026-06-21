@@ -164,7 +164,7 @@ jobs:
           git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro, ${{ steps.check.outputs.violations }} violation(s)"
           git push origin "$BRANCH"
 
-          gh pr create \
+          PR_URL=$(gh pr create \
             --head "$BRANCH" \
             --title "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro" \
             --body "$(cat <<'EOF'
@@ -176,9 +176,14 @@ jobs:
           **Repro Builds:** ${{ steps.check.outputs.repro }}
           **Policy Violations:** ${{ steps.check.outputs.violations }}
 
-          Automated attestor + verifier + policy scan. Ledger CI will verify schema and signatures.
+          Automated attestor + verifier + policy scan. Ledger CI verifies schema + signatures; this PR auto-merges on green.
           EOF
-          )"
+          )")
+          echo "Opened $PR_URL"
+          # Close the loop (same as anchor-xrpl): auto-merge on green so attestor PRs don't pile up
+          # unmerged + freeze the ledger. Degrades gracefully if allow_auto_merge isn't enabled.
+          gh pr merge --auto --merge "$PR_URL" \
+            || echo "::warning::Could not enable auto-merge on $PR_URL. Enable once: gh api -X PATCH repos/${{ github.repository }} -f allow_auto_merge=true."
 
       # FT-O-003: escalate beyond ::error:: — open/update ONE tracking issue when a verifier crashes
       # (the andon halt above), so a degraded attestor pipeline is visible outside the Actions log.

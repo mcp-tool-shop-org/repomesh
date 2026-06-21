@@ -1,6 +1,128 @@
 [
   {
     "repo": "mcp-tool-shop-org/repomesh",
+    "version": "2.2.0",
+    "commit": "cc895b5249e44a3513cd8042a3afec81864bee3c",
+    "timestamp": "2026-06-21T05:11:51.134Z",
+    "artifactCount": 1,
+    "attestations": [],
+    "attestationSources": {},
+    "policyViolations": [],
+    "disputes": [],
+    "ignoredDisputes": [],
+    "disputed": false,
+    "trustScore": 45,
+    "integrityScore": 45,
+    "assuranceScore": 0,
+    "profileId": null,
+    "expectedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "assuranceScaling": {
+      "rawAchieved": 0,
+      "sumOfPassWeights": 100,
+      "scalingFactor": 1,
+      "renormalized": false
+    },
+    "assuranceBreakdown": {
+      "license.audit": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      },
+      "security.scan": {
+        "result": "missing",
+        "points": 0,
+        "max": 40
+      },
+      "repro.build": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      }
+    },
+    "completedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations"
+    ],
+    "missingChecks": [
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "verdict": "PARTIAL",
+    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
+    "assuranceConsensus": {}
+  },
+  {
+    "repo": "mcp-tool-shop-org/repomesh",
+    "version": "2.1.0",
+    "commit": "0cfbdb32de1cf282f3ef3581f3bc222cbcd155dc",
+    "timestamp": "2026-06-14T23:57:11.912Z",
+    "artifactCount": 1,
+    "attestations": [],
+    "attestationSources": {},
+    "policyViolations": [],
+    "disputes": [],
+    "ignoredDisputes": [],
+    "disputed": false,
+    "trustScore": 45,
+    "integrityScore": 45,
+    "assuranceScore": 0,
+    "profileId": null,
+    "expectedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations",
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "assuranceScaling": {
+      "rawAchieved": 0,
+      "sumOfPassWeights": 100,
+      "scalingFactor": 1,
+      "renormalized": false
+    },
+    "assuranceBreakdown": {
+      "license.audit": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      },
+      "security.scan": {
+        "result": "missing",
+        "points": 0,
+        "max": 40
+      },
+      "repro.build": {
+        "result": "missing",
+        "points": 0,
+        "max": 30
+      }
+    },
+    "completedChecks": [
+      "signed",
+      "hasArtifacts",
+      "noPolicyViolations"
+    ],
+    "missingChecks": [
+      "sbom.present",
+      "provenance.present",
+      "signature.chain"
+    ],
+    "verdict": "PARTIAL",
+    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
+    "assuranceConsensus": {}
+  },
+  {
+    "repo": "mcp-tool-shop-org/repomesh",
     "version": "2.0.0",
     "commit": "717b80218893b05610b9703951de9c75dc197495",
     "timestamp": "2026-06-14T20:01:15.802Z",
@@ -91,6 +213,11 @@
         "kind": "security.scan",
         "result": "pass",
         "reason": "No dependencies in SBOM; zero attack surface."
+      },
+      {
+        "kind": "repro.build",
+        "result": "warn",
+        "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack"
       }
     ],
     "attestationSources": {
@@ -146,6 +273,17 @@
             "reason": "No dependencies in SBOM; zero attack surface.",
             "node": "mcp-tool-shop-org/repomesh",
             "timestamp": "2026-02-28T05:59:59.059Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "warn",
+        "sources": [
+          {
+            "result": "warn",
+            "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-04-12T03:18:12.885Z"
           }
         ]
       }
@@ -254,6 +392,17 @@
             "reason": "No dependencies in SBOM; zero attack surface."
           }
         ]
+      },
+      "repro.build": {
+        "consensus": "warn",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "warn",
+            "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack"
+          }
+        ]
       }
     }
   },
@@ -288,6 +437,11 @@
         "kind": "security.scan",
         "result": "warn",
         "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan."
+      },
+      {
+        "kind": "repro.build",
+        "result": "warn",
+        "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack"
       }
     ],
     "attestationSources": {
@@ -343,6 +497,17 @@
             "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan.",
             "node": "mcp-tool-shop-org/repomesh",
             "timestamp": "2026-02-28T05:59:58.941Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "warn",
+        "sources": [
+          {
+            "result": "warn",
+            "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-04-12T03:18:12.425Z"
           }
         ]
       }
@@ -450,6 +615,17 @@
             "node": "mcp-tool-shop-org/repomesh",
             "result": "warn",
             "reason": "SBOM missing from ReleasePublished attestations; cannot run vuln scan."
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "warn",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "warn",
+            "reason": "Build/clone failed: Build command not in allowlist: npm ci && npm run build && npm pack"
           }
         ]
       }

@@ -36,7 +36,8 @@
       "1.0.3": {
         "completed": [
           "license.audit",
-          "security.scan"
+          "security.scan",
+          "repro.build"
         ],
         "expected": [
           "license.audit",
@@ -47,7 +48,8 @@
       "1.0.4": {
         "completed": [
           "license.audit",
-          "security.scan"
+          "security.scan",
+          "repro.build"
         ],
         "expected": [
           "license.audit",
@@ -68,6 +70,16 @@
         "missing": []
       },
       "2.0.0": {
+        "completed": [],
+        "expected": [],
+        "missing": []
+      },
+      "2.1.0": {
+        "completed": [],
+        "expected": [],
+        "missing": []
+      },
+      "2.2.0": {
         "completed": [],
         "expected": [],
         "missing": []
