@@ -5,14 +5,112 @@
     "commit": "92efc4a7168f333a71828ed160865f2799e828dc",
     "timestamp": "2026-06-21T08:14:02.526Z",
     "artifactCount": 1,
-    "attestations": [],
-    "attestationSources": {},
+    "attestations": [
+      {
+        "kind": "sbom.present",
+        "result": "pass",
+        "reason": "Release includes SBOM attestation"
+      },
+      {
+        "kind": "provenance.present",
+        "result": "pass",
+        "reason": "Release includes build provenance"
+      },
+      {
+        "kind": "signature.chain",
+        "result": "pass",
+        "reason": ""
+      },
+      {
+        "kind": "license.audit",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "security.scan",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "repro.build",
+        "result": "unscored",
+        "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.3.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-TpoiRf/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+      }
+    ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes SBOM attestation",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.450Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes build provenance",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.450Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.450Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.269Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.663Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.3.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-TpoiRf/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:59.091Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
     "disputes": [],
     "ignoredDisputes": [],
     "disputed": false,
-    "trustScore": 45,
-    "integrityScore": 45,
+    "trustScore": 100,
+    "integrityScore": 100,
     "assuranceScore": 0,
     "profileId": null,
     "expectedChecks": [
@@ -31,17 +129,17 @@
     },
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 40
       },
       "repro.build": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       }
@@ -49,16 +147,82 @@
     "completedChecks": [
       "signed",
       "hasArtifacts",
-      "noPolicyViolations"
-    ],
-    "missingChecks": [
+      "noPolicyViolations",
       "sbom.present",
       "provenance.present",
       "signature.chain"
     ],
-    "verdict": "PARTIAL",
-    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
-    "assuranceConsensus": {}
+    "missingChecks": [],
+    "verdict": "VERIFIED",
+    "trustSummary": "VERIFIED (integrity 100/100) — all required checks satisfied",
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes SBOM attestation"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes build provenance"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": ""
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.3.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-TpoiRf/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+          }
+        ]
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/repomesh",
@@ -66,14 +230,112 @@
     "commit": "cc895b5249e44a3513cd8042a3afec81864bee3c",
     "timestamp": "2026-06-21T05:11:51.134Z",
     "artifactCount": 1,
-    "attestations": [],
-    "attestationSources": {},
+    "attestations": [
+      {
+        "kind": "sbom.present",
+        "result": "pass",
+        "reason": "Release includes SBOM attestation"
+      },
+      {
+        "kind": "provenance.present",
+        "result": "pass",
+        "reason": "Release includes build provenance"
+      },
+      {
+        "kind": "signature.chain",
+        "result": "pass",
+        "reason": ""
+      },
+      {
+        "kind": "license.audit",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "security.scan",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "repro.build",
+        "result": "unscored",
+        "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.2.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-S9H21W/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+      }
+    ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes SBOM attestation",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.449Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes build provenance",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.449Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.449Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.133Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.620Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.2.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-S9H21W/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:56.915Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
     "disputes": [],
     "ignoredDisputes": [],
     "disputed": false,
-    "trustScore": 45,
-    "integrityScore": 45,
+    "trustScore": 100,
+    "integrityScore": 100,
     "assuranceScore": 0,
     "profileId": null,
     "expectedChecks": [
@@ -92,17 +354,17 @@
     },
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 40
       },
       "repro.build": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       }
@@ -110,16 +372,82 @@
     "completedChecks": [
       "signed",
       "hasArtifacts",
-      "noPolicyViolations"
-    ],
-    "missingChecks": [
+      "noPolicyViolations",
       "sbom.present",
       "provenance.present",
       "signature.chain"
     ],
-    "verdict": "PARTIAL",
-    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
-    "assuranceConsensus": {}
+    "missingChecks": [],
+    "verdict": "VERIFIED",
+    "trustSummary": "VERIFIED (integrity 100/100) — all required checks satisfied",
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes SBOM attestation"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes build provenance"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": ""
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.2.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-S9H21W/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+          }
+        ]
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/repomesh",
@@ -127,14 +455,112 @@
     "commit": "0cfbdb32de1cf282f3ef3581f3bc222cbcd155dc",
     "timestamp": "2026-06-14T23:57:11.912Z",
     "artifactCount": 1,
-    "attestations": [],
-    "attestationSources": {},
+    "attestations": [
+      {
+        "kind": "sbom.present",
+        "result": "pass",
+        "reason": "Release includes SBOM attestation"
+      },
+      {
+        "kind": "provenance.present",
+        "result": "pass",
+        "reason": "Release includes build provenance"
+      },
+      {
+        "kind": "signature.chain",
+        "result": "pass",
+        "reason": ""
+      },
+      {
+        "kind": "license.audit",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "security.scan",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "repro.build",
+        "result": "unscored",
+        "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.1.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-uVEOkU/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+      }
+    ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes SBOM attestation",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.448Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes build provenance",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.448Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.448Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.983Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.578Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.1.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-uVEOkU/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:54.681Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
     "disputes": [],
     "ignoredDisputes": [],
     "disputed": false,
-    "trustScore": 45,
-    "integrityScore": 45,
+    "trustScore": 100,
+    "integrityScore": 100,
     "assuranceScore": 0,
     "profileId": null,
     "expectedChecks": [
@@ -153,17 +579,17 @@
     },
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 40
       },
       "repro.build": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       }
@@ -171,16 +597,82 @@
     "completedChecks": [
       "signed",
       "hasArtifacts",
-      "noPolicyViolations"
-    ],
-    "missingChecks": [
+      "noPolicyViolations",
       "sbom.present",
       "provenance.present",
       "signature.chain"
     ],
-    "verdict": "PARTIAL",
-    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
-    "assuranceConsensus": {}
+    "missingChecks": [],
+    "verdict": "VERIFIED",
+    "trustSummary": "VERIFIED (integrity 100/100) — all required checks satisfied",
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes SBOM attestation"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes build provenance"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": ""
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.1.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-uVEOkU/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+          }
+        ]
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/repomesh",
@@ -188,14 +680,112 @@
     "commit": "717b80218893b05610b9703951de9c75dc197495",
     "timestamp": "2026-06-14T20:01:15.802Z",
     "artifactCount": 1,
-    "attestations": [],
-    "attestationSources": {},
+    "attestations": [
+      {
+        "kind": "sbom.present",
+        "result": "pass",
+        "reason": "Release includes SBOM attestation"
+      },
+      {
+        "kind": "provenance.present",
+        "result": "pass",
+        "reason": "Release includes build provenance"
+      },
+      {
+        "kind": "signature.chain",
+        "result": "pass",
+        "reason": ""
+      },
+      {
+        "kind": "license.audit",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "security.scan",
+        "result": "unscored",
+        "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+      },
+      {
+        "kind": "repro.build",
+        "result": "unscored",
+        "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.0.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-Guwf8r/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+      }
+    ],
+    "attestationSources": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes SBOM attestation",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.446Z"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "Release includes build provenance",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.446Z"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sources": [
+          {
+            "result": "pass",
+            "reason": "",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.446Z"
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:35.817Z"
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit.",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:36.534Z"
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sources": [
+          {
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.0.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-Guwf8r/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np",
+            "node": "mcp-tool-shop-org/repomesh",
+            "timestamp": "2026-06-21T08:29:52.473Z"
+          }
+        ]
+      }
+    },
     "policyViolations": [],
     "disputes": [],
     "ignoredDisputes": [],
     "disputed": false,
-    "trustScore": 45,
-    "integrityScore": 45,
+    "trustScore": 100,
+    "integrityScore": 100,
     "assuranceScore": 0,
     "profileId": null,
     "expectedChecks": [
@@ -214,17 +804,17 @@
     },
     "assuranceBreakdown": {
       "license.audit": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       },
       "security.scan": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 40
       },
       "repro.build": {
-        "result": "missing",
+        "result": "unscored",
         "points": 0,
         "max": 30
       }
@@ -232,16 +822,82 @@
     "completedChecks": [
       "signed",
       "hasArtifacts",
-      "noPolicyViolations"
-    ],
-    "missingChecks": [
+      "noPolicyViolations",
       "sbom.present",
       "provenance.present",
       "signature.chain"
     ],
-    "verdict": "PARTIAL",
-    "trustSummary": "PARTIAL (integrity 45/100) — missing: sbom.present, provenance.present, signature.chain",
-    "assuranceConsensus": {}
+    "missingChecks": [],
+    "verdict": "VERIFIED",
+    "trustSummary": "VERIFIED (integrity 100/100) — all required checks satisfied",
+    "assuranceConsensus": {
+      "sbom.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes SBOM attestation"
+          }
+        ]
+      },
+      "provenance.present": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": "Release includes build provenance"
+          }
+        ]
+      },
+      "signature.chain": {
+        "consensus": "pass",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "pass",
+            "reason": ""
+          }
+        ]
+      },
+      "license.audit": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind license audit to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "security.scan": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "SBOM attestation carries no sha256 digest; cannot bind trust to fetched SBOM bytes. No assurance credit."
+          }
+        ]
+      },
+      "repro.build": {
+        "consensus": "unscored",
+        "sourceCount": 1,
+        "sources": [
+          {
+            "node": "mcp-tool-shop-org/repomesh",
+            "result": "unscored",
+            "reason": "Build/clone failed: Docker build failed for mcp-tool-shop-org/repomesh@v2.0.0 in node:22-bookworm: Command failed: docker run --rm -v /tmp/repro-Guwf8r/source:/w -w /w node:22-bookworm sh -c npm ci && npm run build && np"
+          }
+        ]
+      }
+    }
   },
   {
     "repo": "mcp-tool-shop-org/shipcheck",
