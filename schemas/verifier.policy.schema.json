@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://repomesh.dev/schemas/verifier.policy.schema.json",
+  "title": "RepoMesh Verifier Policy",
+  "description": "The verifier-plugin contract policy (#7). Defines the check-kinds registry (mode + trusted-set + weights + category), the node-kinds permission map (which node kind may sign which event type), the trusted-attestor / trusted-policy allowlists, and conflict/quorum policies. Backward-compatible: a v1 policy (no nodeKinds / scoreableResults / per-check category+weights) validates here unchanged, and so does the shipped v2 policy. REGISTERED ≠ TRUSTED — a check appearing in `checks` is registered but earns nothing without a trusted-set consensus pass.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["trustedAttestors"],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Policy schema version. v1 = pre-#7 (trustedAttestors/checks only). v2 adds nodeKinds, scoreableResults, and per-check category/weights/attestorGated. Resolvers fall back per-field to the v1 hardcoded defaults when a v2 field is absent."
+    },
+    "description": { "type": "string", "maxLength": 2000 },
+    "trustedAttestors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repoId" },
+      "uniqueItems": true,
+      "description": "Nodes whose AttestationPublished events may earn trust credit (D2 allowlist)."
+    },
+    "trustedPolicy": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repoId" },
+      "uniqueItems": true,
+      "description": "Nodes whose PolicyViolation / key-lifecycle governance events are authorized (the governance floor, §4.3). Absent → falls back to trustedAttestors."
+    },
+    "nodeKinds": {
+      "type": "object",
+      "description": "Node-kind → permission map: which node KINDS may sign which event types. Data-driven (v2). ABSENT → resolver falls back to the v1 map {attestor,registry}→AttestationPublished, {policy,registry}→PolicyViolation. PRESENT-but-empty for an event type is an INTENTIONAL empty set (no kind may sign it), not a fallback.",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["canSign"],
+        "properties": {
+          "canSign": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true,
+            "description": "Event types this node kind is permitted to sign (e.g. AttestationPublished, PolicyViolation)."
+          }
+        }
+      }
+    },
+    "scoreableResults": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Attestation results that count as a COMPLETED check and may carry weight (v2). Absent/empty → v1 default [pass, warn, fail]."
+    },
+    "checks": {
+      "type": "object",
+      "description": "The check-kinds registry. Each key is a check kind (e.g. license.audit, sbom.present). Registration earns nothing on its own — credit requires a trusted-set consensus pass.",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "$ref": "#/$defs/check" }
+    },
+    "conflictPolicies": {
+      "type": "object",
+      "description": "Named conflict-resolution strategies referenced by checks[*].conflictPolicy.",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": { "type": "string" }
+    },
+    "profileOverrides": {
+      "type": "object",
+      "description": "Per-profile (e.g. `regulated`) overrides of check conflictPolicy/quorum. Each profile maps check-kind → a partial check override.",
+      "propertyNames": { "type": "string", "minLength": 1 },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "type": "string", "minLength": 1 },
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "mode": { "$ref": "#/$defs/mode" },
+            "quorum": { "$ref": "#/$defs/quorum" },
+            "conflictPolicy": { "type": "string", "minLength": 1 },
+            "trustedNodes": { "$ref": "#/$defs/trustedNodes" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "repoId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+      "description": "org/repo identifier"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["open", "trusted-set"],
+      "description": "open = any node's attestation of this kind is considered; trusted-set = only nodes in trustedNodes."
+    },
+    "quorum": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of agreeing trusted attestations required for a consensus result."
+    },
+    "trustedNodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repoId" },
+      "uniqueItems": true,
+      "description": "Nodes whose attestations of this check kind count under trusted-set mode."
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "quorum", "conflictPolicy"],
+      "properties": {
+        "mode": { "$ref": "#/$defs/mode" },
+        "quorum": { "$ref": "#/$defs/quorum" },
+        "conflictPolicy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the conflict-resolution strategy (see conflictPolicies) used to fold multiple attestations into one consensus result."
+        },
+        "trustedNodes": { "$ref": "#/$defs/trustedNodes" },
+        "category": {
+          "type": "string",
+          "enum": ["integrity", "assurance"],
+          "description": "v2 classification. integrity = release-integrity checks (sbom.present etc., pass-only weight); assurance = audit checks (license.audit etc., pass/warn/fail weights)."
+        },
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "v2 per-check scoring weights. Integrity checks declare only `pass`; assurance checks declare pass/warn/fail.",
+          "properties": {
+            "pass": { "type": "number" },
+            "warn": { "type": "number" },
+            "fail": { "type": "number" }
+          }
+        },
+        "attestorGated": {
+          "type": "boolean",
+          "description": "v2: when true, this (integrity) check requires a TRUSTED-attestor consensus pass — a release cannot self-grant it."
+        }
+      }
+    }
+  }
+}

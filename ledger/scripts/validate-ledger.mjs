@@ -30,6 +30,9 @@ import {
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old
 // indexOf("{") rule, which would have grabbed a brace appearing in the anchor's prose line).
 import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
+// #7 verifier-plugin contract: node-kind permissions (which node KIND may sign which event type) are
+// resolved from verifier.policy.json, not hardcoded here. Falls back, per-field, to the v1 map.
+import { nodeKindsForEvent } from "../../verifiers/lib/policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(ROOT, "..");
@@ -37,6 +40,9 @@ const REPO_ROOT = path.resolve(ROOT, "..");
 const LEDGER_PATH = path.join(ROOT, "events", "events.jsonl");
 const EVENT_SCHEMA_PATH = path.join(REPO_ROOT, "schemas", "event.schema.json");
 const NODE_SCHEMA_PATH = path.join(REPO_ROOT, "schemas", "node.schema.json");
+// #7: the trust policy itself is schema-validated at startup — a malformed policy must HALT (fail
+// closed), never be silently trusted as if it carried no restrictions.
+const VERIFIER_POLICY_SCHEMA_PATH = path.join(REPO_ROOT, "schemas", "verifier.policy.schema.json");
 // NODES_DIR is env-overridable (matches policy/check-policy.mjs) so the validator is testable.
 const NODES_DIR = process.env.REPOMESH_NODES_PATH || path.join(ROOT, "nodes");
 // Verifier policy is the source of truth for the trusted-attestor allowlist (D2).
@@ -484,8 +490,10 @@ addFormats(ajv);
 
 const eventSchema = loadJson(EVENT_SCHEMA_PATH);
 const nodeSchema = loadJson(NODE_SCHEMA_PATH);
+const verifierPolicySchema = loadJson(VERIFIER_POLICY_SCHEMA_PATH);
 const validateEvent = ajv.compile(eventSchema);
 const validateNode = ajv.compile(nodeSchema);
+const validateVerifierPolicy = ajv.compile(verifierPolicySchema);
 
 // Load the trusted-attestor allowlist (D2). Absence is a hard error — there is no implicit trust.
 let verifierPolicy = {};
@@ -501,12 +509,25 @@ if (fs.existsSync(VERIFIER_POLICY_PATH)) {
     `It defines trustedAttestors/trustedPolicy — third-party events cannot be authorized without it.`
   );
 }
+// #7: FAIL CLOSED on a malformed trust policy. The policy decides who may sign what; a structurally
+// invalid policy (bad mode enum, missing required field, etc.) must HALT, not be silently trusted as
+// if it imposed no restrictions. Validated against schemas/verifier.policy.schema.json (v1 + v2).
+if (!validateVerifierPolicy(verifierPolicy)) {
+  fail(
+    `Verifier policy ${path.relative(REPO_ROOT, VERIFIER_POLICY_PATH)} failed schema validation: ` +
+    `${ajv.errorsText(validateVerifierPolicy.errors)}. ` +
+    `A malformed trust policy is refused (fail-closed) — fix it before validating the ledger.`
+  );
+}
 const trustedAttestors = new Set(verifierPolicy.trustedAttestors || []);
 const trustedPolicy = new Set(verifierPolicy.trustedPolicy || verifierPolicy.trustedAttestors || []);
-// Nodes that may sign attestations: dedicated attestor nodes plus the network registry (which
-// bootstraps attestations + anchors at genesis). PolicyViolation may be signed by policy/registry.
-const ATTESTOR_KINDS = new Set(["attestor", "registry"]);
-const POLICY_KINDS = new Set(["policy", "registry"]);
+// #7: which node KINDS may sign which event type is resolved from verifier.policy.json (nodeKinds),
+// NOT hardcoded — so the network is extended by DATA, not code. The resolver falls back, per-field, to
+// the v1 map (AttestationPublished → attestor/registry; PolicyViolation → policy/registry) when the
+// policy omits nodeKinds, so a v1 policy (or the shipped v2 whose map mirrors the old constants)
+// authorizes byte-identically to the pre-#7 hardcoded sets. Resolved once per event type.
+const ATTESTOR_KINDS = nodeKindsForEvent(verifierPolicy, "AttestationPublished");
+const POLICY_KINDS = nodeKindsForEvent(verifierPolicy, "PolicyViolation");
 
 const headLines = readLines(headPath);
 const baseLines = basePath ? readLines(basePath) : [];

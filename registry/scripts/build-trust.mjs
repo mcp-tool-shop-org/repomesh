@@ -45,6 +45,19 @@ import {
 import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
 // STGB-TRUST-004: atomic temp-file + rename write so a crash mid-write can't tear trust.json.
 import { writeJsonAtomic } from "../../verifiers/lib/common.mjs";
+// #7 verifier-plugin contract — the SINGLE check-kinds registry + node-kinds permission map, resolved
+// from verifier.policy.json (v2) with per-field fallback to the historical hardcoded defaults (v1). This
+// is what makes a new check kind a verifier.policy.json EDIT, not a code change. Every resolver below
+// falls back, per field, to the exact pre-#7 constant when the policy omits it, so the shipped v2 policy
+// (whose values mirror the old constants) and any v1 policy score BYTE-IDENTICALLY to pre-#7.
+import {
+  nodeKindsForEvent,
+  integrityCheckWeights,
+  assuranceWeights as resolveAssuranceWeightDefaults,
+  attestorGatedIntegrity,
+  scoreableResults,
+  isRegisteredCheck,
+} from "../../verifiers/lib/policy.mjs";
 
 const DEFAULT_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -82,40 +95,32 @@ export function bandColor(score) {
   return "#e05d44";                                       // red
 }
 
-// Third-party-signed event types resolve their key from a TRUSTED attestor/policy node, not the
-// event's own repo. Their allowed kinds mirror validate-ledger.mjs (D2 / LDG-007).
-const ATTESTOR_KINDS = new Set(["attestor", "registry"]);
-const POLICY_KINDS = new Set(["policy", "registry"]);
+// #7: node-kind permissions, the integrity CHECK-KIND weights, the default assurance weights, the
+// attestor-gated set, and the scoreable-results set are NO LONGER hardcoded here — they are resolved
+// from verifier.policy.json via the contract resolver (imported above), with per-field fallback to the
+// exact pre-#7 defaults. The two constants that remain are the ones the resolver does NOT own:
+//
+//   1. INTRINSIC_INTEGRITY_WEIGHTS — the release-INTRINSIC integrity points (signed / hasArtifacts /
+//      noPolicyViolations). These are NOT check kinds (no attestor publishes them; they are derived from
+//      the release event itself), so they stay in the scorer. The full integrity weight table is built
+//      per-build as { ...INTRINSIC_INTEGRITY_WEIGHTS, ...integrityCheckWeights(policy) }.
+//   2. THRESHOLD_STRICTNESS — the override strictness floor ordering (unrelated to the check registry).
+//
+// Historical defaults the RESOLVER now owns (kept here only as a documentation anchor — the live values
+// come from policy.mjs's V1_* fallbacks): node kinds {attestor,registry}/{policy,registry} per event
+// type; integrity check weights sbom.present=20 / provenance.present=20 / signature.chain=15; default
+// assurance weights license.audit{30,15,0} / security.scan{40,20,0} / repro.build{30,15,0}; attestor-
+// gated {sbom.present, provenance.present, signature.chain}; scoreable results {pass,warn,fail}.
 
-// Integrity weights — release authenticity dimension (0-100)
-const INTEGRITY_WEIGHTS = {
+// Release-INTRINSIC integrity weights — NOT check kinds, so they stay in the scorer (see note above).
+const INTRINSIC_INTEGRITY_WEIGHTS = {
   signed: 15,              // signature verified at ledger ingress
   hasArtifacts: 15,        // release has real artifact hashes
   noPolicyViolations: 15,  // clean policy check
-  "sbom.present": 20,      // SBOM attestation (trusted-attestor consensus pass)
-  "provenance.present": 20,// build provenance (trusted-attestor consensus pass)
-  "signature.chain": 15    // attestor re-verified signature chain
 };
-
-// Default assurance weights — safety/compliance dimension (0-100)
-const DEFAULT_ASSURANCE_WEIGHTS = {
-  "license.audit": { pass: 30, warn: 15, fail: 0 },
-  "security.scan": { pass: 40, warn: 20, fail: 0 },
-  "repro.build":   { pass: 30, warn: 15, fail: 0 }  // placeholder
-};
-
-// Integrity checks that require a TRUSTED-attestor consensus pass (REG-002). These are the
-// presence/chain claims a release cannot self-declare — only an independent attestor can grant them.
-const ATTESTOR_GATED_INTEGRITY = new Set(["sbom.present", "provenance.present", "signature.chain"]);
 
 // Severity/strictness ordering for threshold validation (stricter = lower index)
 const THRESHOLD_STRICTNESS = { fail: 0, warn: 1, pass: 2 };
-
-// D13: the only attestation results that count as a COMPLETED check and may carry assurance weight.
-// A non-scoring result ('unscored' — verifier could not certify, e.g. unbound/mismatched SBOM digest
-// or a repro build that could not run) scores 0 points AND is reported as a MISSING check, never a
-// completed one. Anything outside this set (including 'missing') is treated the same way.
-const SCOREABLE_RESULTS = new Set(["pass", "warn", "fail"]);
 
 // ANC-B10: attestation note lines are written "kind: result — reason". The separator was historically
 // an em-dash (—), but hand-written/ported notes drift to an en-dash (–) or an ASCII hyphen (-). Accept
@@ -243,7 +248,9 @@ function verifyEventSignature(event, ctx) {
   let resolved;
   if (isThirdParty) {
     const allowlist = event.type === "PolicyViolation" ? ctx.trustedPolicy : ctx.trustedAttestors;
-    const kinds = event.type === "PolicyViolation" ? POLICY_KINDS : ATTESTOR_KINDS;
+    // #7: which node KINDS may sign this event type comes from verifier.policy.json (nodeKinds map),
+    // resolved once into ctx.nodeKindsForEvent. v1 fallback reproduces the old ATTESTOR/POLICY_KINDS.
+    const kinds = ctx.nodeKindsForEvent(event.type);
     resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, allowlist, kinds, event.type);
   } else {
     resolved = resolveRepoBoundKey(ctx.nodesDir, event.repo, sig.keyId);
@@ -314,7 +321,10 @@ function verifyKeyEventSignature(ev, ctx) {
   // non-match here (build-trust already halts on a genuine collision in verifyEventSignature).
   let policyNode;
   try {
-    policyNode = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedPolicy, POLICY_KINDS, ev.type);
+    // #7: the governance-floor signer kinds for a key event come from the policy's PolicyViolation
+    // node-kinds (the governance event class), resolved via ctx. v1 fallback = old POLICY_KINDS.
+    const policyKinds = ctx.nodeKindsForEvent("PolicyViolation");
+    policyNode = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedPolicy, policyKinds, ev.type);
   } catch { policyNode = { error: "keyId collision among trusted policy nodes" }; }
   if (!policyNode.error && verifyEd25519(policyNode.pem, sig.canonicalHash, sig.value)) {
     return { ok: true, signerKeyId: sig.keyId, signerNodeRepo: policyNode.signerNode };
@@ -382,7 +392,10 @@ function buildTimeCtx(events, ctx) {
     if (computeCanonicalHash(ev) !== sig.canonicalHash) continue;
     let resolved;
     try {
-      resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedAttestors, ATTESTOR_KINDS, ev.type);
+      // #7: an anchor is an AttestationPublished — its signer kinds come from the policy's
+      // AttestationPublished node-kinds via ctx. v1 fallback = old ATTESTOR_KINDS.
+      const attestorKinds = ctx.nodeKindsForEvent("AttestationPublished");
+      resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedAttestors, attestorKinds, ev.type);
     } catch { continue; } // keyId collision among trusted nodes — not a trusted clock here.
     if (resolved.error || !verifyEd25519(resolved.pem, sig.canonicalHash, sig.value)) continue;
     trustedAnchors.push({ ev, meta, signerNode: resolved.signerNode });
@@ -518,9 +531,12 @@ function validateOverrides(repoOverrides, profileDef) {
 // profile/default warn ceiling for that check. (`pass` may be tuned by the repo freely — only the
 // fail/warn floors are governance-controlled, mirroring the strictness floor on treatUnknownAs /
 // failOnSeverities.) The profile layer applies first and IS allowed to raise.
-function resolveAssuranceWeights(profileDef, repoOverrides) {
+// #7: defaultWeights is now the RESOLVED assurance-check default map (assuranceWeights(policy) — v2
+// per-check weights, v1 fallback = the historical DEFAULT_ASSURANCE_WEIGHTS). The profile/override merge
+// that builds ON TOP of it is unchanged.
+function resolveAssuranceWeights(defaultWeights, profileDef, repoOverrides) {
   const weights = {};
-  for (const [k, v] of Object.entries(DEFAULT_ASSURANCE_WEIGHTS)) weights[k] = { ...v };
+  for (const [k, v] of Object.entries(defaultWeights)) weights[k] = { ...v };
   // Profile layer (governance): may raise fail/warn freely.
   if (profileDef?.scoring?.assuranceWeights) {
     for (const [k, v] of Object.entries(profileDef.scoring.assuranceWeights)) {
@@ -571,11 +587,40 @@ export function buildTrust(opts = {}) {
   const events = readEvents(ledgerPath);
   const verifierPolicy = loadVerifierPolicy(policyPath);
   const nodeManifests = listNodeManifests(nodesDir);
+
+  // #7 verifier-plugin contract — resolve the check-kinds registry + node-kinds permission map ONCE from
+  // verifier.policy.json (v2), each field falling back to the historical hardcoded default (v1). These
+  // replace the former module-level ATTESTOR_KINDS / POLICY_KINDS / INTEGRITY_WEIGHTS (check-kind part) /
+  // DEFAULT_ASSURANCE_WEIGHTS / ATTESTOR_GATED_INTEGRITY / SCOREABLE_RESULTS constants. With the shipped
+  // v2 policy (values mirror the old constants) or any v1 policy, every resolution below is byte-identical
+  // to pre-#7, which the regression test pins against the committed trust.json.
+  //
+  // The full integrity weight table = release-INTRINSIC (hardcoded; signed/hasArtifacts/noPolicyViolations
+  // are NOT check kinds) + the resolved CHECK-KIND integrity weights (sbom.present/provenance.present/
+  // signature.chain) from the policy.
+  const integrityCheckW = integrityCheckWeights(verifierPolicy);
+  const INTEGRITY_WEIGHTS = { ...INTRINSIC_INTEGRITY_WEIGHTS, ...integrityCheckW };
+  const defaultAssuranceWeights = resolveAssuranceWeightDefaults(verifierPolicy);
+  const ATTESTOR_GATED_INTEGRITY = attestorGatedIntegrity(verifierPolicy);
+  const SCOREABLE_RESULTS = scoreableResults(verifierPolicy);
+
   const ctx = {
     nodesDir,
     nodeManifests,
     trustedAttestors: new Set(verifierPolicy?.trustedAttestors || []),
     trustedPolicy: new Set(verifierPolicy?.trustedPolicy || verifierPolicy?.trustedAttestors || []),
+    // #7: which node KINDS may sign a given event type, resolved from the policy's nodeKinds map (v1
+    // fallback reproduces ATTESTOR_KINDS for AttestationPublished and POLICY_KINDS for PolicyViolation).
+    // Memoized per event type so the per-event verification loop does not re-scan the map each call.
+    nodeKindsForEvent: (() => {
+      const cache = new Map();
+      return (eventType) => {
+        if (cache.has(eventType)) return cache.get(eventType);
+        const s = nodeKindsForEvent(verifierPolicy, eventType);
+        cache.set(eventType, s);
+        return s;
+      };
+    })(),
   };
   // Contract §5.2/§5.3 — the OFFLINE trusted-time ctx (anchor-event ladder over the loaded events).
   // Threaded into verifyEventSignature so the key-window predicate has a provable signature time.
@@ -735,7 +780,16 @@ export function buildTrust(opts = {}) {
     for (const [kind, sources] of Object.entries(kindMap)) {
       const checkPolicy = verifierPolicy?.checks?.[kind] || null;
       const resolved = resolveConsensus(sources, checkPolicy);
-      releases[key].attestationSources[kind] = { consensus: resolved.consensus, sources: resolved.sources };
+      const entry = { consensus: resolved.consensus, sources: resolved.sources };
+      // #7 REGISTERED ≠ TRUSTED: a check kind that is NOT registered in verifier.policy.json earns ZERO
+      // credit by construction (no weight is resolved for it below — integrityCheckWeights/
+      // assuranceWeights only emit registered kinds), but it must be recorded LEGIBLY rather than mixed
+      // in silently. We flag the source `registered:false` so a consumer sees the attestation EXISTS but
+      // earned nothing because its kind is unregistered. We set the flag ONLY when false: a registered
+      // kind's entry is byte-identical to pre-#7 (no new field), which the regression gate pins. (The
+      // shipped/v1 policies register every kind this ledger uses, so this branch is never taken there.)
+      if (!isRegisteredCheck(verifierPolicy, kind)) entry.registered = false;
+      releases[key].attestationSources[kind] = entry;
       if (!releases[key].attestations.some((a) => a.kind === kind)) {
         releases[key].attestations.push({
           kind,
@@ -761,7 +815,7 @@ export function buildTrust(opts = {}) {
     const profileDef = profileId ? loadProfileDef(profilesDir, profileId) : null;
     const rawOverrides = loadRepoOverrides(nodesDir, entry.repo);
     const repoOverrides = validateOverrides(rawOverrides, profileDef);
-    const assuranceWeights = resolveAssuranceWeights(profileDef, repoOverrides);
+    const assuranceWeights = resolveAssuranceWeights(defaultAssuranceWeights, profileDef, repoOverrides);
 
     entry.profileId = profileId;
 
@@ -794,16 +848,16 @@ export function buildTrust(opts = {}) {
     // --- Assurance Score (profile-aware) ---
     let assuranceScore = 0;
     const assuranceBreakdown = {};
-    const checksToScore = expectedAssurance.length > 0 ? expectedAssurance : Object.keys(DEFAULT_ASSURANCE_WEIGHTS);
+    const checksToScore = expectedAssurance.length > 0 ? expectedAssurance : Object.keys(defaultAssuranceWeights);
 
     let maxPossible = 0;
     for (const kind of checksToScore) {
-      const weights = assuranceWeights[kind] || DEFAULT_ASSURANCE_WEIGHTS[kind];
+      const weights = assuranceWeights[kind] || defaultAssuranceWeights[kind];
       if (!weights) continue;
       maxPossible += weights.pass;
     }
     for (const kind of checksToScore) {
-      const weights = assuranceWeights[kind] || DEFAULT_ASSURANCE_WEIGHTS[kind];
+      const weights = assuranceWeights[kind] || defaultAssuranceWeights[kind];
       if (!weights) continue;
       const att = entry.attestations.find((a) => a.kind === kind);
       const result = att?.result || "missing";
@@ -856,8 +910,15 @@ export function buildTrust(opts = {}) {
       const att = entry.attestations.find((a) => a.kind === check);
       // D13: only pass/warn/fail are completed checks. A non-scoring 'unscored' result (and an
       // absent/'missing' attestation) is reported as a MISSING check, never completed.
-      if (att && SCOREABLE_RESULTS.has(att.result)) completedChecks.push(check);
-      else missingChecks.push(check);
+      // #7 REGISTERED ≠ TRUSTED: an UNregistered check kind can never be a completed check, even with a
+      // `pass` attestation — it earned 0 (no weight) and must not be silently credited. It is reported
+      // MISSING (and surfaced as registered:false in attestationSources/assuranceConsensus). A registered
+      // check is unchanged, so this is byte-identical for the shipped/v1 policies that register every kind.
+      if (att && SCOREABLE_RESULTS.has(att.result) && isRegisteredCheck(verifierPolicy, check)) {
+        completedChecks.push(check);
+      } else {
+        missingChecks.push(check);
+      }
     }
     // FC6 (#4 LSP-01): an unresolved TRUSTED, non-self dispute downgrades the verdict. The disputed
     // integrity/assurance claim is treated as FAILED: the attestor-gated integrity credit a release
@@ -976,7 +1037,7 @@ export function buildTrust(opts = {}) {
     .map((entry) => {
       const assuranceConsensus = {};
       for (const [kind, data] of Object.entries(entry.attestationSources || {})) {
-        assuranceConsensus[kind] = {
+        const c = {
           consensus: data.consensus,
           sourceCount: data.sources.length,
           // STGB-VER-003: KEEP each source's reason string so trust.json explains WHY a check
@@ -984,6 +1045,12 @@ export function buildTrust(opts = {}) {
           // consumer or CI. The reason is the verifier's own one-line cause (e.g. "moderate vuln").
           sources: data.sources.map((s) => ({ node: s.node, result: s.result, reason: s.reason || "" })),
         };
+        // #7 REGISTERED ≠ TRUSTED: surface registered:false on an UNregistered kind so trust.json makes
+        // it legible that the attestation exists but earned nothing because its kind is not registered in
+        // verifier.policy.json. Added ONLY when false — a registered kind's entry is byte-identical to
+        // pre-#7 (the regression gate pins this against the committed ledger, all of whose kinds register).
+        if (data.registered === false) c.registered = false;
+        assuranceConsensus[kind] = c;
       }
       return { ...entry, assuranceConsensus };
     })

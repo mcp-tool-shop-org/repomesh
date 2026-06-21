@@ -1,6 +1,12 @@
 {
-  "v": 1,
-  "description": "Verifier registration policy — defines which checks are open, which are trusted-set, and quorum thresholds.",
+  "v": 2,
+  "description": "Verifier registration policy (#7 verifier-plugin contract). Defines the check-kinds registry (mode + trusted-set + weights + category), the node-kinds permission map (which node kind may sign which event type), and conflict/quorum policies. Adopters extend the network by editing this file — adding a new check kind is data-only (no code change). v1 → v2 is backward-compatible: v1 fields read unchanged; v2 adds `nodeKinds`, `scoreableResults`, and per-check `category` / `weights` / `attestorGated`.",
+  "nodeKinds": {
+    "attestor": { "canSign": ["AttestationPublished"] },
+    "registry": { "canSign": ["AttestationPublished", "PolicyViolation"] },
+    "policy":   { "canSign": ["PolicyViolation"] }
+  },
+  "scoreableResults": ["pass", "warn", "fail"],
   "trustedAttestors": [
     "mcp-tool-shop-org/repomesh",
     "mcp-tool-shop-org/repomesh-license-verifier",
@@ -13,6 +19,8 @@
   ],
   "checks": {
     "license.audit": {
+      "category": "assurance",
+      "weights": { "pass": 30, "warn": 15, "fail": 0 },
       "mode": "trusted-set",
       "trustedNodes": [
         "mcp-tool-shop-org/repomesh",
@@ -22,6 +30,8 @@
       "conflictPolicy": "fail-wins"
     },
     "security.scan": {
+      "category": "assurance",
+      "weights": { "pass": 40, "warn": 20, "fail": 0 },
       "mode": "trusted-set",
       "trustedNodes": [
         "mcp-tool-shop-org/repomesh",
@@ -31,12 +41,17 @@
       "conflictPolicy": "fail-wins"
     },
     "repro.build": {
+      "category": "assurance",
+      "weights": { "pass": 30, "warn": 15, "fail": 0 },
       "mode": "open",
       "trustedNodes": [],
       "quorum": 1,
       "conflictPolicy": "fail-wins"
     },
     "sbom.present": {
+      "category": "integrity",
+      "weights": { "pass": 20 },
+      "attestorGated": true,
       "mode": "trusted-set",
       "trustedNodes": [
         "mcp-tool-shop-org/repomesh"
@@ -45,6 +60,9 @@
       "conflictPolicy": "fail-wins"
     },
     "provenance.present": {
+      "category": "integrity",
+      "weights": { "pass": 20 },
+      "attestorGated": true,
       "mode": "trusted-set",
       "trustedNodes": [
         "mcp-tool-shop-org/repomesh"
@@ -53,6 +71,9 @@
       "conflictPolicy": "fail-wins"
     },
     "signature.chain": {
+      "category": "integrity",
+      "weights": { "pass": 15 },
+      "attestorGated": true,
       "mode": "trusted-set",
       "trustedNodes": [
         "mcp-tool-shop-org/repomesh"
@@ -70,7 +91,7 @@
     "regulated": {
       "license.audit": { "conflictPolicy": "fail-wins", "quorum": 1 },
       "security.scan": { "conflictPolicy": "fail-wins", "quorum": 1 },
-      "repro.build": { "conflictPolicy": "fail-wins", "quorum": 1 }
+      "repro.build":   { "conflictPolicy": "fail-wins", "quorum": 1 }
     }
   }
 }
