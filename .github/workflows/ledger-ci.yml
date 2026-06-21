@@ -5,6 +5,8 @@ on:
     paths:
       - 'ledger/**'
       - 'schemas/**'
+      - 'registry/**'         # registry-ci's auto-update PRs must get the required validate-ledger
+      - 'verifier.policy.json' # check too, else auto-merge deadlocks (the check never runs).
       - '.github/workflows/ledger-ci.yml'
   workflow_dispatch:
 
