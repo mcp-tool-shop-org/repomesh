@@ -28,6 +28,12 @@ jobs:
         with:
           node-version: 22
 
+      # The verifiers import ajv/ajv-formats via verifiers/lib/load-overrides.mjs. Without an install
+      # they crash on import in CI (no node_modules) — which the andon below correctly halts on. Install
+      # the workspace deps so the verifiers actually run. (Pre-existing gap surfaced by the andon.)
+      - name: Install dependencies
+        run: npm ci || npm install
+
       # Run attestor (scan for unattested releases)
       - name: Run attestor
         env:
