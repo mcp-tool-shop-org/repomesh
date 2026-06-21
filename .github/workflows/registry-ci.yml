@@ -74,20 +74,28 @@ jobs:
           node registry/scripts/build-badges.mjs
           node registry/scripts/build-snippets.mjs
 
-      - name: Commit updated registry
-        id: commit-registry
+      # `main` is a PROTECTED branch — a direct `git push` of the regenerated registry fails with
+      # GH006 (protected branch update failed). When the derived registry drifts from the ledger,
+      # open an AUTO-MERGING PR instead (mirrors the anchor/attestor cron pattern, which already
+      # work against protection via the REPOMESH_LEDGER_TOKEN PAT). Idempotent: no drift => no PR.
+      - name: Commit + PR registry changes (protected main)
+        env:
+          GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
         run: |
-          git config user.name "repomesh-bot"
-          git config user.email "repomesh-bot@users.noreply.github.com"
           git add registry/nodes.json registry/capabilities.json registry/trust.json registry/dependencies.json registry/verifiers.json registry/anchors.json registry/badges/ registry/snippets/
           if git diff --cached --quiet; then
-            echo "No registry changes"
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "registry: update index, trust, dependencies, verifiers, badges, and snippets"
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "No registry changes — committed registry is in sync with the ledger."
+            exit 0
           fi
-
-      - name: Push registry changes
-        if: steps.commit-registry.outputs.has_changes == 'true'
-        run: git push
+          BRANCH="registry/auto-$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name "repomesh-bot"
+          git config user.email "repomesh-bot@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git checkout -b "$BRANCH"
+          git commit -m "registry: auto-update derived indexes (trust, verifiers, anchors, badges, snippets)"
+          git push origin "$BRANCH"
+          PR=$(gh pr create --head "$BRANCH" --base main \
+            --title "registry: auto-update derived indexes" \
+            --body "Automated registry regeneration after a ledger change — registry-ci cannot push to protected main, so this lands the derived indexes via an auto-merging PR.")
+          gh pr merge --auto --merge "$PR" \
+            || echo "::warning::Could not enable auto-merge on $PR. Enable once: gh api -X PATCH repos/${{ github.repository }} -f allow_auto_merge=true."
