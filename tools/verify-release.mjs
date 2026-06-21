@@ -38,6 +38,16 @@ const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger"
 const NODES_DIR = process.env.REPOMESH_NODES_PATH || path.join(ROOT, "ledger", "nodes");
 const PROFILES_DIR = process.env.REPOMESH_PROFILES_PATH || path.join(ROOT, "profiles");
 const ANCHOR_CONFIG_PATH = path.join(ROOT, "anchor", "xrpl", "config.json");
+// LEDGER-A-005: committed anchor manifests pin partition Merkle roots. They are the only defence that
+// can catch a DELETED/reordered signed event (the derive-stricter window logic cannot see what is no
+// longer in the ledger). The manifests MUST be resolved relative to the SAME checkout the ledger lives
+// in — NOT a global install ROOT — so a verifier pointed at a custom ledger (REPOMESH_LEDGER_PATH) reads
+// that ledger's OWN committed manifests. LEDGER_PATH is <checkout>/ledger/events/events.jsonl, so the
+// checkout root is three dirs up. Env-overridable (REPOMESH_MANIFESTS_PATH) to match
+// ledger/scripts/validate-ledger.mjs.
+const LEDGER_CHECKOUT_ROOT = path.resolve(path.dirname(LEDGER_PATH), "..", "..");
+const MANIFESTS_DIR = process.env.REPOMESH_MANIFESTS_PATH
+  || path.join(LEDGER_CHECKOUT_ROOT, "anchor", "xrpl", "manifests");
 
 // Treat third-party-signed event types per the contract (D1/D2). For these, the signer is NOT the
 // event's own repo, so cross-node keyId resolution is correct (and gated by the attestor allowlist
@@ -490,6 +500,85 @@ function loadProfileForRepo(repoId) {
   return { profileId, requiredAttestationTypes };
 }
 
+// --- LEDGER-A-005: local-ledger immutability via committed anchor manifests -------------------
+// The exploit: drop a signed KeyRevocation event (+ strip node.json window fields) from a LOCAL
+// checkout's ledger so a compromise-revoked key looks live, then verify a post-revocation release.
+// The derive-stricter window defence CANNOT see a DELETED event. The committed anchor manifests
+// (anchor/xrpl/manifests/*.json) pin each partition's Merkle root, so dropping/reordering ANY
+// anchored event makes the recomputed root diverge — and that is unforgeable without the partition
+// being re-anchored on-chain. This recomputes every committed manifest's root over the LOADED
+// ledger and FAILS on the first mismatch/truncation/reorder. Byte-identical in behaviour to
+// ledger/scripts/validate-ledger.mjs verifyAnchorManifests (v1+v2 aware) and to the published CLI
+// copy. Returns { ok:true } or { ok:false, file, reason, category } — see the published copy for the
+// category contract:
+//   - "ledger-tamper" (start-not-found / slice-truncated / partition-end-moved): the LEDGER-A-005
+//     exploit class; ALWAYS a hard early FAIL.
+//   - "manifest-issue" (forged manifest root or unsupported algo, ledger slice intact): DEFERRED to the
+//     per-release anchor path when that path will run (--anchored / --anchored-or-local), so its richer
+//     verdict shape is preserved; otherwise still a hard FAIL.
+// Absence of manifests => ok:true (nothing pinned to check).
+function checkLedgerImmutability(events) {
+  let manifestFiles;
+  try {
+    if (!fs.existsSync(MANIFESTS_DIR)) return { ok: true };
+    manifestFiles = fs.readdirSync(MANIFESTS_DIR).filter(f => f.endsWith(".json"));
+  } catch (e) {
+    return { ok: true }; // no readable manifests dir => nothing pinned (matches validate-ledger warn)
+  }
+  if (manifestFiles.length === 0) return { ok: true };
+
+  const hashes = events.map(e => e?.signature?.canonicalHash);
+  for (const file of manifestFiles) {
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(MANIFESTS_DIR, file), "utf8"));
+    } catch (e) {
+      // A committed manifest that cannot be parsed is itself a corruption => fail closed.
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} is unreadable/corrupt: ${e.message}` };
+    }
+    // An absent algo means a legacy v1 manifest (matches validate-ledger.mjs); unknown algo fails
+    // closed in merkleRootForAlgo below.
+    const algo = manifest.algo || "sha256-merkle-v1";
+    const { range, count, root } = manifest;
+    if (!Array.isArray(range) || range.length !== 2 || typeof root !== "string" || !Number.isInteger(count)) {
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} is malformed (range/count/root missing)` };
+    }
+    const start = hashes.indexOf(range[0]);
+    if (start === -1) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} pins a partition starting at ${range[0]} ` +
+        `which is no longer present in the ledger (an anchored event was removed)` };
+    }
+    const slice = hashes.slice(start, start + count);
+    if (slice.length !== count || slice.some(h => !h)) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} partition (count=${count}) is truncated` };
+    }
+    if (slice[slice.length - 1] !== range[1]) {
+      return { ok: false, file, category: "ledger-tamper", reason:
+        `immutability violation: anchor manifest ${file} partition end ${range[1]} does not match ` +
+        `the ledger (events were reordered or replaced)` };
+    }
+    let computed;
+    try {
+      computed = merkleRootForAlgo(slice, algo);
+    } catch (e) {
+      // The ledger slice is intact; an unverifiable/future algo is a manifest-level issue.
+      return { ok: false, file, category: "manifest-issue",
+        reason: `anchor manifest ${file} has an unverifiable algo: ${e.message}` };
+    }
+    if (computed !== root) {
+      return { ok: false, file, category: "manifest-issue", reason:
+        `immutability violation: anchor manifest ${file} Merkle root mismatch ` +
+        `(manifest.root=${root} recomputed=${computed}) — the manifest does not match the ledger slice ` +
+        `(forged manifest root, or an anchored event was modified)` };
+    }
+  }
+  return { ok: true };
+}
+
 export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, json }) {
   const events = readEvents();
   if (events.length === 0) {
@@ -513,6 +602,25 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   if (!json) {
     console.log(`\nVerifying release: ${repo}@${version}`);
     console.log(`  Anchored check: ${anchored ? "yes" : "no"}\n`);
+  }
+
+  // LEDGER-A-005: BEFORE any trust logic, assert the LOCAL ledger has not been truncated/reordered
+  // relative to the committed anchor manifests. Runs independent of --anchored because the exploit
+  // accepts a post-revocation release WITHOUT --anchored — the derive-stricter window defence cannot
+  // see a DELETED KeyRevocation event, but a dropped/reordered anchored event breaks the pinned Merkle
+  // root. tools/ is always local + offline. Composition mirrors the published copy: a "ledger-tamper"
+  // category always hard-fails early; a "manifest-issue" (forged manifest root / unsupported algo, with
+  // the ledger slice intact) is deferred to the per-release anchor path when --anchored / --anchored-or-
+  // local will run, so its established verdict shape is preserved (no double-fail / no preemption).
+  const immutability = checkLedgerImmutability(events);
+  const deferToAnchorPath = immutability.category === "manifest-issue" && (anchored || anchoredOrLocal);
+  if (!immutability.ok && !deferToAnchorPath) {
+    result.ok = false;
+    result.gate = { verdict: "FAIL", failed: ["ledger.immutability"], reason: immutability.reason };
+    result.anchor = { immutabilityValid: false, manifest: immutability.file, reason: immutability.reason };
+    if (json) { console.log(JSON.stringify(result, null, 2)); }
+    else { console.error(`  Ledger immutability: FAIL — ${immutability.reason}`); }
+    process.exit(1);
   }
 
   // 1. Find ReleasePublished event
@@ -648,6 +756,19 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     } else {
       // Only warn/unknown present — not satisfied.
       gate.missing.push(type);
+    }
+  }
+
+  // ATT-A-001: also surface ANY selected attestation (even a NON-required type) that is a hard fail
+  // — a validly-signed trusted-attestor attestation with result "fail". Mirrors the published copy's
+  // post-required-gate loop (which pushes a gate.failures entry); here we use this copy's local
+  // gate.failed shape so the BEHAVIOR is identical: a baseline-profile release carrying a
+  // trusted-attestor security.scan:fail can no longer return PASS from tools/ while the published
+  // CLI returns FAIL. De-dup against gate.failed so a required type already hard-failed above is not
+  // listed twice.
+  for (const a of selected) {
+    if (a.signatureValid && a.result === "fail" && !gate.failed.includes(a.type)) {
+      gate.failed.push(a.type);
     }
   }
 

@@ -4,6 +4,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
+// SCORING-A-003: the score-color bands are a SINGLE shared source of truth, owned by the authoritative
+// producer (build-trust.mjs). build-badges is a CONSUMER: before this it used green ≥80 / yellow ≥50 —
+// a THIRD threshold set that disagreed with build-trust's VERIFIED ≥70 / PARTIAL ≥40, so a 70-79
+// VERIFIED release got a RED badge and a 40-49 PARTIAL release a RED badge. Importing the shared bands
+// (and the shared bandColor mapping) makes the badge color track the producer's verdict exactly.
+import { INTEGRITY_BANDS, bandColor } from "./build-trust.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 const REGISTRY_DIR = path.join(ROOT, "registry");
@@ -57,10 +63,11 @@ export function badge(label, value, color, opts = {}) {
 </svg>`;
 }
 
+// SCORING-A-003: delegate to the shared bandColor so the badge color uses the SAME boundaries as the
+// producer's verdict (green >= 70, yellow >= 40, else red). Keep the named wrapper for readability and
+// in case a future badge wants to reference INTEGRITY_BANDS directly.
 function scoreColor(score) {
-  if (score >= 80) return "#4c1";      // green
-  if (score >= 50) return "#dfb317";   // yellow
-  return "#e05d44";                     // red
+  return bandColor(score);
 }
 
 function main() {

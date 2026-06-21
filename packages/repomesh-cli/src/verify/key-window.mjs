@@ -15,6 +15,21 @@
 // XRPL close-time fetch are all supplied by the caller via `ctx`, so this module stays fully
 // unit-testable and importable from both the root scripts and the standalone CLI.
 
+// canonicalReason(r) -> 'compromise' | 'rotation' | 'retirement' | null  (VER-A-002).
+// Trim + lowercase, then map. The trust model only RECOGNIZES the three lowercase reasons; the
+// prospective (trust-self) branch must be reachable ONLY for exactly 'rotation'/'retirement'.
+// ANY non-empty UNKNOWN or mis-cased reason canonicalizes to 'compromise' — the STRICTEST gate
+// (it demands a provable anchored time) — so an attacker cannot dodge the compromise gate with a
+// novel reason string. Empty / non-string => null (no reason asserted). NOTE: this never returns
+// "" — callers that need to know whether a RAW field was present must inspect the raw value, not
+// the canonical result (keyWindow's isWindowed deliberately checks the raw field, not this).
+function canonicalReason(r) {
+  if (typeof r !== "string") return null;
+  const s = r.trim().toLowerCase();
+  if (s === "") return null;
+  return s === "compromise" || s === "rotation" || s === "retirement" ? s : "compromise";
+}
+
 // keyWindow(maintainer) -> normalized window. Tolerant: absent fields => open (null).
 //   { validFrom:Date|null, validUntil:Date|null, revokedAt:Date|null,
 //     revocationReason:string|null, invalidAfter:Date|null, isWindowed:boolean }
@@ -31,8 +46,10 @@ export function keyWindow(maintainer) {
   const validUntil = toDate(m.validUntil);
   const revokedAt = toDate(m.revokedAt);
   const invalidAfter = toDate(m.invalidAfter);
-  const revocationReason =
-    typeof m.revocationReason === "string" && m.revocationReason ? m.revocationReason : null;
+  // VER-A-002: store the CANONICALIZED reason (trim+lowercase; unknown => 'compromise'). The
+  // RAW field — not this canonical value — drives isWindowed below, so a present-but-unknown
+  // reason still marks the key windowed AND is interpreted as a compromise downstream.
+  const revocationReason = canonicalReason(m.revocationReason);
   // Windowed iff ANY raw window field is present on the maintainer (even an unparseable one —
   // a malformed date is a windowed-but-broken key, NOT a grandfathered key). Grandfather is the
   // strict "none of these keys exist on the object" case.
@@ -69,7 +86,12 @@ export function isKeyValidForSignature(maintainer, trustedTime) {
   }
   const tt = trustedTime || { time: null, provable: false, source: "none" };
   const t = tt.time;
-  if (t === null || t === undefined) {
+  // FAIL-CLOSED (VER-A-001): a windowed key requires a USABLE Date as its trusted time. null/
+  // undefined was already rejected; an Invalid Date (`new Date("garbage")`) or a non-Date value
+  // is just as unusable — every subsequent `<`/`>=` against it is a NaN compare (always false),
+  // which would silently re-grandfather a compromised/out-of-window key. Reject anything that is
+  // not a valid Date instance. (Grandfather/window-less keys returned earlier and are unaffected.)
+  if (t === null || t === undefined || !(t instanceof Date) || Number.isNaN(t.getTime())) {
     return { valid: false, reason: "no resolvable signature time for a windowed key" };
   }
   if (w.validFrom && t < w.validFrom) {
@@ -220,7 +242,11 @@ function toDateOrNull(v) {
 // one. null (no reason) ranks lowest.
 const REASON_RANK = { compromise: 3, retirement: 2, rotation: 1 };
 function reasonRank(r) {
-  return typeof r === "string" && REASON_RANK[r] ? REASON_RANK[r] : 0;
+  // VER-A-002: rank the CANONICALIZED reason, so an unknown/mis-cased reason (=> 'compromise')
+  // ranks 3 and DOMINATES merges. null (no reason) ranks lowest. Belt-and-suspenders even though
+  // keyWindow/applyEventConstraint already store canonical values.
+  const c = canonicalReason(r);
+  return c && REASON_RANK[c] ? REASON_RANK[c] : 0;
 }
 function stricterReason(a, b) {
   return reasonRank(b) > reasonRank(a) ? b : a ?? b ?? null;
@@ -301,7 +327,9 @@ function applyEventConstraint(out, ev) {
   } else if (ev.type === "KeyRevocation" && key.action === "revoke") {
     const revokedAt = toDateOrNull(ev.timestamp);
     const invalidAfter = toDateOrNull(key.invalidAfter);
-    const reason = typeof key.reason === "string" && key.reason ? key.reason : "compromise";
+    // VER-A-002: canonicalize the revoke reason (trim+lowercase; unknown => 'compromise'); an
+    // ABSENT reason still defaults to 'compromise' (the strictest), matching prior behavior.
+    const reason = canonicalReason(key.reason) ?? "compromise";
     apply(key.revokedKeyId, {
       validFrom: null,
       validUntil: null,
@@ -484,10 +512,9 @@ export function mergeStricterWindow(maintainer, constraint) {
     validUntil: constraint.validUntil instanceof Date ? constraint.validUntil : toDateOrNull(constraint.validUntil),
     revokedAt: constraint.revokedAt instanceof Date ? constraint.revokedAt : toDateOrNull(constraint.revokedAt),
     invalidAfter: constraint.invalidAfter instanceof Date ? constraint.invalidAfter : toDateOrNull(constraint.invalidAfter),
-    revocationReason:
-      typeof constraint.revocationReason === "string" && constraint.revocationReason
-        ? constraint.revocationReason
-        : null,
+    // VER-A-002: canonicalize the constraint's reason too (unknown => 'compromise'), so the merged
+    // window stores a canonical value and a mis-cased reason cannot dodge the compromise dominance.
+    revocationReason: canonicalReason(constraint.revocationReason),
   };
 
   const merged = {

@@ -1,14 +1,14 @@
 {
   "v": 1,
-  "algo": "sha256-merkle-v1",
+  "algo": "sha256-merkle-v2",
   "partitionId": "all",
   "network": "testnet",
-  "prev": null,
+  "prev": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
   "range": [
     "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
-    "cce98d420d705f89a06021a9500212b59e41c8aeba7cf84f3c598328f71cde8f"
+    "cca5e8584010a4a770c3e20a083395fe43b5b133d7d5b0a0b4f3ff19aaddb0f4"
   ],
-  "count": 8,
-  "root": "d9cc5dd2119c4fcee417e072c3594b86b9a206e4d03a7749cf1c35dde146c78b",
-  "manifestHash": "b69acaff18c7d45eb220f14e7ef24b9abb14e5978647dc11d92d27dab2604760"
+  "count": 47,
+  "root": "3e20a552fe45fda7cda645d918c89ae4d06abfe3a41ba692267908d9fdcd5756",
+  "manifestHash": "510024c21dfffca8b457c1ebdc3ec2f90ef3a7e4ecc9a20aba2386f7f9e8b79f"
 }

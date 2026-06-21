@@ -11,6 +11,51 @@ const isDebug = () => process.argv.includes('--debug');
 // CLI-005: content-types we will accept for trust data. Anything else is suspicious.
 const ALLOWED_CONTENT_TYPE = /^(application\/json|application\/.*\+json|text\/plain|application\/octet-stream|application\/jsonl|application\/x-ndjson|text\/)/i;
 
+// CLI-A-003: trust data (node.json, ledger, registry) must travel over TLS. A
+// plaintext http:// fetch is exposed to a network MITM that could strip a
+// revocation or swap a key. We require https: with a NARROW exception for
+// loopback so local dev + the http://127.0.0.1 test fixtures keep working.
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+
+function isLoopbackHost(hostname) {
+  if (!hostname) return false;
+  const h = hostname.toLowerCase();
+  if (LOOPBACK_HOSTS.has(h)) return true;
+  // 127.0.0.0/8 is all loopback.
+  if (/^127(?:\.\d{1,3}){3}$/.test(h)) return true;
+  return false;
+}
+
+/**
+ * CLI-A-003: reject plaintext http:// for non-loopback hosts. Runs once, before
+ * the retry loop — a bad scheme is deterministic, so retrying is pointless.
+ * Throws a structured error (what was wrong + how to fix) on rejection.
+ */
+function assertScheme(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Not parseable as an absolute URL — let fetch() produce its own error
+    // downstream rather than masking it here.
+    return;
+  }
+  if (parsed.protocol === "https:") return;
+  if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) return;
+  if (parsed.protocol === "http:") {
+    throw new Error(
+      `Refusing to fetch trust data over plaintext ${url} — use https:// instead ` +
+      `(loopback http:// is allowed for local testing). Plaintext exposes the ledger, ` +
+      `node manifest, and registry to a network attacker who could strip a revocation or swap a key.`,
+    );
+  }
+  // Any other scheme (file:, ftp:, data:, …) is not a remote trust fetch we support.
+  throw new Error(
+    `Unsupported URL scheme "${parsed.protocol}" for ${url} — use https:// for remote trust data ` +
+    `(loopback http:// is allowed for local testing).`,
+  );
+}
+
 /**
  * Read a fetch Response body with a hard byte cap, aborting the stream if exceeded.
  * Returns the decoded text. Throws a structured error if the cap is hit.
@@ -59,6 +104,8 @@ export async function fetchText(url, opts = {}) {
   const maxBytes = Number.isFinite(opts.maxBytes) && opts.maxBytes > 0 ? opts.maxBytes : DEFAULT_MAX_BYTES;
   const manualRedirect = opts.manualRedirect === true;
   const checkContentType = opts.checkContentType !== false; // on by default
+  // CLI-A-003: enforce https (or loopback http) BEFORE any network attempt or retry.
+  assertScheme(url);
   let lastError;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let nonRetryable = false;

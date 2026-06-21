@@ -35,9 +35,50 @@ jobs:
         working-directory: ledger
         run: npm ci || npm install
 
-      - name: Extract base ledger from main
+      # LEDGER-A-007: fetch the base ledger FAIL-CLOSED.
+      # The old `... || touch /tmp/base-events.jsonl` fell open: ANY git error (network
+      # blip, missing fetch, detached ref) silently produced an EMPTY base, the validator
+      # then took its "no base → first commit" path and SKIPPED the append-only / immutability
+      # prefix check — so a reorder or truncation sailed through CI green. We now distinguish:
+      #   (a) base genuinely absent on main (real first commit / bootstrap) — allowed ONLY when
+      #       LEDGER_ALLOW_EMPTY_BASE=1 is explicitly set (default: not set);
+      #   (b) any OTHER git failure — FAIL the step (non-zero) with an actionable message.
+      - name: Extract base ledger from main (fail-closed)
+        env:
+          LEDGER_ALLOW_EMPTY_BASE: ${{ vars.LEDGER_ALLOW_EMPTY_BASE }}
         run: |
-          git show origin/main:ledger/events/events.jsonl > /tmp/base-events.jsonl 2>/dev/null || touch /tmp/base-events.jsonl
+          set -euo pipefail
+          BASE_REF="origin/main:ledger/events/events.jsonl"
+
+          # 1. The ref itself must resolve. If origin/main is missing, the checkout/fetch is
+          #    broken — that is an ERROR, never an empty base.
+          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::Cannot resolve origin/main. The base ledger could not be fetched"
+            echo "::error::(fetch-depth/checkout failure). Refusing to validate against an EMPTY base,"
+            echo "::error::which would silently skip the append-only/immutability check (LEDGER-A-007)."
+            exit 1
+          fi
+
+          # 2. Does the ledger path exist in origin/main?
+          if git cat-file -e "${BASE_REF}" 2>/dev/null; then
+            # Path exists → extract it. A failure HERE (blob unreadable) is a hard error.
+            git show "${BASE_REF}" > /tmp/base-events.jsonl
+            echo "Base ledger extracted ($(wc -l < /tmp/base-events.jsonl) line(s))."
+          else
+            # Path absent on main. This is EITHER a legitimate first/bootstrap commit OR a
+            # path/ref error. Only accept the empty base when explicitly authorized.
+            if [ "${LEDGER_ALLOW_EMPTY_BASE:-}" = "1" ]; then
+              echo "::warning::ledger/events/events.jsonl absent on origin/main and"
+              echo "::warning::LEDGER_ALLOW_EMPTY_BASE=1 — treating as first commit (empty base)."
+              : > /tmp/base-events.jsonl
+            else
+              echo "::error::ledger/events/events.jsonl not found in origin/main."
+              echo "::error::Refusing to fall open to an empty base (LEDGER-A-007): an empty base"
+              echo "::error::SKIPS the append-only/immutability check. If this is a genuine first"
+              echo "::error::commit, set repo variable LEDGER_ALLOW_EMPTY_BASE=1 to authorize it."
+              exit 1
+            fi
+          fi
 
       - name: Validate append-only + schema + signature + uniqueness
         working-directory: ledger

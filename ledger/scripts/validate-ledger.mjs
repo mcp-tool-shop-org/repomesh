@@ -5,8 +5,16 @@
 //
 // Immutability is enforced INDEPENDENT of BASE_LEDGER (LDG-001): when BASE_LEDGER is set we do the
 // classic base/head prefix comparison; in addition (and unconditionally) we verify every committed
-// XRPL anchor manifest's Merkle root against the actual ledger events, so a reorder/deletion of any
-// anchored event is caught even by the documented local `npm run validate:ledger`.
+// XRPL anchor manifest's Merkle root against the actual ledger events (BOTH sha256-merkle-v1 and the
+// RFC-6962 v2 algorithm — LEDGER-A-002), so a reorder/deletion of any anchored event is caught even
+// by the documented local `npm run validate:ledger`.
+//
+// COVERAGE INVARIANT (LEDGER-A-001): "any anchored event" is only as wide as the committed manifests.
+// The committed `all.json` manifest pins the WHOLE ledger; `ledger/tests/immutability-coverage.test.mjs`
+// asserts `all.json.count === <live event count>` so the coverage cannot silently regress as the
+// ledger grows. When you append events, regenerate it: `node anchor/xrpl/scripts/compute-root.mjs --all`
+// (then re-anchor on-chain). A committed manifest closes LOCAL reorder/truncation detection; the
+// on-chain XRPL anchor (verify-anchor) is the EXTERNAL tamper-evidence layer — see docs/threat-model.md.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -367,11 +375,46 @@ function merkleRootV1(leavesHex) {
   return level[0].toString("hex");
 }
 
+// v2 Merkle: RFC-6962 (Certificate Transparency) with domain separation — leaf = sha256(0x00||leaf),
+// internal node = sha256(0x01||left||right), lone odd node carried up UNCHANGED. Byte-identical to
+// merkleRootHexV2 in anchor/xrpl/scripts/merkle.mjs (a drift test pins the two). LDG-001/LEDGER-A-002:
+// validate-ledger MUST recompute v2 roots locally too — compute-root.mjs defaults to v2, so skipping
+// v2 manifests (the prior behavior) left every post-genesis partition unverifiable by local validation.
+const V2_LEAF_PREFIX = Buffer.from([0x00]);
+const V2_NODE_PREFIX = Buffer.from([0x01]);
+function merkleRootV2(leavesHex) {
+  let level = leavesHex.map((h) =>
+    crypto.createHash("sha256").update(Buffer.concat([V2_LEAF_PREFIX, Buffer.from(h, "hex")])).digest()
+  );
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) {
+      if (i + 1 < level.length) {
+        next.push(
+          crypto.createHash("sha256").update(Buffer.concat([V2_NODE_PREFIX, level[i], level[i + 1]])).digest()
+        );
+      } else {
+        next.push(level[i]); // carry the lone odd node up unchanged
+      }
+    }
+    level = next;
+  }
+  return level[0].toString("hex");
+}
+
+// Dispatch root computation on the manifest's declared algorithm. An unknown algo FAILS CLOSED
+// (a manifest must not be silently un-verified). LEDGER-A-002.
+function merkleRootForManifestAlgo(leavesHex, algo) {
+  if (algo === "sha256-merkle-v2") return merkleRootV2(leavesHex);
+  if (algo === "sha256-merkle-v1") return merkleRootV1(leavesHex);
+  throw new Error(`unknown merkle algo "${algo}"`);
+}
+
 function loadManifests() {
   if (!fs.existsSync(MANIFESTS_DIR)) return [];
   return fs
     .readdirSync(MANIFESTS_DIR)
-    .filter((f) => f.endsWith(".json") && f !== "all.json")
+    .filter((f) => f.endsWith(".json"))
     .map((f) => {
       try {
         return { file: f, manifest: loadJson(path.join(MANIFESTS_DIR, f)) };
@@ -392,10 +435,9 @@ function verifyAnchorManifests(events) {
   const hashes = events.map((e) => e?.signature?.canonicalHash);
   let verified = 0;
   for (const { file, manifest } of manifests) {
-    if (manifest.algo && manifest.algo !== "sha256-merkle-v1") {
-      // v2 manifests are handled by the anchor domain; skip here (non-destructive).
-      continue;
-    }
+    // LEDGER-A-002: verify BOTH v1 and v2 manifests locally (compute-root defaults to v2). An
+    // absent algo means a legacy v1 manifest; an unknown algo fails closed below.
+    const algo = manifest.algo || "sha256-merkle-v1";
     const { range, count, root } = manifest;
     if (!Array.isArray(range) || range.length !== 2 || typeof root !== "string") {
       fail(`Anchor manifest ${file} is malformed (range/root missing).`);
@@ -417,7 +459,12 @@ function verifyAnchorManifests(events) {
         `the ledger (events were reordered or replaced).`
       );
     }
-    const computed = merkleRootV1(slice);
+    let computed;
+    try {
+      computed = merkleRootForManifestAlgo(slice, algo);
+    } catch (e) {
+      fail(`Anchor manifest ${file} has an unverifiable algo: ${e.message}`);
+    }
     if (computed !== root) {
       fail(
         `Immutability violation: anchor manifest ${file} Merkle root mismatch.\n` +
