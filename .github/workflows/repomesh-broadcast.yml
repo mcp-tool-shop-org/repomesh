@@ -234,7 +234,7 @@ jobs:
           git commit -m "event: ${{ github.repository }}@${VERSION}"
           git push origin "$BRANCH"
 
-          gh pr create \
+          PR_URL=$(gh pr create \
             --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
             --head "$BRANCH" \
             --title "event: ${{ github.repository }}@${VERSION}" \
@@ -246,6 +246,11 @@ jobs:
           **Commit:** ${{ github.sha }}
           **Type:** ReleasePublished
 
-          Automated event from release workflow. Ledger CI will verify schema, signature, and append-only rules.
+          Automated event from release workflow. Ledger CI verifies schema, signature, and append-only; this PR auto-merges on green.
           EOF
-          )"
+          )")
+          echo "Opened $PR_URL"
+          # Close the loop: auto-merge on green so release-event PRs don't pile up unmerged (the
+          # ledger should record every release). Degrades gracefully if allow_auto_merge is off.
+          gh pr merge --auto --merge --repo "${{ env.REPOMESH_LEDGER_REPO }}" "$PR_URL" \
+            || echo "::warning::Could not enable auto-merge on $PR_URL — ensure allow_auto_merge is enabled on ${{ env.REPOMESH_LEDGER_REPO }}."
