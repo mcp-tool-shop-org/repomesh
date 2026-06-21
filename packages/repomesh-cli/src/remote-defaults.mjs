@@ -39,3 +39,44 @@ export const BUNDLED_TRUSTED_ATTESTORS = Object.freeze([
 // network registry (which bootstraps attestations + anchors at genesis). Mirrors
 // validate-ledger.mjs ATTESTOR_KINDS and build-trust.mjs ATTESTOR_KINDS exactly.
 export const BUNDLED_ATTESTOR_KINDS = Object.freeze(["attestor", "registry"]);
+
+// STGB-CLI-001 (observability): in REMOTE mode the local revocation defenses — the §12.1
+// derive-stricter key-window narrowing and the LEDGER-A-005 ledger-immutability check — are
+// INERT, because they recompute against a local checkout that remote mode does not have. That
+// means a remote verification's revocation integrity rests entirely on TRUSTING the source the
+// ledger/nodes were fetched from. Without the on-chain --anchored path (which independently
+// commits to ledger order + revocation state via the XRPL Merkle anchor), there is no independent
+// witness to that trust. This is a LEGIBILITY gap, not a new defence: full remote derive-stricter
+// is out of scope. We surface it loudly so an operator is never silently relying on an unverified
+// source for a revocation-sensitive decision.
+//
+// Returns { warn: boolean, escalated: boolean, lines: string[] } — `lines` is empty when no
+// warning applies. `escalated` is true when a URL override is present (a non-default source raises
+// the stakes: the operator pointed at something the bundled defaults did not vouch for).
+export function deriveRemoteRevocationWarning({ local, anchored, ledgerUrl, nodesUrl, manifestsUrl } = {}) {
+  // Local mode runs the real derive-stricter + immutability checks; --anchored adds the on-chain
+  // independent witness. Either one closes the gap, so no warning is needed.
+  if (local || anchored) return { warn: false, escalated: false, lines: [] };
+
+  const overrides = [
+    ledgerUrl ? `--ledger-url ${ledgerUrl}` : null,
+    nodesUrl ? `--nodes-url ${nodesUrl}` : null,
+    manifestsUrl ? `--manifests-url ${manifestsUrl}` : null,
+  ].filter(Boolean);
+  const escalated = overrides.length > 0;
+
+  const lines = [
+    "WARNING: remote verification — local revocation defenses are INERT.",
+    "  The derive-stricter key-window narrowing and ledger-immutability check only run against a",
+    "  local checkout. In remote mode, revocation integrity rests on TRUSTING the source you fetched",
+    "  from; a deleted/forged KeyRevocation in that source would NOT be caught here.",
+  ];
+  if (escalated) {
+    lines.push(
+      `  ESCALATED: you overrode the trust source (${overrides.join(", ")}). A non-default source`,
+      "  raises the stakes — that endpoint is fully trusted for revocation state.",
+    );
+  }
+  lines.push("  Hint: add --anchored for an independent on-chain witness, or use --local with a trusted clone.");
+  return { warn: true, escalated, lines };
+}

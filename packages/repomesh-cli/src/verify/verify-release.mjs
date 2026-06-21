@@ -51,6 +51,11 @@ import {
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
+// SEAM-PARSE-001: the ONE canonical anchor-note metadata parser. SELF-CONTAINED CLI copy of
+// verifiers/lib/anchor-notes.mjs (the published package cannot import across the repo boundary); a
+// drift test (tests/anchor-notes-drift.test.mjs) pins the two copies byte-identical. The local
+// parseAnchorMeta below keeps this site's field-type validation around the canonical parse.
+import { parseAnchorPartitionMeta } from "./anchor-notes.mjs";
 import { parseStrictJson, displayCanonical, isPathInside } from "./safe-json.mjs";
 import { verifyAnchorTx } from "./verify-anchor.mjs";
 // Key-lifecycle trust predicate + trusted-time resolvers (the shared stable secret, contract §5).
@@ -491,14 +496,11 @@ function getPartitionEvents(events, partitionId) {
 
 // Parse an anchor event's notes meta blob (the trailing JSON line). Returns null on failure.
 function parseAnchorMeta(anchor) {
-  const notes = anchor.notes || "";
-  const jsonMatch = notes.match(/\n(\{.*?\})$/s);
-  if (!jsonMatch) return null;
-  let meta;
-  try { meta = parseStrictJson(jsonMatch[1]); } catch (e) {
-    debugLog(`malformed anchor meta JSON: ${e.message}`);
-    return null;
-  }
+  // SEAM-PARSE-001: canonical parse, then keep this site's field-type validation. The canonical
+  // parser is byte-identical to verifiers/lib/anchor-notes.mjs (drift test pinned). It already
+  // fail-closes (null) on a non-string / no-trailing-JSON / unparseable notes.
+  const meta = parseAnchorPartitionMeta(anchor.notes);
+  if (!meta) return null;
   if (
     typeof meta.manifestPath !== "string" ||
     (meta.txHash !== undefined && typeof meta.txHash !== "string") ||

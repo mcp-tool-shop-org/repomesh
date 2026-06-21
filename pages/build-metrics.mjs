@@ -5,6 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const METRICS_PATH = path.join(ROOT, "registry", "metrics.json");
@@ -26,6 +27,30 @@ function readJSON(rel) {
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const asObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
 
+// STGB-SP-003 (Stage C honesty fix) — average a numeric field across trust entries WITHOUT
+// letting one missing/non-numeric score poison the headline stat. The previous reducer did
+// `s + t.integrityScore` over the whole list and divided by `trust.length`; a single entry
+// missing the field made the whole sum (and the rounded average) NaN — a broken, untrustworthy
+// number in a trust dashboard. Here we sum and count only the values that are real finite
+// numbers, divide by THAT count, and return 0 (not NaN) when nothing is present. A missing
+// score is excluded from the average, never silently treated as 0 (which would understate it).
+export function averageScore(entries, field) {
+  const list = Array.isArray(entries) ? entries : [];
+  let sum = 0;
+  let count = 0;
+  for (const e of list) {
+    const v = e?.[field];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      sum += v;
+      count += 1;
+    }
+  }
+  return count > 0 ? Math.round(sum / count) : 0;
+}
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+
 const nodes = asArray(readJSON("registry/nodes.json"));
 const trust = asArray(readJSON("registry/trust.json"));
 const verifiersRaw = asObject(readJSON("registry/verifiers.json"));
@@ -37,8 +62,9 @@ const anchors = { partitions: asArray(anchorsRaw.partitions), releaseAnchors: as
 const repos = [...new Set(trust.map(t => t.repo))];
 const anchoredCount = Object.keys(anchors.releaseAnchors || {}).length;
 const anchorCoverage = trust.length > 0 ? Math.round((anchoredCount / trust.length) * 100) : 0;
-const avgIntegrity = trust.length > 0 ? Math.round(trust.reduce((s, t) => s + t.integrityScore, 0) / trust.length) : 0;
-const avgAssurance = trust.length > 0 ? Math.round(trust.reduce((s, t) => s + t.assuranceScore, 0) / trust.length) : 0;
+// STGB-SP-003: NaN-guarded averages — a release missing a score is excluded, not summed as NaN.
+const avgIntegrity = averageScore(trust, "integrityScore");
+const avgAssurance = averageScore(trust, "assuranceScore");
 
 const current = {
   ts: new Date().toISOString(),
@@ -91,15 +117,23 @@ const latest = trust.length > 0
 
 metrics.current = current;
 metrics.deltas = deltas;
+// STGB-SP-001: carry the honest three-state anchor status so the dashboard hero never shows
+// on-chain finality that does not exist. `anchored` stays for back-compat but now means
+// ON-CHAIN anchored (record present AND real txHash), matching the rest of the dashboard.
+const latestRec = latest ? (anchors.releaseAnchors?.[`${latest.repo}@${latest.version}`] ?? null) : null;
+const latestAnchorState = !latestRec ? "none" : (latestRec.txHash ? "anchored" : "pending");
 metrics.latestRelease = latest ? {
   repo: latest.repo,
   version: latest.version,
   integrity: latest.integrityScore,
   assurance: latest.assuranceScore,
-  anchored: !!anchors.releaseAnchors?.[`${latest.repo}@${latest.version}`],
+  anchored: latestAnchorState === "anchored",
+  anchorState: latestAnchorState,
   timestamp: latest.timestamp,
   commit: latest.commit,
 } : null;
 
 fs.writeFileSync(METRICS_PATH, JSON.stringify(metrics, null, 2), "utf8");
 console.log(`Metrics built: ${metrics.history.length} snapshots, changed=${changed}.`);
+
+} // end if (isMain)

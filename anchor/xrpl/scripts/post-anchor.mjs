@@ -32,6 +32,49 @@ import xrpl from "xrpl";
 
 function stringToHex(s) { return Buffer.from(s, "utf8").toString("hex").toUpperCase(); }
 
+// STGB-ANCHOR-002 — validate the XRPL_SEED shape BEFORE we open a socket, so a typo'd/empty seed
+// gives a one-line actionable message instead of a raw `Wallet.fromSeed` crypto stack after the
+// connect. XRPL family seeds are base58 (no 0/O/I/l), begin with 's' (classic seeds 's...' and the
+// ed25519 'sEd...' variant), and are ~29-31 chars. This is a SHAPE pre-check, not full base58-check
+// validation — Wallet.fromSeed (wrapped below) remains the authority; this just makes the common
+// failure legible. Returns { ok, reason } (pure / testable).
+export function validateSeedShape(seed) {
+  if (typeof seed !== "string" || seed.length === 0) {
+    return { ok: false, reason: "XRPL_SEED is empty or unset — set the funded wallet's seed (generate with: xrpl wallet create)." };
+  }
+  if (seed[0] !== "s") {
+    return { ok: false, reason: `XRPL_SEED does not look like an XRPL family seed — it must begin with 's' (got "${seed[0]}…"). Did you paste the classic ADDRESS (r…) instead of the SEED?` };
+  }
+  if (seed.length < 16 || seed.length > 40) {
+    return { ok: false, reason: `XRPL_SEED has an unexpected length (${seed.length}); an XRPL seed is ~29-31 base58 chars. Check for truncation or extra whitespace.` };
+  }
+  // base58 (Bitcoin/Ripple alphabet) excludes 0, O, I, l.
+  if (/[0OIl]/.test(seed) || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(seed)) {
+    return { ok: false, reason: "XRPL_SEED contains characters outside the base58 alphabet (no 0, O, I, l) — it is not a valid seed." };
+  }
+  return { ok: true };
+}
+
+// LEDGER-A-004 / STGB-ANCHOR-005 — convert an XRPL Ripple-epoch close-time (seconds since
+// 2000-01-01T00:00:00Z) into an ISO-8601 string. submitAndWait returns the validated tx, whose
+// `result.date` is the ledger close-time — the ONLY trustworthy clock for this anchor. Mirrors
+// verify-anchor's rippleDateToCloseTime. Returns null (never throws) when the date is absent.
+const RIPPLE_EPOCH_OFFSET_SECONDS = 946684800;
+export function extractCloseTime(submitResult) {
+  const date = submitResult?.result?.date;
+  if (typeof date !== "number" || !Number.isFinite(date)) return null;
+  const d = new Date((date + RIPPLE_EPOCH_OFFSET_SECONDS) * 1000);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+// STGB-ANCHOR-005 — the validating ledger index from the submitAndWait result. Surfaces alongside
+// the close-time so the receipt records exactly which ledger finalized the anchor. Returns null
+// (never throws) when absent.
+export function extractLedgerIndex(submitResult) {
+  const li = submitResult?.result?.ledger_index;
+  return typeof li === "number" && Number.isFinite(li) ? li : null;
+}
+
 // D16: the on-chain memo self-describes its Merkle algorithm. Carrying `algo` lets the standalone
 // verifier recompute the root with the SAME algorithm that produced it (v2 by default now).
 // MemoType stays repomesh-anchor-v1 so existing verifiers still locate the memo, and legacy memos
@@ -65,7 +108,10 @@ async function main() {
   try { config = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch (e) { console.error("Failed to read " + configPath + ": " + e.message); process.exit(1); }
   const WS_URL = process.env.XRPL_WS_URL || config.rippledUrl;
   const SEED = process.env.XRPL_SEED;
-  if (!SEED) { console.error("Set XRPL_SEED env var or add to anchor/xrpl/config.json. Generate with: xrpl wallet create"); process.exit(1); }
+  // STGB-ANCHOR-002 — validate the seed shape up front (before opening a socket). A malformed/missing
+  // seed otherwise surfaces as a raw Wallet.fromSeed crypto stack AFTER a needless connect.
+  const seedCheck = validateSeedShape(SEED);
+  if (!seedCheck.ok) { console.error(`\n  ${seedCheck.reason}\n  Set XRPL_SEED to the funded anchor wallet's seed (or add to anchor/xrpl/config.json). Generate with: xrpl wallet create\n`); process.exit(1); }
 
   const rootPath = path.join(import.meta.dirname, "..", "partition-root.json");
   if (!fs.existsSync(rootPath)) { console.error("Run compute-root.mjs first"); process.exit(1); }
@@ -74,9 +120,31 @@ async function main() {
   if (!rootData.root) { console.log("Empty partition. Skipping."); process.exit(0); }
 
   const client = new xrpl.Client(WS_URL);
-  await client.connect();
   try {
-    const wallet = xrpl.Wallet.fromSeed(SEED);
+    await client.connect();
+  } catch (connErr) {
+    // STGB-ANCHOR-002 (parity with verify-anchor's ANC-B01 read-path): an unreachable rippled
+    // endpoint (DNS/timeout/refused) must give recovery guidance, not a raw stack — the write-path
+    // is just as trust-sensitive as the read-path.
+    console.error(
+      `\n  Could not connect to the XRPL network "${config.network}" at ${WS_URL}` +
+      `\n  (${connErr.message}).` +
+      `\n  The network may be down or unreachable from here. The partition was NOT anchored.` +
+      `\n  Retry when connectivity is restored, or point XRPL_WS_URL at a reachable rippled endpoint.\n`
+    );
+    process.exit(1);
+  }
+  try {
+    let wallet;
+    try {
+      wallet = xrpl.Wallet.fromSeed(SEED);
+    } catch (seedErr) {
+      // STGB-ANCHOR-002 — the shape pre-check passed but xrpl still rejected the seed (e.g. a bad
+      // base58 checksum). Translate the crypto stack into an actionable message.
+      console.error(`\n  Invalid XRPL_SEED: ${seedErr.message}\n  Check the XRPL_SEED value — it must be a valid funded-wallet seed (generate with: xrpl wallet create).\n`);
+      await client.disconnect();
+      process.exit(1);
+    }
     const tx = {
       TransactionType: "AccountSet", Account: wallet.address,
       Memos: [buildAnchorMemo({
@@ -93,6 +161,10 @@ async function main() {
     const result = await Promise.race([client.submitAndWait(tx, { wallet }), new Promise((_, reject) => setTimeout(() => reject(new Error("XRPL submission timeout (60s)")), 60000))]);
     const txHash = result?.result?.hash || result?.result?.tx_json?.hash;
     const engineResult = result?.result?.meta?.TransactionResult || result?.result?.engine_result;
+    // STGB-ANCHOR-005 — surface the on-chain ledger close-time (the trusted clock) + the validating
+    // ledger index in the receipt. Both come straight from the submitAndWait validated result.
+    const closeTimeIso = extractCloseTime(result);
+    const ledgerIndex = extractLedgerIndex(result);
     const output = {
       ok: engineResult === "tesSUCCESS",
       network: config.network,
@@ -102,8 +174,17 @@ async function main() {
       eventCount: rootData.eventCount,
       txHash,
       walletAddress: wallet.address,
+      ledger_index: ledgerIndex,
+      close_time_iso: closeTimeIso,
     };
     console.log(JSON.stringify(output, null, 2));
+    if (output.ok) {
+      // STGB-ANCHOR-005 — echo the trust-relevant facts in human form: tx, the trusted on-chain
+      // clock, and the validating ledger index. (The receipt JSON above carries them for tooling.)
+      console.log(`\n  Anchored: tx=${txHash}`);
+      console.log(`  On-chain close-time: ${closeTimeIso ? closeTimeIso + " (trusted clock)" : "(unavailable — result.date absent)"}`);
+      console.log(`  Validating ledger:   ${ledgerIndex ?? "(unavailable)"}\n`);
+    }
     fs.writeFileSync(path.join(import.meta.dirname, "..", "anchor-result.json"), JSON.stringify(output, null, 2) + "\n", "utf8");
     // ANC-B05 (andon halt): a non-tesSUCCESS submission means the anchor did NOT land on-chain. Exit
     // non-zero so the workflow step fails loudly instead of reporting success on a no-op. The defect

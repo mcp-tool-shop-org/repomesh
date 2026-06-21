@@ -32,6 +32,10 @@ import {
   deriveKeyWindowConstraints,
   mergeStricterWindow,
 } from "../verifiers/lib/key-window.mjs";
+// SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
+// trailing-JSON regex in findAnchorForHash). Imported from the repo-root verifiers/lib mirror; the
+// published CLI carries its own byte-identical copy (a drift test pins the two).
+import { parseAnchorPartitionMeta } from "../verifiers/lib/anchor-notes.mjs";
 
 const ROOT = process.env.REPOMESH_ROOT || path.resolve(import.meta.dirname, "..");
 const LEDGER_PATH = process.env.REPOMESH_LEDGER_PATH || path.join(ROOT, "ledger", "events", "events.jsonl");
@@ -397,12 +401,10 @@ function findAnchorForHash(events, canonicalHash) {
   );
 
   for (const anchor of anchors) {
-    const notes = anchor.notes || "";
     try {
-      const jsonMatch = notes.match(/\n(\{.*\})$/s);
-      if (!jsonMatch) continue;
-      const meta = JSON.parse(jsonMatch[1]);
-      if (!meta.manifestPath) continue;
+      // SEAM-PARSE-001: canonical parse (fail-closed → skip). This site needs manifestPath.
+      const meta = parseAnchorPartitionMeta(anchor.notes);
+      if (!meta || !meta.manifestPath) continue;
 
       // Validate manifestPath against path traversal using resolve + startsWith.
       const manifestFullPath = path.resolve(ROOT, meta.manifestPath);

@@ -270,6 +270,34 @@ export function writeJsonlLine(outPath, obj) {
   fs.appendFileSync(outPath, JSON.stringify(obj) + "\n", "utf8");
 }
 
+// STGB-TRUST-004 — atomic JSON write (temp file in the SAME dir + rename). A direct writeFileSync can
+// be torn by a crash mid-write, leaving a half-written, unparseable generated artifact (trust.json /
+// anchors.json) that every downstream consumer then trips over. Writing to a sibling temp file and
+// rename()-ing it into place makes the publish all-or-nothing: rename is atomic on the same
+// filesystem, so a reader sees either the OLD complete file or the NEW complete file — never a partial.
+// The temp file lives in the destination directory (not the OS temp dir) so the rename stays
+// same-filesystem. On any failure the temp file is best-effort removed so no `.tmp` litter remains.
+//   value: either a pre-serialized string, or any JSON-serializable value (serialized with 2-space
+//   indent + a trailing newline, matching the generators' existing fs.writeFileSync output exactly).
+export function writeJsonAtomic(outPath, value) {
+  if (!outPath) throw new Error("writeJsonAtomic: outPath is required");
+  const dir = path.dirname(outPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const body = typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n";
+  // Unique, same-dir temp name (pid + time + random) so concurrent builders don't collide.
+  const tmp = path.join(
+    dir,
+    `.${path.basename(outPath)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
+  );
+  try {
+    fs.writeFileSync(tmp, body, "utf8");
+    fs.renameSync(tmp, outPath); // atomic on the same filesystem
+  } catch (e) {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* best-effort cleanup */ }
+    throw e;
+  }
+}
+
 export function loadSigningKeyFromEnvOrFile({ envVar = "REPOMESH_SIGNING_KEY", filePath }) {
   if (process.env[envVar]) return process.env[envVar];
   if (!filePath) throw new Error(`Missing signing key: set ${envVar} or pass --signing-key <path>`);

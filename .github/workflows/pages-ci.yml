@@ -24,6 +24,7 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # STGB-CI-004: bound wall-clock (build + Pages deploy)
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

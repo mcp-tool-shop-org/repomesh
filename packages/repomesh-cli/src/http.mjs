@@ -1,12 +1,42 @@
 // Fetch helpers with retries and timeouts for remote verification.
 
 const MAX_RETRIES = 3;
-const TIMEOUT_MS = parseInt(process.env.REPOMESH_FETCH_TIMEOUT, 10) || 10_000;
+
+// STGB-CLI-006: validate numeric env overrides. The old `parseInt(...) || default` swallowed
+// invalid values silently — but a NEGATIVE/ZERO value is truthy and slips through: a `-5` timeout
+// makes AbortController fire immediately and abort EVERY fetch; a `0`/negative max-bytes rejects
+// every response. A non-numeric value (`abc`) parses to NaN and quietly reverts to the default,
+// hiding an operator typo. Fail loud at startup with a message that names the var and the rule.
+function positiveIntEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const trimmed = raw.trim();
+  // Accept only a clean positive integer (no `-5`, no `12abc`, no `1e3`, no whitespace junk).
+  if (!/^\d+$/.test(trimmed)) {
+    const err = new Error(`Invalid ${name}="${raw}" — must be a positive integer (got a non-numeric or negative value).`);
+    err.hint = `Set ${name} to a positive whole number (e.g. ${name}=${fallback}), or unset it to use the default.`;
+    throw err;
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) {
+    const err = new Error(`Invalid ${name}="${raw}" — must be greater than 0.`);
+    err.hint = `Set ${name} to a positive whole number (e.g. ${name}=${fallback}), or unset it to use the default.`;
+    throw err;
+  }
+  return n;
+}
+
+const TIMEOUT_MS = positiveIntEnv("REPOMESH_FETCH_TIMEOUT", 10_000);
 // CLI-005: hard ceiling on any single fetched body (defends against DoS-on-self
 // when a compromised/over-large remote streams an unbounded response). Override
 // via REPOMESH_FETCH_MAX_BYTES; defaults to 10 MiB which dwarfs any real ledger/manifest.
-const DEFAULT_MAX_BYTES = parseInt(process.env.REPOMESH_FETCH_MAX_BYTES, 10) || 10 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = positiveIntEnv("REPOMESH_FETCH_MAX_BYTES", 10 * 1024 * 1024);
 const isDebug = () => process.argv.includes('--debug');
+// STGB-CLI-005: the "Retrying..." chatter is informational — it must stay silent for a JSON
+// consumer (it would corrupt a single-blob stdout if it leaked there, and it pollutes stderr a
+// scripted consumer parses) and under --quiet. Mirrors log.mjs's quiet/json discipline.
+const isQuiet = () => process.argv.includes('--quiet') || process.argv.includes('-q');
+const isJsonMode = () => process.argv.includes('--json');
 
 // CLI-005: content-types we will accept for trust data. Anything else is suspicious.
 const ALLOWED_CONTENT_TYPE = /^(application\/json|application\/.*\+json|text\/plain|application\/octet-stream|application\/jsonl|application\/x-ndjson|text\/)/i;
@@ -36,9 +66,15 @@ function assertScheme(url) {
   try {
     parsed = new URL(url);
   } catch {
-    // Not parseable as an absolute URL — let fetch() produce its own error
-    // downstream rather than masking it here.
-    return;
+    // STGB-CLI-007: a malformed/unparseable URL is a DETERMINISTIC failure — retrying it 3x
+    // cannot change the outcome, it just wastes ~1.5s and buries the real problem under network
+    // chatter. Throw a clear, non-retryable error now (the retry loop fails fast on it).
+    const err = new Error(
+      `Malformed URL "${url}" — could not be parsed. Provide an absolute https:// URL ` +
+      `(e.g. https://host/path), or use --local for offline verification.`,
+    );
+    err.nonRetryable = true;
+    throw err;
   }
   if (parsed.protocol === "https:") return;
   if (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)) return;
@@ -151,13 +187,17 @@ export async function fetchText(url, opts = {}) {
       } else {
         lastError = err;
       }
-      // Redirect refusals, content-type rejections, and size-cap hits are deterministic —
-      // retrying cannot change the outcome, so fail fast.
-      if (nonRetryable || /too large|exceeds size cap|content-length|Refusing to follow redirect|Unexpected content-type/.test(lastError.message || "")) {
+      // Redirect refusals, content-type rejections, size-cap hits, and malformed URLs (STGB-CLI-007)
+      // are deterministic — retrying cannot change the outcome, so fail fast.
+      if (nonRetryable || err?.nonRetryable ||
+          /too large|exceeds size cap|content-length|Refusing to follow redirect|Unexpected content-type|Malformed URL/.test(lastError.message || "")) {
         throw lastError;
       }
       if (attempt < MAX_RETRIES) {
-        console.error(`Retrying... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        // STGB-CLI-005: keep the retry chatter out of --quiet and --json output (--debug still
+        // shows the per-attempt cause). A JSON consumer must get a clean single blob; --quiet
+        // means quiet.
+        if (!isQuiet() && !isJsonMode()) console.error(`Retrying... (attempt ${attempt + 1}/${MAX_RETRIES})`);
         if (isDebug()) console.error(`[http] ${url}: ${lastError.message}`);
         await new Promise(r => setTimeout(r, 500 * attempt));
       }

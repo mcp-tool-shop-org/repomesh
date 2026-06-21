@@ -1,8 +1,13 @@
-// Stage C — verify-anchor graceful degradation + legibility.
-//   B-DEG-01 — an offline / websocket failure yields FRIENDLY network guidance
-//              (mirroring verify-release's hint), NOT a raw rippled/websocket stack.
-//   B-FP-01  — an unknown/future merkle algo reports 'unsupported ... upgrade CLI',
-//              distinct from a 'MISMATCH' (which implies tampering).
+// Stage C — verify-anchor exit-code classification (STGB-CLI-004).
+//
+// The exit-code contract for CI gating:
+//   0 = anchor verified · 1 = a real trust FAIL (anchor mismatch / forged / not-trusted account)
+//   2 = operator/environment ERROR (XRPL outage / timeout / unreachable / bad config)
+//
+// STGB-CLI-004: verify-anchor previously exited 1 for a TRANSIENT XRPL outage, conflating an
+// outage with tamper. A network/unreachable/timeout condition must exit 2 (ERROR), matching how
+// verify-release classifies a load/network failure as ERROR rather than a trust FAIL. A REAL
+// anchor mismatch (root/manifestHash/account/algo failure) stays exit 1.
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -22,7 +27,7 @@ function strToHex(s) { return Buffer.from(s, "utf8").toString("hex").toUpperCase
 
 let tmpRoot;
 function setupRoot() {
-  tmpRoot = fs.mkdtempSync(join(os.tmpdir(), "repomesh-vad-"));
+  tmpRoot = fs.mkdtempSync(join(os.tmpdir(), "repomesh-vaec-"));
   fs.mkdirSync(join(tmpRoot, "ledger", "events"), { recursive: true });
   fs.mkdirSync(join(tmpRoot, "registry"), { recursive: true });
   fs.mkdirSync(join(tmpRoot, "schemas"), { recursive: true });
@@ -32,7 +37,8 @@ function setupRoot() {
   }));
 }
 
-function buildLedgerAndMemo(account, txResult, validated, algo = "sha256-merkle-v1") {
+// Build a ledger + a memo whose root either MATCHES (ok) or MISMATCHES (tamper) the local ledger.
+function buildLedgerAndMemo({ account = TRUSTED, txResult = "tesSUCCESS", validated = true, tamperRoot = false } = {}) {
   const leaf = crypto.createHash("sha256").update("leaf-a").digest("hex");
   const ev = {
     type: "ReleasePublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
@@ -40,14 +46,14 @@ function buildLedgerAndMemo(account, txResult, validated, algo = "sha256-merkle-
     attestations: [], signature: { alg: "ed25519", keyId: "k", value: "AA==", canonicalHash: leaf },
   };
   fs.writeFileSync(join(tmpRoot, "ledger", "events", "events.jsonl"), JSON.stringify(ev) + "\n");
-  const root = merkleRootHex([leaf]); // root always computed with v1 leaves
+  const root = merkleRootHex([leaf]);
   const manifestBase = {
     v: 1, algo: "sha256-merkle-v1", partitionId: "all", network: "testnet",
     prev: null, range: [leaf, leaf], count: 1, root,
   };
   const manifestHash = crypto.createHash("sha256").update(canonicalize(manifestBase), "utf8").digest("hex");
-  // memo.algo can CLAIM a future algorithm to exercise the unsupported-algo path.
-  const memo = { v: 1, p: "all", n: "testnet", r: root, h: manifestHash, c: 1, pv: "0", rg: "0", algo };
+  const memoRoot = tamperRoot ? "f".repeat(64) : root;
+  const memo = { v: 1, p: "all", n: "testnet", r: memoRoot, h: manifestHash, c: 1, pv: "0", rg: "0", algo: "sha256-merkle-v1" };
   const fakeTxResult = {
     Account: account, validated, meta: { TransactionResult: txResult },
     Memos: [{ Memo: { MemoType: strToHex("repomesh-anchor-v1"), MemoData: strToHex(JSON.stringify(memo)) } }],
@@ -55,17 +61,12 @@ function buildLedgerAndMemo(account, txResult, validated, algo = "sha256-merkle-
   return { fakeTxResult };
 }
 function fakeClientFactory(fakeTxResult) {
-  return () => ({
-    async connect() {}, async disconnect() {},
-    async request() { return { result: fakeTxResult }; },
-  });
+  return () => ({ async connect() {}, async disconnect() {}, async request() { return { result: fakeTxResult }; } });
 }
-// A client factory that throws as if the websocket connection failed.
 function offlineClientFactory() {
   return () => ({
     async connect() { throw new Error("getaddrinfo ENOTFOUND s.altnet.rippletest.net"); },
-    async disconnect() {},
-    async request() { throw new Error("not connected"); },
+    async disconnect() {}, async request() { throw new Error("not connected"); },
   });
 }
 
@@ -89,32 +90,40 @@ async function runVerifyAnchor(args, clientFactory) {
 beforeEach(() => setupRoot());
 afterEach(() => { try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {} });
 
-describe("B-DEG-01: verify-anchor offline => friendly guidance, not a raw websocket stack", () => {
-  it("--json offline error carries a hint, no raw ENOTFOUND/websocket leak in the error", async () => {
+describe("STGB-CLI-004: XRPL outage is an ERROR (exit 2), not a trust FAIL (exit 1)", () => {
+  it("transient outage => exit 2 (ERROR), distinct from tamper", async () => {
     const { exitCode, result } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: true }, offlineClientFactory());
+    assert.equal(exitCode, 2, "an XRPL outage must classify as an environment ERROR -> exit 2");
     assert.equal(result?.ok, false);
-    // STGB-CLI-004: an XRPL outage is an ENVIRONMENT error (exit 2), not a trust FAIL (exit 1).
-    // Updated from the old `exitCode === 1`, which conflated an outage with tamper.
-    assert.equal(exitCode, 2);
-    assert.ok(typeof result.hint === "string" && result.hint.length > 0, "offline failure must carry a friendly hint");
-    assert.match(result.error.toLowerCase(), /network|unreachable|offline|connect|could not reach/, "error must be framed as a network problem");
+    assert.match((result.error || "").toLowerCase(), /network|unreachable|could not reach|connect/, "error framed as network");
+    assert.ok(typeof result.hint === "string" && result.hint.length > 0, "carries a recovery hint");
   });
 
-  it("human offline error prints a friendly hint line, not a bare rippled error", async () => {
-    const { err } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: false }, offlineClientFactory());
-    assert.match(err, /Hint:/, "human offline path must print a Hint line");
+  it("human outage path prints a Hint and exits 2", async () => {
+    const { exitCode, err } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: false }, offlineClientFactory());
+    assert.equal(exitCode, 2, "outage -> exit 2 in human mode too");
+    assert.match(err, /Hint:/, "friendly hint line present");
   });
-});
 
-describe("B-FP-01: verify-anchor unknown algo => 'unsupported merkle algo' (not MISMATCH)", () => {
-  it("reports an unsupported-algo upgrade hint, distinct from a tamper MISMATCH", async () => {
-    const { fakeTxResult } = buildLedgerAndMemo(TRUSTED, "tesSUCCESS", true, "sha256-merkle-v99");
-    const { exitCode, result, out } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: true }, fakeClientFactory(fakeTxResult));
-    assert.equal(result?.ok, false, "an unverifiable algo must still fail closed");
-    assert.equal(exitCode, 1);
-    const blob = JSON.stringify(result).toLowerCase();
-    assert.match(blob, /unsupported merkle algo/, "must name the unsupported algo");
-    assert.ok(/upgrade/i.test(blob) || /upgrade/i.test(out), "must hint to upgrade the CLI");
-    assert.doesNotMatch(blob, /mismatch/, "must NOT claim MISMATCH (would imply tampering)");
+  it("a REAL anchor root mismatch stays a trust FAIL => exit 1 (not downgraded)", async () => {
+    const { fakeTxResult } = buildLedgerAndMemo({ tamperRoot: true });
+    const { exitCode, result } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: true }, fakeClientFactory(fakeTxResult));
+    assert.equal(exitCode, 1, "a root MISMATCH is a real trust FAIL -> exit 1, never 2");
+    assert.equal(result?.ok, false);
+  });
+
+  it("a non-trusted Account stays a trust FAIL => exit 1", async () => {
+    const { fakeTxResult } = buildLedgerAndMemo({ account: "rEVILACCOUNTxxxxxxxxxxxxxxxxxxxxxx" });
+    const { exitCode } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: true }, fakeClientFactory(fakeTxResult));
+    assert.equal(exitCode, 1, "untrusted anchor account is a trust FAIL -> exit 1");
+  });
+
+  it("a clean matching anchor verifies => exit 0", async () => {
+    const { fakeTxResult } = buildLedgerAndMemo({});
+    const { exitCode, result } = await runVerifyAnchor({ tx: "T".repeat(64), network: "testnet", json: true }, fakeClientFactory(fakeTxResult));
+    // The success path returns normally (no explicit process.exit), which is exit 0 in the real
+    // process. In the harness a clean return leaves exitCode === null (process.exit never called).
+    assert.ok(exitCode === 0 || exitCode === null, "a matching anchor verifies -> exit 0 (clean return)");
+    assert.equal(result?.ok, true);
   });
 });

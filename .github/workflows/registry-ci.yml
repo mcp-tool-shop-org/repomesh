@@ -21,6 +21,7 @@ permissions:
 jobs:
   build-registry:
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # STGB-CI-004: bound wall-clock (build + network)
     steps:
       # B-8: Actions pinned to major version tags (v4) — acceptable for this project.
       # Full SHA pinning not required; major tags provide auto-patching with low risk.

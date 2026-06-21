@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @mcptoolshop/repomesh — Trust infrastructure for repo networks.
 // CLI entrypoint.
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,6 +9,15 @@ import { requireRepoMeshCheckout } from "./mode.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "package.json"), "utf8"));
+
+// STGB-CLI-002/003: the exit-code contract for CI gating.
+//   0 = PASS/verified · 1 = trust FAIL (tamper/invalid) · 2 = operator/usage/environment ERROR · 3 = UNVERIFIED
+// A usage/parse error (missing/unknown flag, typo'd enum value) is an OPERATOR error, never a
+// trust FAIL — it must exit 2. Commander's default is exit 1 and it ignores --json, so we take
+// over its error path: exitOverride() makes parse failures THROW (caught below) instead of
+// exiting 1, and configureOutput() suppresses commander's own stderr when --json is requested so
+// the structured JSON error is the only thing a machine consumer sees.
+const wantsJsonOutput = () => process.argv.includes("--json");
 
 const program = new Command();
 
@@ -19,7 +28,42 @@ program
   .option("-q, --quiet", "Suppress informational output")
   .option("--verbose", "Show verbose output")
   .option("--debug", "Show debug output with stack traces")
-  .option("--no-color", "Disable ANSI colors and emoji (also respects NO_COLOR env)");
+  .option("--no-color", "Disable ANSI colors and emoji (also respects NO_COLOR env)")
+  // STGB-CLI-002: take over commander's exit/error path so a parse error becomes a catchable
+  // throw (classified to exit 2 below) instead of commander's default exit 1.
+  .exitOverride()
+  .configureOutput({
+    // Suppress commander's plaintext error line when --json is requested; the structured JSON
+    // error (emitted in the catch handler) is then the ONLY thing a machine consumer reads.
+    outputError: (str, write) => { if (!wantsJsonOutput()) write(str); },
+  });
+
+// STGB-CLI-003: enum flags must be validated against their allowed set, not silently coerced.
+// commander's .choices() rejects an unknown value with a clear "Allowed choices are ..." message
+// (a CommanderError -> exit 2 via the catch below) instead of passing a typo through to a
+// downstream switch that falls back to a default (producing empty stdout for a JSON consumer).
+const FORMAT_CHOICES = ["text", "json", "sarif", "markdown"];
+const FAIL_ON_CHOICES = ["unverified", "fail"];
+const NETWORK_CHOICES = ["testnet", "mainnet", "devnet"];
+const formatOption = (def = "text") =>
+  new Option("--format <fmt>", "Output format: text (default), json, sarif, markdown").choices(FORMAT_CHOICES).default(def);
+const failOnOption = () =>
+  new Option("--fail-on <level>", "Which verdict is non-zero: 'unverified' (strict, default) or 'fail' (UNVERIFIED -> exit 0)").choices(FAIL_ON_CHOICES).default("unverified");
+const networkOption = () =>
+  new Option("--network <net>", "Network: testnet, mainnet, devnet").choices(NETWORK_CHOICES).default("testnet");
+
+// STGB-CLI-001 (observability): emit the remote-revocation legibility warning when a verification
+// is revocation-sensitive AND remote AND lacks the on-chain --anchored witness. Routed to stderr
+// (NOT stdout) so a --json consumer's single-blob stdout stays clean; suppressed under --quiet.
+// `-q`/--quiet is a GLOBAL flag, so read it from process.argv (works before/independent of the
+// per-command parse).
+async function emitRemoteRevocationWarning({ local, anchored, ledgerUrl, nodesUrl, manifestsUrl }) {
+  if (process.argv.includes("--quiet") || process.argv.includes("-q")) return;
+  const { deriveRemoteRevocationWarning } = await import("./remote-defaults.mjs");
+  const { warn, lines } = deriveRemoteRevocationWarning({ local, anchored, ledgerUrl, nodesUrl, manifestsUrl });
+  if (!warn) return;
+  for (const line of lines) console.error(line);
+}
 
 // --- User commands (work anywhere) ---
 
@@ -36,8 +80,8 @@ program
   .option("--anchored", "Also verify XRPL anchor inclusion (strict: requires on-chain XRPL verification)")
   .option("--anchored-or-local", "Like --anchored but accept a locally-recomputed manifest when XRPL is unreachable (XRPL NOT verified)")
   .option("--local [dir]", "Verify against a LOCAL ledger checkout (default: current dir). Offline/dev path; wins over auto-detect.")
-  .option("--fail-on <level>", "Which verdict is non-zero: 'unverified' (strict, default) or 'fail' (UNVERIFIED -> exit 0)", "unverified")
-  .option("--format <fmt>", "Output format: text (default), json, sarif, markdown", "text")
+  .addOption(failOnOption())
+  .addOption(formatOption())
   .option("--json", "Output structured JSON (alias for --format json)")
   .option("--ledger-url <url>", "Custom ledger events URL (defaults to public GitHub ledger; use --local for offline)")
   .option("--nodes-url <url>", "Custom nodes base URL (defaults to public GitHub ledger; use --local for offline)")
@@ -47,11 +91,18 @@ program
     // commander: --local with no value yields `true`; --local <dir> yields the string.
     const localProvided = opts.local !== undefined;
     const localDir = typeof opts.local === "string" ? opts.local : undefined;
+    const anchored = opts.anchored || opts.anchoredOrLocal;
+    // STGB-CLI-001: warn (to stderr) when this revocation-sensitive verification is remote and has
+    // no on-chain witness, so the operator knows the local revocation defenses are inert here.
+    await emitRemoteRevocationWarning({
+      local: localProvided, anchored,
+      ledgerUrl: opts.ledgerUrl, nodesUrl: opts.nodesUrl, manifestsUrl: opts.manifestsUrl,
+    });
     await verifyRelease({
       repo: opts.repo,
       version: opts.version,
       // --anchored-or-local implies anchored (anchor inclusion is checked, on-chain step relaxed).
-      anchored: opts.anchored || opts.anchoredOrLocal,
+      anchored,
       anchoredOrLocal: opts.anchoredOrLocal,
       local: localProvided ? true : undefined,
       localDir,
@@ -76,8 +127,8 @@ program
   .option("--anchored", "Also verify XRPL anchor inclusion for every release")
   .option("--anchored-or-local", "Accept a locally-recomputed manifest when XRPL is unreachable")
   .option("--local [dir]", "Verify against a LOCAL ledger checkout (default: current dir)")
-  .option("--fail-on <level>", "Which verdict is non-zero: 'unverified' (default) or 'fail'", "unverified")
-  .option("--format <fmt>", "Output format: text (default), json, sarif, markdown", "text")
+  .addOption(failOnOption())
+  .addOption(formatOption())
   .option("--json", "Output structured JSON (alias for --format json)")
   .option("--ledger-url <url>", "Custom ledger events URL")
   .option("--trust-url <url>", "Custom trust.json URL (for --from-registry remote mode)")
@@ -104,7 +155,7 @@ program
   .command("verify-anchor")
   .description("Verify an XRPL anchor transaction")
   .requiredOption("--tx <hash>", "XRPL transaction hash")
-  .option("--network <net>", "Network: testnet, mainnet, devnet", "testnet")
+  .addOption(networkOption())
   .option("--ws-url <url>", "Custom WebSocket URL for XRPL")
   .option("--ledger-url <url>", "Custom ledger events URL")
   .option("--json", "Output structured JSON")
@@ -314,13 +365,53 @@ for (const cmd of devCommands) {
     });
 }
 
+// STGB-CLI-002/003: classify a thrown error into the exit-code contract and emit it the right
+// way for the requested format. A commander parse/usage/invalid-choice error is an OPERATOR
+// error -> exit 2 (NEVER 1, which means a trust FAIL). Help/version are commander "errors" with
+// exitCode 0 — those already printed and just exit 0. Anything else is an unexpected internal
+// error (also exit 2 — a usage/environment problem, distinct from a trust verdict).
+function hintForCommanderError(e) {
+  switch (e.code) {
+    case "commander.missingMandatoryOptionValue":
+    case "commander.missingArgument":
+      return "Provide the required option. Run 'repomesh <command> --help' to see required flags.";
+    case "commander.unknownOption":
+      return "Remove the unknown flag (check for a typo). Run 'repomesh <command> --help' for the valid flags.";
+    case "commander.unknownCommand":
+      return "Unknown command. Run 'repomesh --help' to list available commands.";
+    case "commander.invalidArgument":
+      // commander's message already names the allowed choices for an enum.
+      return "Use one of the allowed values shown in the message. Run 'repomesh <command> --help'.";
+    case "commander.optionMissingArgument":
+      return "This flag needs a value. Run 'repomesh <command> --help' for the expected argument.";
+    default:
+      return "Run 'repomesh <command> --help' for usage.";
+  }
+}
+
 // Run
 program.parseAsync(process.argv).catch(e => {
-  if (process.argv.includes("--debug")) {
+  const isCommanderError = e?.name === "CommanderError" || (typeof e?.code === "string" && e.code.startsWith("commander."));
+
+  // Help/version: commander already wrote its output and uses exitCode 0. Pass it through.
+  if (isCommanderError && e.exitCode === 0) {
+    process.exit(0);
+  }
+
+  // Strip commander's "error: " prefix so our message/JSON stays clean.
+  const rawMessage = (e?.message || String(e)).replace(/^error:\s*/i, "");
+  const code = isCommanderError ? (e.code || "commander.usageError") : "internal.error";
+  const hint = e?.hint || (isCommanderError ? hintForCommanderError(e) : "Run with --debug for a full stack trace.");
+
+  if (wantsJsonOutput()) {
+    // STGB-CLI-002: a JSON consumer must get a structured error shape, never empty stdout or a
+    // raw plaintext line. {code,message,hint} on stdout; commander's own stderr was suppressed.
+    console.log(JSON.stringify({ ok: false, code, message: rawMessage, hint }, null, 2));
+  } else if (process.argv.includes("--debug")) {
     console.error(e);
   } else {
-    console.error(`Error: ${e.message || e}`);
-    if (e.hint) console.error(`Hint: ${e.hint}`);
+    console.error(`Error: ${rawMessage}`);
+    if (hint) console.error(`Hint: ${hint}`);
     console.error("Run with --debug for full stack trace.");
   }
   process.exit(2);

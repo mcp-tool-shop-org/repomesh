@@ -264,13 +264,17 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json, _clien
     txr = await fetchAndValidateTx({ tx, wsUrl: resolvedWsUrl, trustedAccounts, clientFactory: _clientFactory });
   } catch (e) {
     if (e.networkError) {
+      // STGB-CLI-004: an XRPL outage/timeout/unreachable is a transient ENVIRONMENT condition, not
+      // a trust verdict. Exit 2 (ERROR) — NOT 1 (which means a real anchor tamper/mismatch FAIL).
+      // This mirrors verify-release, which classifies a load/network failure as ERROR -> exit 2.
+      // Conflating an outage with tamper would make a CI gate red-flag a release on a flaky network.
       const hint = e.hint || "Check your network connection and retry, or set --ws-url to a reachable XRPL node.";
       if (json) { emitJson({ ok: false, error: e.message, hint }); }
       else {
         console.error(`  ${e.message}`);
         console.error(`  Hint: ${hint}`);
       }
-      process.exit(1);
+      process.exit(2);
     }
     throw e;
   }
@@ -295,9 +299,15 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json, _clien
   // 2. Load ledger and partition.
   const events = await loadEvents(opts);
   if (events.length === 0) {
+    // STGB-CLI-004: an empty/unreachable ledger is an OPERATOR/ENVIRONMENT error (wrong URL, no
+    // local clone) — exit 2, not 1. There is no anchor verdict to render: nothing was tampered,
+    // we just have no local data to recompute against.
     if (json) { emitJson({ ok: false, error: "No ledger events", hint: "Verify the ledger URL, or run inside a RepoMesh checkout for local data." }); }
-    else { console.error("\n  No ledger events found."); }
-    process.exit(1);
+    else {
+      console.error("\n  No ledger events found.");
+      console.error("  Hint: Verify the ledger URL, or run inside a RepoMesh checkout for local data.");
+    }
+    process.exit(2);
   }
 
   const partition = partitionEvents(events, memo.p);
@@ -307,9 +317,15 @@ export async function verifyAnchor({ tx, network, wsUrl, ledgerUrl, json, _clien
   if (!json) console.log(`\n  Local partition "${memo.p}": ${partition.length} events, ${leaves.length} leaves`);
 
   if (leaves.length === 0) {
+    // STGB-CLI-004: a local clone that does not cover this anchor's partition is an OPERATOR
+    // condition (partial/wrong clone), not tamper — exit 2. We cannot recompute, so there is no
+    // trust verdict to assert; nothing here implies the anchor was forged.
     if (json) { emitJson({ ok: false, error: "No valid leaves", hint: `No canonical hashes found in partition "${memo.p}". Confirm the local ledger covers this anchor's partition.` }); }
-    else { console.error("  No valid canonical hashes in partition."); }
-    process.exit(1);
+    else {
+      console.error("  No valid canonical hashes in partition.");
+      console.error(`  Hint: Confirm the local ledger covers the anchor's partition "${memo.p}".`);
+    }
+    process.exit(2);
   }
   if (leaves.length !== memo.c) {
     if (json) { emitJson({ ok: false, error: `Count mismatch: local=${leaves.length}, anchor=${memo.c}`, hint: "Your local ledger partition has a different event count than the anchor pinned. Sync your ledger clone to the anchored state." }); }
