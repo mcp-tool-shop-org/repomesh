@@ -267,6 +267,17 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | Makes decisions |
 | `identity` | Issues/verifies credentials |
 
+## Extending the network — the verifier-plugin contract
+
+New **check kinds** and **verifier nodes** are added by editing data, not code. The check-kinds
+registry, scoring weights, and node-kind permissions live in
+[`verifier.policy.json`](verifier.policy.json) (schema-validated, fail-closed). Adding a check (e.g.
+`sast.scan`) is a ~6-line policy edit + a `node.json`, reviewed in a PR — no code change.
+
+The one invariant: **registered ≠ trusted.** Registration lets a check participate; credit still
+requires a trusted-set consensus pass. Full guide:
+[docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
+
 ## Public Verification
 
 Anyone can verify a release with one command — **no clone required**, the CLI fetches the public

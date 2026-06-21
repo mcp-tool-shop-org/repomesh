@@ -165,7 +165,7 @@ repomesh/
 npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-`keygen` 命令会输出公钥和一个 `keyId`，你可以直接将其添加到你的 `node.json` 文件中的维护者条目中，并且会将私钥（权限模式为 0600）写入你指定的 `--out` 参数所指向的目录——绝不会写入到已跟踪的路径中。请将它存储为 GitHub 代码仓库的密钥 (`REPOMESH_SIGNING_KEY`)。（手动操作等效命令：`openssl genpkey -algorithm ED25519 ...`。）
+`keygen` 命令会输出公钥和一个 `keyId`，你可以将它们添加到你的 `node.json` 文件中的维护者条目中，并且会将私钥（权限设置为 0600）写入你指定的 `--out` 参数所指向的目录——绝不会写入到已跟踪的路径中。将其存储为 GitHub 代码仓库的密钥 (`REPOMESH_SIGNING_KEY`)。（手动操作等效于：`openssl genpkey -algorithm ED25519 ...`。）
 
 > **为对信任至关重要的节点注册 ≥2 个密钥**（TUF §6.1）：单个密钥在被攻破后无法签署自身的撤销。`repomesh init --second-key` 命令会注册一个不同的第二个维护者，以便一个密钥可以撤销另一个密钥——`init` 命令会在节点只有一个活动密钥时发出警告。
 
@@ -251,6 +251,12 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | 做出决策 |
 | `identity` | 颁发/验证凭据 |
 
+## 扩展网络——验证器插件协议
+
+新的**检查类型**和**验证器节点**是通过编辑数据而不是代码来添加的。检查类型的注册表、评分权重以及节点类型权限都位于 [`verifier.policy.json`](verifier.policy.json) 文件中（经过模式验证，如果验证失败则会关闭）。添加一个检查项（例如 `sast.scan`）大约需要修改 6 行策略文件和一个 `node.json` 文件，并在 PR 中进行审查——无需更改代码。
+
+唯一的不变性：**已注册 ≠ 可信。** 注册允许一个检查参与；信用仍然需要经过可信集合的一致性验证。完整指南：[docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md)。
+
 ## 公共验证
 
 任何人都可以使用一个命令来验证发布版本——**无需克隆**，CLI 会为您获取公共账本：
@@ -305,7 +311,7 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
 
 ### 将其用作库
 
-验证引擎被导出为一个稳定的程序化 API——将它嵌入到你自己的工具中，而不是通过命令行调用：
+验证引擎被导出为一个稳定的程序化 API——将其嵌入到你自己的工具中，而不是通过命令行调用：
 
 ```js
 import { verifyRelease, buildSarif, exitCodeForStatus } from "@mcptoolshop/repomesh";
@@ -316,7 +322,7 @@ process.exitCode = exitCodeForStatus(result.status);
 
 ### 网络状态端点
 
-仪表板会发布一个机器可读的 [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) 文件，供外部轮询使用——包括账本的新鲜度（带有冻结账本信号）、信任判决计数、已固定与待处理的分区，以及一个 `ok`/`degraded` 汇总信息，并附带原因。
+仪表板会发布一个机器可读的 [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) 文件，供外部轮询使用——包括账本的新鲜度（带有冻结账本信号）、信任判决数量、已固定与待处理的分区，以及一个 `ok`/`degraded` 汇总信息，并附带原因。
 
 ### 信任徽章
 

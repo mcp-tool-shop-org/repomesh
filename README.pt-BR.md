@@ -251,6 +251,12 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `governance` | Toma decisões. |
 | `identity` | Verifica e valida credenciais. |
 
+## Expandindo a rede — o contrato do plugin verificador
+
+Novos **tipos de verificação** e **nós verificadores** são adicionados editando os dados, não o código. O registro dos tipos de verificação, os pesos de pontuação e as permissões dos tipos de nó estão localizados em [`verifier.policy.json`](verifier.policy.json) (validados pelo esquema, com falha por padrão). Adicionar uma verificação (por exemplo, `sast.scan`) envolve a edição de um arquivo de política com cerca de 6 linhas + um arquivo `node.json`, que são revisados em um PR — sem alteração no código.
+
+O único invariante: **registrado ≠ confiável.** O registro permite que uma verificação participe; a validação ainda requer o consenso de um conjunto confiável. Guia completo: [docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
+
 ## Verificação pública
 
 Qualquer pessoa pode verificar uma versão com um único comando – **não é necessário fazer o download**; a ferramenta de linha de comandos obtém automaticamente o livro-razão público para si:
