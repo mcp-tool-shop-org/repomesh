@@ -17,14 +17,14 @@
     },
     {
       "partitionId": "all",
-      "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-      "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65",
-      "prev": "c2c91ee30362d56cd6a2abfa1a0e5a45dc54337084b5712b1aba0b93bed525ac",
+      "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+      "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f",
+      "prev": "d6bf1aef1b11262cdeb0fc6eba3825389e42eb9c86be3181896b5f6ad24d2382",
       "range": [
         "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
-        "c4374937ffcf40b5127c71e2d8d4516ce850b688bdd4489ca28592e1b103d842"
+        "1f7822c9bdbb1bf6024cf91998f4677ea1b8e9afb90db585c20f28147227a1d9"
       ],
-      "count": 58,
+      "count": 76,
       "network": "testnet",
       "txHash": null,
       "walletAddress": null,
@@ -44,6 +44,21 @@
       "txHash": "1A285823A2BECEC69C88A75595B1CC7A2E51FA68D5DACF37AB7E59A95E2A65D1",
       "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
       "manifestFile": "genesis.json"
+    },
+    {
+      "partitionId": "since:2026-06-21T01:13:55.605Z",
+      "root": "d6bf1aef1b11262cdeb0fc6eba3825389e42eb9c86be3181896b5f6ad24d2382",
+      "manifestHash": "38550d10c0d7d1749ffa3648db13f63931bf3c4b2742d6383d6657510ee3b5f1",
+      "prev": "c2c91ee30362d56cd6a2abfa1a0e5a45dc54337084b5712b1aba0b93bed525ac",
+      "range": [
+        "d05d5064de948e0f9e3169ec440219f3eafcfd7b5ca889a93ded3968c2ab8509",
+        "b25267931d2b0c22d930b7b354d1c149f29d66221f6674728ff59e6a424b65b2"
+      ],
+      "count": 21,
+      "network": "testnet",
+      "txHash": "F4FF42A0279757F4DA5A35FDBAACC8869B0AB7321B9E159C032F56E1277D2027",
+      "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
+      "manifestFile": "since-2026-06-21T01-13-55.605Z.json"
     }
   ],
   "releaseAnchors": {
@@ -72,8 +87,8 @@
       "version": "2.0.0",
       "canonicalHash": "cca5e8584010a4a770c3e20a083395fe43b5b133d7d5b0a0b4f3ff19aaddb0f4",
       "partitionId": "all",
-      "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-      "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65",
+      "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+      "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f",
       "txHash": null,
       "network": "testnet"
     },
@@ -82,8 +97,8 @@
       "version": "2.1.0",
       "canonicalHash": "01dc2e84347c055b4deaafdd22f012d1fec7bb63f080ae1ef711fd0e60dbbd56",
       "partitionId": "all",
-      "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-      "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65",
+      "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+      "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f",
       "txHash": null,
       "network": "testnet"
     },
@@ -92,8 +107,8 @@
       "version": "2.2.0",
       "canonicalHash": "c4374937ffcf40b5127c71e2d8d4516ce850b688bdd4489ca28592e1b103d842",
       "partitionId": "all",
-      "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-      "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65",
+      "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+      "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f",
       "txHash": null,
       "network": "testnet"
     },
@@ -102,8 +117,8 @@
       "version": "2.3.0",
       "canonicalHash": "f0f16d0a6d1eb2d4b6093b2df98062b8e80592b7b5ea998466aa6c0de6a7c0de",
       "partitionId": "all",
-      "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-      "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65",
+      "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+      "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f",
       "txHash": null,
       "network": "testnet"
     }

@@ -3,12 +3,12 @@
   "algo": "sha256-merkle-v2",
   "partitionId": "all",
   "network": "testnet",
-  "prev": "c2c91ee30362d56cd6a2abfa1a0e5a45dc54337084b5712b1aba0b93bed525ac",
+  "prev": "d6bf1aef1b11262cdeb0fc6eba3825389e42eb9c86be3181896b5f6ad24d2382",
   "range": [
     "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
-    "c4374937ffcf40b5127c71e2d8d4516ce850b688bdd4489ca28592e1b103d842"
+    "1f7822c9bdbb1bf6024cf91998f4677ea1b8e9afb90db585c20f28147227a1d9"
   ],
-  "count": 58,
-  "root": "6adc53fdff191275cee652ac9312af7f9dd4c3b6f8e74123abd34c9ea89e417b",
-  "manifestHash": "7d29ee2d67d7ffc307468b5c8c3f9d8a09e361f1f86a2cb810d77cb5ac7bda65"
+  "count": 76,
+  "root": "3dc9890a775cae6db5d214c1b1d3fc6a1bb2039cfd3a2fa43f3fbd0d10f2fe1c",
+  "manifestHash": "049e12001077e39d90f1729503723f91ea727a0d092597d41bfaf68f8134227f"
 }

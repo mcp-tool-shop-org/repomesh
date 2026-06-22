@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "algo": "sha256-merkle-v2",
+  "partitionId": "since:2026-06-21T01:13:55.605Z",
+  "network": "testnet",
+  "prev": "c2c91ee30362d56cd6a2abfa1a0e5a45dc54337084b5712b1aba0b93bed525ac",
+  "range": [
+    "d05d5064de948e0f9e3169ec440219f3eafcfd7b5ca889a93ded3968c2ab8509",
+    "b25267931d2b0c22d930b7b354d1c149f29d66221f6674728ff59e6a424b65b2"
+  ],
+  "count": 21,
+  "root": "d6bf1aef1b11262cdeb0fc6eba3825389e42eb9c86be3181896b5f6ad24d2382",
+  "manifestHash": "38550d10c0d7d1749ffa3648db13f63931bf3c4b2742d6383d6657510ee3b5f1"
+}
