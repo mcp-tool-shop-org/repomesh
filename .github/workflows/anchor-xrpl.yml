@@ -23,7 +23,7 @@ jobs:
     # 20 minutes is generous for compute-root -> post -> confirm -> rebuild -> PR.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 22
