@@ -73,7 +73,20 @@ jobs:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
         run: |
-          node policy/scripts/check-policy.mjs --sign --output /tmp/repomesh-ci/violations.jsonl 2>/tmp/repomesh-ci/logs/policy.log || { echo "::warning::Policy check crashed (see logs)"; echo "policy" >> /tmp/repomesh-ci/failures.txt; }
+          # Exit 2 means "ledgerable violations were written", not a crash. Exit 1 (and anything
+          # else non-zero except 2) is a crash and must hit the andon below. Collapsing both into
+          # `||` dropped real PolicyViolation events and, with the old blank-line output, never
+          # distinguished "warnings only" from "checker died".
+          set +e
+          node policy/scripts/check-policy.mjs --sign --output /tmp/repomesh-ci/violations.jsonl 2>/tmp/repomesh-ci/logs/policy.log
+          policy_status=$?
+          set -e
+          if [ "$policy_status" -eq 0 ] || [ "$policy_status" -eq 2 ]; then
+            echo "Policy check finished (exit $policy_status)."
+          else
+            echo "::warning::Policy check crashed (see logs)"
+            echo "policy" >> /tmp/repomesh-ci/failures.txt
+          fi
 
       # B-3: Upload verifier logs as artifacts for debugging
       - name: Upload verifier logs
@@ -101,11 +114,23 @@ jobs:
       - name: Check for new events
         id: check
         run: |
-          ATTESTATIONS=$(wc -l < /tmp/repomesh-ci/attestations.jsonl 2>/dev/null || echo 0)
-          LICENSE=$(wc -l < /tmp/repomesh-ci/license.jsonl 2>/dev/null || echo 0)
-          SECURITY=$(wc -l < /tmp/repomesh-ci/security.jsonl 2>/dev/null || echo 0)
-          REPRO=$(wc -l < /tmp/repomesh-ci/repro.jsonl 2>/dev/null || echo 0)
-          VIOLATIONS=$(wc -l < /tmp/repomesh-ci/violations.jsonl 2>/dev/null || echo 0)
+          # Count non-blank lines. `wc -l` treats a warnings-only "\n" file as 1 event, which
+          # is what sent this job into the append step with nothing the normalizer would keep.
+          count_jsonl() {
+            local f="$1"
+            if [ ! -s "$f" ]; then
+              echo 0
+              return
+            fi
+            local n
+            n=$(grep -cve '^[[:space:]]*$' "$f" || true)
+            echo "${n:-0}"
+          }
+          ATTESTATIONS=$(count_jsonl /tmp/repomesh-ci/attestations.jsonl)
+          LICENSE=$(count_jsonl /tmp/repomesh-ci/license.jsonl)
+          SECURITY=$(count_jsonl /tmp/repomesh-ci/security.jsonl)
+          REPRO=$(count_jsonl /tmp/repomesh-ci/repro.jsonl)
+          VIOLATIONS=$(count_jsonl /tmp/repomesh-ci/violations.jsonl)
           TOTAL=$((ATTESTATIONS + LICENSE + SECURITY + REPRO + VIOLATIONS))
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           echo "attestations=$ATTESTATIONS" >> "$GITHUB_OUTPUT"
@@ -172,6 +197,13 @@ jobs:
           node -e "const fs=require('fs');const f='ledger/events/events.jsonl';const ls=fs.readFileSync(f,'utf8').split('\n').filter(l=>l.trim().length>0);fs.writeFileSync(f,ls.join('\n')+'\n');"
 
           git add ledger/events/events.jsonl
+          # Blank-only appends normalize back to the committed ledger. `git commit` then exits 1
+          # under `bash -e` ("nothing to commit") and the failure alert fires. An unchanged tree
+          # is a clean no-op, not a failed run.
+          if git diff --cached --quiet; then
+            echo "Ledger unchanged after blank-line normalize — nothing to append."
+            exit 0
+          fi
           git commit -m "attestor: ${{ steps.check.outputs.attestations }} attestation(s), ${{ steps.check.outputs.license }} license, ${{ steps.check.outputs.security }} security, ${{ steps.check.outputs.repro }} repro, ${{ steps.check.outputs.violations }} violation(s)"
           git push origin "$BRANCH"
 

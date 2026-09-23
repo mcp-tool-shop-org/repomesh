@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.3.1] - 2026-09-23
+
+Current XRPL client, a published container image, and two CI fixes. The anchor network stays testnet.
+
+### Added
+- **Container image** `ghcr.io/mcp-tool-shop-org/repomesh` (Node 22, non-root). The default command is the CLI. Posting an anchor requires `XRPL_SEED` at runtime. `release.yml` pushes the image next to the npm publish.
+- **`xrpl-watch`** reads the latest rippled release, the connected server build, and whether Batch or Sponsor is enabled. It opens an issue when that differs from `anchor/xrpl/watch-baseline.json`. It does not submit those transaction types.
+
+### Changed
+- **xrpl.js 5.3.0.** `Wallet.fromSeed` is called with `seedAlgorithm` (`ed25519` for the current account). The derived address must match `postingAccount` or the post exits before it connects.
+- **Shipped anchor allowlist is a ceiling.** A fetched `config.json` may drop an account. It may not add one.
+- **Explorer links follow the anchor network** (`testnet.xrpl.org` or `livenet.xrpl.org`).
+- **Node 22** is the CLI engines floor, matching CI and xrpl.js 5.
+- Verify action pin is `2.3.1`.
+
+### Fixed
+- **Attestor CI** treated a warnings-only policy run as a commit of a blank line, and treated a real policy exit 2 as a crash. Warnings write an empty file. Exit 2 still appends `PolicyViolation` events.
+- **Idle anchor epochs** (no new ledger events) finish green. The post, emit, and append steps run only when there is a root to publish.
+
 ## [2.3.0] - 2026-06-21
 
 The **verifier-plugin contract** (#7). The trust network can now be extended with new check kinds and

@@ -16,7 +16,7 @@
 
 ### Default safety posture
 
-- [ ] `[cli|mcp|desktop]` SKIP: CLI has no destructive actions (init creates files, verify-release is read-only)
+- [ ] `[cli|mcp|desktop]` SKIP: `init` writes only the files the operator asked for in the working directory. `verify-*` is read-only. Spending XRP is `post-anchor.mjs`, which requires `XRPL_SEED` and refuses to submit unless the derived address matches `postingAccount`.
 - [ ] `[cli|mcp|desktop]` SKIP: file operations stay within the repo working directory
 - [ ] `[mcp]` SKIP: not an MCP server
 - [ ] `[mcp]` SKIP: not an MCP server
@@ -37,7 +37,7 @@
 - [x] `[all]` CHANGELOG.md (Keep a Changelog format) (2026-02-28)
 - [x] `[all]` LICENSE file present and repo states support status (2026-02-28)
 - [x] `[cli]` `--help` output accurate for all commands and flags (2026-02-28)
-- [ ] `[cli|mcp|desktop]` SKIP: simple CLI with no configurable logging levels; errors go to stderr, output to stdout
+- [x] `[cli|mcp|desktop]` Logging levels: `--quiet`, `--verbose`, `--debug` (2026-09-23). Signing keys and `XRPL_SEED` are read from the environment and are not written to logs.
 - [ ] `[mcp]` SKIP: not an MCP server
 - [x] `[complex]` HANDBOOK.md: daily ops, warn/critical response, recovery procedures (2026-02-28)
 
@@ -45,11 +45,11 @@
 
 - [x] `[all]` `verify` script exists (test + build + smoke in one command) (2026-02-28)
 - [x] `[all]` Version in manifest matches git tag (2026-02-28)
-- [ ] `[all]` SKIP: dependencies are vendored in ledger/node_modules (no external registry)
-- [ ] `[all]` SKIP: vendored dependencies are pinned by lockfile
-- [ ] `[npm]` SKIP: not published to npm
-- [ ] `[npm]` SKIP: not published to npm
-- [ ] `[npm]` SKIP: not published to npm
+- [x] `[all]` Dependency scanning runs in CI — `release.yml` runs `npm audit --audit-level=high` before publish (2026-09-23)
+- [x] `[all]` Dependabot updates npm (root, `anchor/xrpl`, `site`) and GitHub Actions monthly (2026-09-23)
+- [x] `[npm]` `npm pack --dry-run` includes dist/, README.md, CHANGELOG.md, LICENSE (2026-09-23)
+- [x] `[npm]` `engines.node` is `>=22` (2026-09-23)
+- [x] `[npm]` Lockfile committed (`package-lock.json`, `anchor/xrpl/package-lock.json`) (2026-09-23)
 - [ ] `[vsix]` SKIP: not a VS Code extension
 - [ ] `[desktop]` SKIP: not a desktop app
 

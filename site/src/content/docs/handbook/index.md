@@ -9,6 +9,8 @@ RepoMesh turns a collection of repositories into a **cooperative network**.
 Every repo becomes a node. Every release becomes a signed event.
 Every claim is independently verifiable.
 
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+
 ## What the network provides
 
 - **Node manifests** -- each repo declares its identity, capabilities, and trust profile in a single `node.json`.

@@ -203,6 +203,18 @@ describe("FC10 — buildProofChain (plain-language signature→anchor)", () => {
     const chain = buildProofChain(trust[0], rec);
     const anchorStep = chain.find((s) => s.title.toLowerCase().includes("anchor"));
     assert.ok(anchorStep.txLink && anchorStep.txLink.includes("ABCDEF0123456789"), "tx link contains the hash");
+    assert.match(anchorStep.txLink, /^https:\/\/testnet\.xrpl\.org\/transactions\//, "testnet record uses the testnet explorer");
+  });
+
+  it("uses the mainnet explorer when the anchor record says mainnet", () => {
+    const rec = {
+      ...anchors.releaseAnchors["mcp-tool-shop-org/shipcheck@1.0.4"],
+      txHash: "ABCDEF0123456789",
+      network: "mainnet",
+    };
+    const chain = buildProofChain(trust[0], rec);
+    const anchorStep = chain.find((s) => s.title.toLowerCase().includes("anchor"));
+    assert.match(anchorStep.txLink, /^https:\/\/livenet\.xrpl\.org\/transactions\/ABCDEF0123456789$/);
   });
 });
 

@@ -23,19 +23,43 @@ jobs:
     # 20 minutes is generous for compute-root -> post -> confirm -> rebuild -> PR.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - name: Install XRPL dependencies
-        run: cd anchor/xrpl && npm ci
       - name: Compute partition root
-        run: node anchor/xrpl/scripts/compute-root.mjs --since-last
+        id: compute
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/repomesh-ci
+          node anchor/xrpl/scripts/compute-root.mjs --since-last | tee /tmp/repomesh-ci/compute-root.stdout.json
+          node -e 'const fs=require("node:fs");const j=JSON.parse(fs.readFileSync("/tmp/repomesh-ci/compute-root.stdout.json","utf8"));process.stdout.write((j.eventCount===0||j.root==null)?"true":"false")' > /tmp/repomesh-ci/idle-flag
+          IDLE=$(cat /tmp/repomesh-ci/idle-flag)
+          echo "idle=${IDLE}" >> "$GITHUB_OUTPUT"
+          if [ "$IDLE" = "true" ]; then
+            echo "::notice::idle epoch, same tree, nothing to post"
+          fi
+      - name: Build anchor image
+        if: success() && steps.compute.outputs.idle != 'true'
+        run: docker build -t repomesh:local .
       - name: Post anchor to XRPL
+        if: success() && steps.compute.outputs.idle != 'true'
         env:
           XRPL_SEED: ${{ secrets.XRPL_SEED }}
-        run: node anchor/xrpl/scripts/post-anchor.mjs
+        run: |
+          set -euo pipefail
+          cleanup() { docker rm -f repomesh-post >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run --name repomesh-post \
+            -e XRPL_SEED \
+            -e XRPL_WS_URL \
+            -v "$GITHUB_WORKSPACE/anchor/xrpl/partition-root.json:/opt/repomesh/anchor/xrpl/partition-root.json:ro" \
+            --entrypoint node \
+            repomesh:local \
+            anchor/xrpl/scripts/post-anchor.mjs
+          docker cp repomesh-post:/opt/repomesh/anchor/xrpl/anchor-result.json "$GITHUB_WORKSPACE/anchor/xrpl/anchor-result.json"
       - name: Emit anchor event
+        if: success() && steps.compute.outputs.idle != 'true'
         env:
           REPOMESH_SIGNING_KEY: ${{ secrets.REPOMESH_SIGNING_KEY }}
           REPOMESH_KEY_ID: ci-repomesh-2026
@@ -44,11 +68,12 @@ jobs:
           node anchor/xrpl/scripts/emit-anchor-event.mjs --sign --output /tmp/repomesh-ci/anchor.jsonl
       - name: Check for anchor event
         id: check
+        if: success() && steps.compute.outputs.idle != 'true'
         run: |
           ANCHOR=$(wc -l < /tmp/repomesh-ci/anchor.jsonl 2>/dev/null || echo 0)
           echo "anchor=$ANCHOR" >> "$GITHUB_OUTPUT"
       - name: Append anchor event to ledger via PR
-        if: steps.check.outputs.anchor != '0'
+        if: success() && steps.compute.outputs.idle != 'true' && steps.check.outputs.anchor != '0'
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
         run: |

@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.md">English</a> | <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -25,6 +25,8 @@ RepoMesh turns a collection of repos into a cooperative network. Each repo is a 
 - **Signed events** broadcast to an append-only ledger
 - A **registry** indexing all nodes and capabilities
 - A **profile** defining what "done" means for trust
+
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
 
 The network enforces three invariants:
 
@@ -110,7 +112,7 @@ repomesh/
     nodes/                    # Registered node manifests + profiles
     scripts/                  # Validation + verification tooling
   attestor/                   # Universal attestor (sbom, provenance, sig chain)
-  verifiers/                  # Independent verifier nodes
+  verifiers/                  # Independent verifier nodes, operated by the same organization today
     license/                  # License compliance scanner
     security/                 # Vulnerability scanner (OSV.dev)
   anchor/xrpl/               # XRPL anchoring (Merkle roots + testnet posting)
@@ -307,6 +309,23 @@ The **exit code** is derived from the tri-state verdict, so a CI step can gate o
 | `1` | FAIL | Hard failure — forged/wrong-repo signature, non-allowlisted attestor, or a required check failed. |
 | `3` | UNVERIFIED | Soft — not-yet-anchored, no independent witness, or a required check missing. |
 | `2` | — | Usage error or internal crash. |
+
+### Container
+
+The same CLI is published as `ghcr.io/mcp-tool-shop-org/repomesh`, tagged with the npm version and the git sha. The image runs as a non-root user. It does not contain a wallet seed.
+
+```bash
+docker run --rm ghcr.io/mcp-tool-shop-org/repomesh verify-anchor --tx <TX_HASH>
+```
+
+Posting an anchor is a separate command. `XRPL_SEED` is passed at runtime:
+
+```bash
+docker run --rm -e XRPL_SEED --entrypoint node ghcr.io/mcp-tool-shop-org/repomesh \
+  anchor/xrpl/scripts/post-anchor.mjs
+```
+
+The daily workflow builds this image from the checkout and posts with it. The network in `anchor/xrpl/config.json` is still testnet. A mainnet post waits on a funded account whose classic address is added to the shipped allowlist in a CLI release first. That allowlist is a ceiling: a fetched config can drop an account and cannot add one.
 
 `--fail-on <fail\|unverified>` sets strictness. Default `unverified` fails on both FAIL and
 UNVERIFIED; `--fail-on=fail` lets UNVERIFIED pass (exit 0, with a warning) for warn-mode adoption.

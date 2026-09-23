@@ -92,6 +92,50 @@ jobs:
       - name: npm pack dry-run (verify tarball shape)
         run: npm pack --dry-run
 
+      - name: Audit production dependencies
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm audit --audit-level=high --omit=dev
+          npm audit --audit-level=high --omit=dev --prefix anchor/xrpl
+
       - name: Publish to npm with provenance (OIDC trusted publisher)
         # Auth via npm Trusted Publishing (OIDC) — intentionally NO NODE_AUTH_TOKEN.
         run: npm publish --provenance --access public
+
+  image:
+    name: Publish container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Image tags
+        id: tags
+        working-directory: packages/repomesh-cli
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$VERSION" != "$TAG_VERSION" ]; then
+              echo "::error::Release tag ${TAG_VERSION} does not match package.json version ${VERSION}"
+              exit 1
+            fi
+          fi
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          docker build \
+            -t "${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}" \
+            -t "${{ steps.tags.outputs.image }}:sha-${GITHUB_SHA}" \
+            .
+          docker push "${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.version }}"
+          docker push "${{ steps.tags.outputs.image }}:sha-${GITHUB_SHA}"

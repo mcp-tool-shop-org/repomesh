@@ -1,0 +1,9 @@
+**/node_modules
+.git
+.research-tmp
+.tmp-xrpl-research
+coverage
+*.log
+pages/out
+site/dist
+site/.astro

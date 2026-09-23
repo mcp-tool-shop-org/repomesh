@@ -8,7 +8,9 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Trust infrastructure for repo networks. Verify releases, check XRPL anchors, and onboard repos — all from the command line.
+Trust infrastructure for repo networks. Verify releases, check XRPL anchors, and onboard repos — all from the command line. Requires Node 22 or newer.
+
+The shipped XRPL anchor allowlist is a ceiling. A fetched config may drop an account. It may not add one. Anchors are posted to XRPL testnet.
 
 ## Quick Start
 

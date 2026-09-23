@@ -265,10 +265,16 @@ for (const v of violations) {
   console.log(`  ${v.detail}\n`);
 }
 
-// Resolve signing key if --sign
+// Build and optionally sign violation events (errors only — warnings are logged but not ledgered).
+// A warnings-only run must write a zero-byte output file. Writing `"\n"` makes `wc -l` report 1,
+// the attestor cron appends that blank line, the blank-line normalizer strips it, and `git commit`
+// fails on a clean tree (the 2026-09 attestor-ci loop).
+const violationEvents = [];
+const errorViolations = violations.filter((v) => v.severity === "error");
+
 let signingKey = null;
 let signingKeyId = null;
-if (doSign) {
+if (doSign && errorViolations.length > 0) {
   signingKey = process.env.REPOMESH_SIGNING_KEY;
   signingKeyId = process.env.REPOMESH_KEY_ID;
   if (!signingKey || !signingKeyId) {
@@ -277,10 +283,7 @@ if (doSign) {
   }
 }
 
-// Build and optionally sign violation events (errors only — warnings are logged but not ledgered)
-const violationEvents = [];
-for (const v of violations) {
-  if (v.severity !== "error") continue;
+for (const v of errorViolations) {
   let ev = buildViolationEvent(v);
   if (doSign) {
     ev = signEvent(ev, signingKey, signingKeyId);
@@ -289,8 +292,10 @@ for (const v of violations) {
 }
 
 if (outputPath) {
-  const lines = violationEvents.map((ev) => JSON.stringify(ev)).join("\n") + "\n";
-  fs.writeFileSync(outputPath, lines, "utf8");
+  const body = violationEvents.length === 0
+    ? ""
+    : violationEvents.map((ev) => JSON.stringify(ev)).join("\n") + "\n";
+  fs.writeFileSync(outputPath, body, "utf8");
   console.log(`${violationEvents.length} violation event(s) written to ${outputPath}`);
 } else {
   console.log("--- Violations (JSONL) ---");

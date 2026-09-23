@@ -6,8 +6,9 @@ import crypto from "node:crypto";
 import { isRepoMeshCheckout } from "../mode.mjs";
 import { fetchText, fetchJson } from "../http.mjs";
 import {
-  DEFAULT_LEDGER_URL, DEFAULT_ANCHOR_CONFIG_URL, BUNDLED_TRUSTED_ANCHOR_ACCOUNTS,
+  DEFAULT_LEDGER_URL, DEFAULT_ANCHOR_CONFIG_URL, resolveTrustedAnchorAccounts,
 } from "../remote-defaults.mjs";
+import { noteRippledBuild } from "../trusted-anchor-accounts.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
 import { parseStrictJson } from "./safe-json.mjs";
@@ -61,15 +62,8 @@ const WS_URLS = {
   devnet: "wss://s.devnet.rippletest.net:51233",
 };
 
-// Resolve the trusted XRPL anchor accounts. The bundled allowlist is a NON-REMOVABLE floor:
-// a fetched/local config may ADD operator-pinned accounts but can never remove a bundled one (D4).
 function resolveTrustedAccounts(config) {
-  const bundled = new Set(BUNDLED_TRUSTED_ANCHOR_ACCOUNTS);
-  const configured = Array.isArray(config?.trustedAnchorAccounts) ? config.trustedAnchorAccounts : null;
-  if (!configured) return bundled;
-  // Union with bundled: config can add operator-pinned accounts, but every bundled account
-  // stays trusted regardless of what the (possibly remote/untrusted) config says.
-  return new Set([...bundled, ...configured]);
+  return resolveTrustedAnchorAccounts(config);
 }
 
 // Default client factory (real xrpl). Lazy import so tests that inject _clientFactory
@@ -102,6 +96,7 @@ async function fetchAndValidateTx({ tx, wsUrl, trustedAccounts, clientFactory })
   try {
     client = await factory(wsUrl);
     await client.connect();
+    noteRippledBuild(client);
     const response = await client.request({ command: "tx", transaction: tx });
     txData = response.result;
   } catch (e) {
