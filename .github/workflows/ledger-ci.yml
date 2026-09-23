@@ -8,6 +8,7 @@ on:
       - 'registry/**'         # registry-ci's auto-update PRs must get the required validate-ledger
       - 'verifier.policy.json' # check too, else auto-merge deadlocks (the check never runs).
       - '.github/workflows/ledger-ci.yml'
+      - 'atlas/**'
       - 'site/package.json'
       - 'site/package-lock.json'
       - 'site/astro.config.mjs'
@@ -36,6 +37,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+
+      - name: Atlas check
+        run: npx --yes @dogfood-lab/atlas@1.14.0 check
 
       - name: Install ledger deps
         working-directory: ledger
