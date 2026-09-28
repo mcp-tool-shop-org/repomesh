@@ -1,5 +1,30 @@
 [
   {
+    "id": "mcp-tool-shop-org/cognate",
+    "kind": "governance",
+    "description": "Cognate -- structural governance for autonomous intelligence. Proves what an AI system was permitted to do, what it did, and who authorized it.",
+    "provides": [
+      "governance.policy.v1",
+      "governance.identity.v1",
+      "governance.model-registry.v1",
+      "governance.prompt-store.v1",
+      "governance.repomesh-bridge.v1"
+    ],
+    "consumes": [
+      "network.registry.v1",
+      "network.ledger.v1",
+      "network.schema.v1"
+    ],
+    "tags": [
+      "cognate",
+      "ai-governance",
+      "attestation",
+      "web3",
+      "autonomous-systems"
+    ],
+    "homepage": "https://mcp-tool-shop-org.github.io/cognate/"
+  },
+  {
     "id": "mcp-tool-shop-org/repomesh",
     "kind": "registry",
     "description": "Syntropic repo network — ledger, registry, and schemas for distributed repo coordination",
