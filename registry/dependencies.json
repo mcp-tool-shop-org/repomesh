@@ -1,6 +1,30 @@
 {
   "graph": [
     {
+      "id": "mcp-tool-shop-org/cognate",
+      "kind": "governance",
+      "consumes": [
+        {
+          "capability": "network.registry.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        },
+        {
+          "capability": "network.ledger.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        },
+        {
+          "capability": "network.schema.v1",
+          "providers": [
+            "mcp-tool-shop-org/repomesh"
+          ]
+        }
+      ]
+    },
+    {
       "id": "mcp-tool-shop-org/repomesh",
       "kind": "registry",
       "consumes": []
@@ -61,8 +85,8 @@
   ],
   "warnings": [],
   "stats": {
-    "totalNodes": 6,
-    "totalCapabilities": 9,
+    "totalNodes": 7,
+    "totalCapabilities": 14,
     "unmetDependencies": 0,
     "roleRedundancies": 0
   }
