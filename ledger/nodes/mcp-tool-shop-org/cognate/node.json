@@ -1,7 +1,7 @@
 {
   "id": "mcp-tool-shop-org/cognate",
   "kind": "governance",
-  "description": "Cognate — structural governance for autonomous intelligence. Proves what an AI system was permitted to do, what it did, and who authorized it.",
+  "description": "Cognate -- structural governance for autonomous intelligence. Proves what an AI system was permitted to do, what it did, and who authorized it.",
   "homepage": "https://mcp-tool-shop-org.github.io/cognate/",
   "provides": [
     "governance.policy.v1",
@@ -16,7 +16,12 @@
     "network.schema.v1"
   ],
   "interfaces": [
-    { "name": "cognate-api", "version": "v1", "schemaPath": "./packages/node/src/server.ts", "stability": "stable" }
+    {
+      "name": "cognate-api",
+      "version": "v1",
+      "schemaPath": "./packages/node/src/server.ts",
+      "stability": "stable"
+    }
   ],
   "invariants": {
     "deterministicBuild": true,
@@ -28,11 +33,15 @@
     {
       "name": "mcp-tool-shop",
       "keyId": "ci-cognate-2026",
-      "publicKey": "-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAhQieXTLWH9lKcHRUrXYzP9hGps6x1kEq3SP69QOp56E=
------END PUBLIC KEY-----",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAhQieXTLWH9lKcHRUrXYzP9hGps6x1kEq3SP69QOp56E=\n-----END PUBLIC KEY-----",
       "contact": "64996768+mcp-tool-shop@users.noreply.github.com"
     }
   ],
-  "tags": ["cognate", "ai-governance", "attestation", "web3", "autonomous-systems"]
+  "tags": [
+    "cognate",
+    "ai-governance",
+    "attestation",
+    "web3",
+    "autonomous-systems"
+  ]
 }
