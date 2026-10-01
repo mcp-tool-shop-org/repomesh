@@ -146,6 +146,16 @@
       "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
       "txHash": null,
       "network": "testnet"
+    },
+    "mcp-tool-shop-org/repomesh@2.3.2": {
+      "repo": "mcp-tool-shop-org/repomesh",
+      "version": "2.3.2",
+      "canonicalHash": "e763e5a0284e631da43293d04f56397503b6dbff7841b2936a992cd3421f001e",
+      "partitionId": "all",
+      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
+      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "txHash": null,
+      "network": "testnet"
     }
   }
 }
