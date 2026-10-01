@@ -125,7 +125,11 @@
         "missing": []
       },
       "2.3.2": {
-        "completed": [],
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
         "expected": [],
         "missing": []
       }
