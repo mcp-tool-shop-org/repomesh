@@ -4,7 +4,7 @@
     "places": [
       {
         "byPeople": 23,
-        "commits": 34,
+        "commits": 33,
         "target": "ledger/events/events.jsonl"
       }
     ]
@@ -352,8 +352,8 @@
         "path": ".github/workflows/attestor-ci.yml"
       },
       {
-        "commits": 13,
-        "lines": 117,
+        "commits": 15,
+        "lines": 121,
         "path": ".github/workflows/ledger-ci.yml"
       },
       {
@@ -567,8 +567,8 @@
         "path": "anchor/xrpl/watch-baseline.json"
       },
       {
-        "commits": 2,
-        "lines": 284,
+        "commits": 4,
+        "lines": 608,
         "path": "atlas/README.md"
       },
       {
@@ -577,18 +577,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 2,
-        "lines": 1650,
+        "commits": 4,
+        "lines": 3500,
         "path": "atlas/page.json"
       },
       {
-        "commits": 2,
-        "lines": 3348,
+        "commits": 4,
+        "lines": 4194,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 2,
-        "lines": 19022,
+        "commits": 4,
+        "lines": 37456,
         "path": "atlas/structure.json"
       },
       {
@@ -682,8 +682,8 @@
         "path": "docs/xrpl-web3-6mo.study-swarm.dispatch.md"
       },
       {
-        "commits": 62,
-        "lines": 154,
+        "commits": 61,
+        "lines": 153,
         "path": "ledger/events/events.jsonl"
       },
       {
@@ -1562,9 +1562,9 @@
     "level": "low",
     "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-09-30T20:12:10.075Z",
+  "generatedAt": "2026-10-01T00:13:06.921Z",
   "generatedFrom": {
-    "commit": "b6e00d630bfdcaf8463cae32d4f919a979d7ee42"
+    "commit": "bcd11b280249b7d3f87b51dcda3c971002bbd801"
   },
   "pairs": [
     {
@@ -1606,7 +1606,7 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-09-28T15:48:28-07:00",
+    "headDate": "2026-09-30T13:39:57-07:00",
     "inScopeFiles": 304,
     "pinnedStart": null,
     "priorFloor": "fallen",
@@ -1615,7 +1615,7 @@
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-01T22:48:28.000Z",
+    "since": "2026-04-03T20:39:57.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
