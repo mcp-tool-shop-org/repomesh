@@ -1,27 +1,15 @@
 # repomesh: how it works
 
-Mapped at 2026-09-30 from commit b6e00d6 by Atlas 1.24.0.
+Mapped at 2026-10-01 from commit bcd11b2 by Atlas 1.24.0.
 
 ## What this is
 
 18 parts, mostly JavaScript (175 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
 
-## What changed since 2026-09-23 (f13ad8e)
+## What changed since 2026-09-30 (b6e00d6)
 
-- repomesh-cli now imports verifiers.
-- RepoMesh verify-release (.github/actions/verify/action.yml) is a new action other repositories use. It runs no file this map can see.
-- anchor-xrpl now also runs packages/repomesh-cli/scripts/build.mjs.
-- anchor-xrpl now also checks anchor/xrpl/config.json, anchor/xrpl/package-lock.json, anchor/xrpl/package.json and 5 more.
-- And 5 more changes to doors.
-- anchor/xrpl/anchor-result.json is now written by anchor/xrpl/scripts/post-anchor.mjs.
-- anchor/xrpl/partition-root.json is now written by anchor/xrpl/scripts/compute-root.mjs.
-- packages/repomesh-cli/dist is now written by packages/repomesh-cli/scripts/build.mjs.
-- And 102 more new writers and readers of places.
-- .github was mixed and is now authored.
-- pages was mixed and is now authored.
-- the repository root was mixed and is now authored.
-- And 1 more origin change.
-- 2 files added and 296 changed content, across 17 parts.
+- ledger-ci's pull request trigger now also names `.github/workflows/**`, `package-lock.json`, `package.json` and `packages/*/package.json` and no longer names `.github/workflows/ledger-ci.yml`.
+- 1 file changed content, across 1 part.
 
 ## What comes in
 
@@ -30,7 +18,7 @@ Mapped at 2026-09-30 from commit b6e00d6 by Atlas 1.24.0.
 3. **pages-ci.** On a push to main touching 6 paths; or by hand. Runs pages/build-metrics.mjs, pages/build-pages.mjs, pages/build-stats.mjs and 7 more.
 4. **attestor-ci.** On a schedule (`0 */6 * * *`); or by hand. Runs attestor/scripts/attest-release.mjs, policy/scripts/check-policy.mjs, verifiers/license/scripts/verify-license.mjs and 2 more; checks LICENSE.
 5. **registry-ci.** On a push to main touching 5 paths; or by hand. Runs registry/scripts/build-anchors.mjs, registry/scripts/build-badges.mjs, registry/scripts/build-dependencies.mjs and 4 more.
-6. **ledger-ci.** On a pull request touching 9 paths; or by hand. Runs ledger/scripts/validate-ledger.mjs.
+6. **ledger-ci.** On a pull request touching 12 paths; or by hand. Runs ledger/scripts/validate-ledger.mjs.
 7. **xrpl-watch.** On a schedule (`0 12 * * 1`), Monday at 12:00 UTC; or by hand. Runs anchor/xrpl/scripts/watch.mjs.
 8. **repomesh-broadcast.** When a release is published; or by hand. Runs packages/repomesh-cli/scripts/build.mjs.
 9. **@mcptoolshop/repomesh** (the package people import). Loads packages/repomesh-cli/dist/index.mjs, built from a source this map cannot place.
@@ -129,7 +117,7 @@ And 9 more pairs.
 
 People write .github/, assets/, docs/, profiles/, the repository root, schemas/, scripts/, site/ and templates/. Nothing in this repository writes to them.
 
-- **ledger/events/events.jsonl** is written by .github/workflows/anchor-xrpl.yml, .github/workflows/attestor-ci.yml, attestor/scripts/emit-key-event.mjs and packages/repomesh-cli/src/key/rotate-revoke.mjs, and by people: 23 of its 34 commits in the window are theirs.
+- **ledger/events/events.jsonl** is written by .github/workflows/anchor-xrpl.yml, .github/workflows/attestor-ci.yml, attestor/scripts/emit-key-event.mjs and packages/repomesh-cli/src/key/rotate-revoke.mjs, and by people: 23 of its 33 commits in the window are theirs.
 
 ## Where to start
 

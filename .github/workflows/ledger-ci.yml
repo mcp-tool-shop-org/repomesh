@@ -7,7 +7,13 @@ on:
       - 'schemas/**'
       - 'registry/**'         # registry-ci's auto-update PRs must get the required validate-ledger
       - 'verifier.policy.json' # check too, else auto-merge deadlocks (the check never runs).
-      - '.github/workflows/ledger-ci.yml'
+      - '.github/workflows/**'
+      # validate-ledger is the one required check on main, so a PR that changes
+      # only the workspace manifests (Dependabot's npm bumps) must still report
+      # it, or it can never merge. Same deadlock the registry/** entry above guards.
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/*/package.json'
       - 'atlas/**'
       - 'site/package.json'
       - 'site/package-lock.json'

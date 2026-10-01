@@ -25,7 +25,7 @@
           "path": ".github/workflows/attestor-ci.yml"
         },
         {
-          "hash": "8f8f06f554ffa03b3e8ed6f93974d414c026a9033a2aaff4f39791693298a86e",
+          "hash": "ab6d9e7e6946597d995dd68474d308aefa9a171dc0d7dcf89288f71cae5701e6",
           "path": ".github/workflows/ledger-ci.yml"
         },
         {
@@ -8688,9 +8688,12 @@
         {
           "event": "pull_request",
           "paths": [
-            ".github/workflows/ledger-ci.yml",
+            ".github/workflows/**",
             "atlas/**",
             "ledger/**",
+            "package-lock.json",
+            "package.json",
+            "packages/*/package.json",
             "registry/**",
             "schemas/**",
             "site/astro.config.mjs",
@@ -10518,7 +10521,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "b6e00d630bfdcaf8463cae32d4f919a979d7ee42",
+    "commit": "bcd11b280249b7d3f87b51dcda3c971002bbd801",
     "tracked": 299
   },
   "landings": [

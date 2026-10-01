@@ -13,7 +13,7 @@
   "authoredWritten": [
     {
       "byPeople": 23,
-      "commits": 34,
+      "commits": 33,
       "place": "ledger/events/events.jsonl",
       "writers": [
         ".github/workflows/anchor-xrpl.yml",
@@ -138,120 +138,29 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 2,
-      "changed": 296,
+      "added": 0,
+      "changed": 1,
       "moved": 0,
-      "parts": 17,
+      "parts": 1,
       "removed": 0
     },
     "items": [
       {
-        "kind": "import-added",
-        "sentence": "repomesh-cli now imports verifiers.",
-        "subjects": [
-          "repomesh-cli",
-          "verifiers"
-        ]
-      },
-      {
         "kind": "door",
-        "sentence": "RepoMesh verify-release (.github/actions/verify/action.yml) is a new action other repositories use. It runs no file this map can see.",
+        "sentence": "ledger-ci's pull request trigger now also names `.github/workflows/**`, `package-lock.json`, `package.json` and `packages/*/package.json` and no longer names `.github/workflows/ledger-ci.yml`.",
         "subjects": [
-          ".github/actions/verify/action.yml"
+          ".github/workflows/ledger-ci.yml"
         ]
-      },
-      {
-        "kind": "door",
-        "sentence": "anchor-xrpl now also runs packages/repomesh-cli/scripts/build.mjs.",
-        "subjects": [
-          ".github/workflows/anchor-xrpl.yml",
-          "packages/repomesh-cli/scripts/build.mjs"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "anchor-xrpl now also checks anchor/xrpl/config.json, anchor/xrpl/package-lock.json, anchor/xrpl/package.json and 5 more.",
-        "subjects": [
-          ".github/workflows/anchor-xrpl.yml",
-          "anchor/xrpl/config.json",
-          "anchor/xrpl/package-lock.json",
-          "anchor/xrpl/package.json",
-          "anchor/xrpl/scripts/",
-          "package-lock.json",
-          "package.json",
-          "packages/repomesh-cli/",
-          "packages/repomesh-cli/package.json"
-        ]
-      },
-      {
-        "kind": "door",
-        "sentence": "And 5 more changes to doors.",
-        "subjects": []
-      },
-      {
-        "kind": "landing",
-        "sentence": "anchor/xrpl/anchor-result.json is now written by anchor/xrpl/scripts/post-anchor.mjs.",
-        "subjects": [
-          "anchor/xrpl/anchor-result.json",
-          "anchor/xrpl/scripts/post-anchor.mjs"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "anchor/xrpl/partition-root.json is now written by anchor/xrpl/scripts/compute-root.mjs.",
-        "subjects": [
-          "anchor/xrpl/partition-root.json",
-          "anchor/xrpl/scripts/compute-root.mjs"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "packages/repomesh-cli/dist is now written by packages/repomesh-cli/scripts/build.mjs.",
-        "subjects": [
-          "packages/repomesh-cli/dist",
-          "packages/repomesh-cli/scripts/build.mjs"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "And 102 more new writers and readers of places.",
-        "subjects": []
-      },
-      {
-        "kind": "origin",
-        "sentence": ".github was mixed and is now authored.",
-        "subjects": [
-          ".github"
-        ]
-      },
-      {
-        "kind": "origin",
-        "sentence": "pages was mixed and is now authored.",
-        "subjects": [
-          "pages"
-        ]
-      },
-      {
-        "kind": "origin",
-        "sentence": "the repository root was mixed and is now authored.",
-        "subjects": [
-          "root"
-        ]
-      },
-      {
-        "kind": "origin",
-        "sentence": "And 1 more origin change.",
-        "subjects": []
       },
       {
         "kind": "counts",
-        "sentence": "2 files added and 296 changed content, across 17 parts.",
+        "sentence": "1 file changed content, across 1 part.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "f13ad8e5da4953b453eadd413c611efc63b03a40",
-      "generatedAt": "2026-09-23T17:37:19.201Z"
+      "commit": "b6e00d630bfdcaf8463cae32d4f919a979d7ee42",
+      "generatedAt": "2026-09-30T20:12:10.075Z"
     },
     "unchanged": false
   },
@@ -260,7 +169,7 @@
     "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
   ],
   "changesTogetherWithTests": 0,
-  "commit": "b6e00d630bfdcaf8463cae32d4f919a979d7ee42",
+  "commit": "bcd11b280249b7d3f87b51dcda3c971002bbd801",
   "defaultBranch": "main",
   "derived": "18 parts, mostly JavaScript (175 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.",
   "doors": [
@@ -656,7 +565,7 @@
       "sends": [],
       "stages": [],
       "triggers": [
-        "on a pull request touching 9 paths",
+        "on a pull request touching 12 paths",
         "or by hand"
       ]
     },
@@ -970,7 +879,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-09-30T20:12:10.075Z",
+  "generatedAt": "2026-10-01T00:13:06.921Z",
   "limits": [
     "107 imports could not be resolved: `attestor/tests/emit-key-event.test.mjs` imports a path built at run time, twice; `packages/repomesh-cli/tests/anchor-leaf-window.test.mjs` imports a path built at run time; `packages/repomesh-cli/tests/anchor-prev-chain.test.mjs` imports a path built at run time, twice; and 102 more.",
     "6 reads use paths built at run time and are not named here.",
