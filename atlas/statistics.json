@@ -352,8 +352,8 @@
         "path": ".github/workflows/attestor-ci.yml"
       },
       {
-        "commits": 15,
-        "lines": 121,
+        "commits": 17,
+        "lines": 137,
         "path": ".github/workflows/ledger-ci.yml"
       },
       {
@@ -567,8 +567,8 @@
         "path": "anchor/xrpl/watch-baseline.json"
       },
       {
-        "commits": 4,
-        "lines": 608,
+        "commits": 6,
+        "lines": 660,
         "path": "atlas/README.md"
       },
       {
@@ -577,18 +577,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 4,
-        "lines": 3500,
+        "commits": 6,
+        "lines": 3730,
         "path": "atlas/page.json"
       },
       {
-        "commits": 4,
-        "lines": 4194,
+        "commits": 6,
+        "lines": 4262,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 4,
-        "lines": 37456,
+        "commits": 6,
+        "lines": 37474,
         "path": "atlas/structure.json"
       },
       {
@@ -1562,9 +1562,9 @@
     "level": "low",
     "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-10-01T00:13:06.921Z",
+  "generatedAt": "2026-10-01T02:12:37.349Z",
   "generatedFrom": {
-    "commit": "bcd11b280249b7d3f87b51dcda3c971002bbd801"
+    "commit": "dbdaa6da65bad57acfa09ca7583bcbbd9edcf42f"
   },
   "pairs": [
     {
@@ -1606,16 +1606,16 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-09-30T13:39:57-07:00",
+    "headDate": "2026-09-30T17:23:42-07:00",
     "inScopeFiles": 304,
     "pinnedStart": null,
     "priorFloor": "fallen",
-    "qualifyingCommits": 72,
+    "qualifyingCommits": 73,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-03T20:39:57.000Z",
+    "since": "2026-04-04T00:23:42.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
