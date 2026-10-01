@@ -1,6 +1,8 @@
 # RepoMesh verify client and XRPL anchor poster.
 # Does not run rippled. XRPL_SEED and REPOMESH_SIGNING_KEY are runtime
 # environment only — they are not build arguments and they are not image layers.
+# This image does not mount Attestia's event log and it does not write
+# /app/data. RepoMesh keeps its own ledger. The CLI runs as the node user.
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
