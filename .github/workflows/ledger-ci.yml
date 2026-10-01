@@ -1,23 +1,11 @@
 name: ledger-ci
 
 on:
+  # No paths filter on pull requests, deliberately: this workflow emits the
+  # required status check, and a PR that matched no path (a docs-only change)
+  # would never report it and could never merge. This workflow has no push
+  # trigger, so there is nothing else to keep paths-gated.
   pull_request:
-    paths:
-      - 'ledger/**'
-      - 'schemas/**'
-      - 'registry/**'         # registry-ci's auto-update PRs must get the required validate-ledger
-      - 'verifier.policy.json' # check too, else auto-merge deadlocks (the check never runs).
-      - '.github/workflows/**'
-      # validate-ledger is the one required check on main, so a PR that changes
-      # only the workspace manifests (Dependabot's npm bumps) must still report
-      # it, or it can never merge. Same deadlock the registry/** entry above guards.
-      - 'package.json'
-      - 'package-lock.json'
-      - 'packages/*/package.json'
-      - 'atlas/**'
-      - 'site/package.json'
-      - 'site/package-lock.json'
-      - 'site/astro.config.mjs'
   workflow_dispatch:
 
 concurrency:
