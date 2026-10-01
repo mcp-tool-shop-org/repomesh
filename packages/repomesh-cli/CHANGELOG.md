@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.2] - 2026-10-01
+
+### Changed
+- The public description, README, and handbook state RepoMesh's job: the release ledger and XRPL trust clock, separate from Attestia's event store. Cognate is the AI governance domain that calls both.
+
 ## [2.3.1] - 2026-09-23
 
 Current XRPL client, a published container image, and two CI fixes. The anchor network stays testnet.

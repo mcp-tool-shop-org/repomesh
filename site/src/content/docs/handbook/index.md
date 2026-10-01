@@ -1,6 +1,6 @@
 ---
 title: RepoMesh Handbook
-description: Turn a collection of repos into a cooperative network with node manifests, signed events, a shared registry, and multi-dimensional trust profiles.
+description: Release ledger and XRPL-anchored trust clock for a repo network. Separate from Attestia's event store.
 sidebar:
   order: 0
 ---
@@ -10,6 +10,8 @@ Every repo becomes a node. Every release becomes a signed event.
 Every claim is independently verifiable.
 
 Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+
+Attestia, Cognate, and RepoMesh are three products. RepoMesh keeps this RFC 6962 ledger and the XRPL trust clock. Attestia proves that an event, a transaction, or a state transition happened, and the domain it ships is financial truth. Cognate is the AI governance domain on Attestia's event store and Merkle proofs, and it calls RepoMesh to check a release. Attestia's Merkle tree is not this ledger.
 
 ## What the network provides
 

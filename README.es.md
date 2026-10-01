@@ -17,6 +17,16 @@
 
 Red de repositorios sintrópicos: libro mayor de solo anexión, manifiestos de nodos y puntuación para la coordinación distribuida de repositorios.
 
+## Integrar en el sistema
+
+Attestia, Cognate y RepoMesh son tres productos.
+
+**RepoMesh** es la red de distribución: eventos firmados, manifiestos de nodos y un reloj de confianza anclado a XRPL. Mantiene su propio libro mayor RFC 6962.
+
+**Attestia** demuestra que un evento, una transacción o una transición de estado tuvieron lugar, y vincula esa prueba a una cadena. El ámbito que ofrece es la verdad financiera: bóveda personal, tesorería de la organización y registro. Sus pruebas de Merkle no pertenecen a este libro mayor.
+
+**Cognate** es el ámbito de gobernanza de la IA en el almacén de eventos y las pruebas de Merkle de Attestia. Llama a RepoMesh cuando necesita que se verifique una distribución. No mantiene un segundo almacén de eventos, ni utiliza el árbol de Merkle de Attestia para esta red.
+
 ## ¿Qué es esto?
 
 RepoMesh transforma una colección de repositorios en una red cooperativa. Cada repositorio es un **nodo** con:

@@ -17,6 +17,16 @@
 
 Syntropic repo network — append-only ledger, node manifests, and scoring for distributed repo coordination.
 
+## Place in the system
+
+Attestia, Cognate, and RepoMesh are three products.
+
+**RepoMesh** is the release network: signed events, node manifests, and an XRPL-anchored trust clock. It keeps its own RFC 6962 ledger.
+
+**Attestia** proves that an event, a transaction, or a state transition happened, and binds that proof to a chain. The domain it ships is financial truth: personal vault, org treasury, and registrum. Its Merkle proofs are not this ledger.
+
+**Cognate** is the AI governance domain on Attestia's event store and Merkle proofs. It calls RepoMesh when it needs a release checked. It does not keep a second event store, and it does not use Attestia's Merkle tree for this network.
+
 ## What is this?
 
 RepoMesh turns a collection of repos into a cooperative network. Each repo is a **node** with:

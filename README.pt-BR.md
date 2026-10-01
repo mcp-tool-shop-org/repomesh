@@ -17,6 +17,16 @@
 
 Rede de repos sinérgica — livro-razão de apenas anexação, manifestos de nós e pontuação para coordenação distribuída de repos.
 
+## Coloque no sistema
+
+Attestia, Cognate e RepoMesh são três produtos.
+
+**RepoMesh** é a rede de distribuição: eventos assinados, manifestos de nós e um relógio de confiança ancorado na XRPL. Ela mantém seu próprio livro-razão RFC 6962.
+
+**Attestia** comprova que um evento, uma transação ou uma transição de estado ocorreu e vincula essa prova a uma cadeia. O domínio que ela oferece é a verdade financeira: cofre pessoal, tesouraria da organização e registo. Suas provas de Merkle não fazem parte deste livro-razão.
+
+**Cognate** é o domínio de governança de IA no armazenamento de eventos e nas provas de Merkle da Attestia. Ela chama o RepoMesh quando precisa que uma distribuição seja verificada. Não mantém um segundo armazenamento de eventos e não usa a árvore de Merkle da Attestia para esta rede.
+
 ## O que é isso?
 
 RepoMesh transforma uma coleção de repos em uma rede cooperativa. Cada repo é um **nó** com:

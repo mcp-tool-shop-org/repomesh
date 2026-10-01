@@ -1,7 +1,7 @@
 {
   "name": "@mcptoolshop/repomesh",
-  "version": "2.3.1",
-  "description": "Trust infrastructure for repo networks — verify releases, check anchors, and onboard repos from anywhere.",
+  "version": "2.3.2",
+  "description": "Release ledger and XRPL-anchored trust clock for a repo network: signed events, node manifests, and verification. Separate from Attestia's event store.",
   "type": "module",
   "bin": {
     "repomesh": "dist/cli.mjs"
