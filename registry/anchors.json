@@ -17,14 +17,14 @@
     },
     {
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
-      "prev": "9185ec2359c51055a882e3aa3d820c9215a210951790be78a6675ada64efbd9a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
+      "prev": "6d02c5a94e5d17d5d54d8e7b00e868494872b07158a5b0a0295d579e37bab402",
       "range": [
         "c29e3f557b4900c77b47c43012ebb4e9e6f5531746afbd748338cc45f2b5c9e6",
-        "fda165e6bc2c9b17b769088275e25a2c47993679421c15716c514e2c3aa92a70"
+        "db95a23dacd86957454c43ed8c6d1be4dedfc9c82069348c27ae8d38f7fe2059"
       ],
-      "count": 82,
+      "count": 88,
       "network": "testnet",
       "txHash": null,
       "walletAddress": null,
@@ -74,6 +74,21 @@
       "txHash": "54532D22269042850469DF963792E3468540E591BA556F1DF72639013FF2CFDE",
       "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
       "manifestFile": "since-2026-06-22T01-13-38.818Z.json"
+    },
+    {
+      "partitionId": "since:2026-09-24T03:56:02.711Z",
+      "root": "6d02c5a94e5d17d5d54d8e7b00e868494872b07158a5b0a0295d579e37bab402",
+      "manifestHash": "644704cbc25c58b51d8cabedf47bc6acd6effdcc7cbfc4cb13d8907f25eb2840",
+      "prev": "9185ec2359c51055a882e3aa3d820c9215a210951790be78a6675ada64efbd9a",
+      "range": [
+        "e763e5a0284e631da43293d04f56397503b6dbff7841b2936a992cd3421f001e",
+        "a4ac6d39f1f6c4c7d0b95397966454653d5788e95b85dd96bbe6a2f3b661d8a8"
+      ],
+      "count": 5,
+      "network": "testnet",
+      "txHash": "D3CEDA037EC6C02DF6245BCF32FEB969C62C3A0CC86B0B37C1A7A59929AF756B",
+      "walletAddress": "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
+      "manifestFile": "since-2026-09-24T03-56-02.711Z.json"
     }
   ],
   "releaseAnchors": {
@@ -102,8 +117,8 @@
       "version": "2.0.0",
       "canonicalHash": "cca5e8584010a4a770c3e20a083395fe43b5b133d7d5b0a0b4f3ff19aaddb0f4",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     },
@@ -112,8 +127,8 @@
       "version": "2.1.0",
       "canonicalHash": "01dc2e84347c055b4deaafdd22f012d1fec7bb63f080ae1ef711fd0e60dbbd56",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     },
@@ -122,8 +137,8 @@
       "version": "2.2.0",
       "canonicalHash": "c4374937ffcf40b5127c71e2d8d4516ce850b688bdd4489ca28592e1b103d842",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     },
@@ -132,8 +147,8 @@
       "version": "2.3.0",
       "canonicalHash": "f0f16d0a6d1eb2d4b6093b2df98062b8e80592b7b5ea998466aa6c0de6a7c0de",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     },
@@ -142,8 +157,8 @@
       "version": "2.3.1",
       "canonicalHash": "04c9fdd81299befb06dc761d69f7691104f570f98021e896c288270ca42a6b77",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     },
@@ -152,8 +167,8 @@
       "version": "2.3.2",
       "canonicalHash": "e763e5a0284e631da43293d04f56397503b6dbff7841b2936a992cd3421f001e",
       "partitionId": "all",
-      "root": "a0c82f643c1f23f4bc81f85aafa1ff61a11a32549a0c27da0126f195ccb28e41",
-      "manifestHash": "a1812433a51a3ce0f9b70d8772715bf01058b1a984d50197b78787983ae1399a",
+      "root": "77d86209fb48584587627f849df21ea8d428f1b179cc7a362f1bd65a1d35c2c2",
+      "manifestHash": "be9e09ee38cd2d8da22a1154031ea45b8ad678b1ea727d47b6794aa559b59ca9",
       "txHash": null,
       "network": "testnet"
     }
