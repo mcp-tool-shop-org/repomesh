@@ -1,0 +1,74 @@
+summary: ""
+boundaries:
+  - name: .github
+    globs:
+      - .github/**
+    role: config
+  - name: anchor
+    globs:
+      - anchor/**
+    role: code
+  - name: assets
+    globs:
+      - assets/**
+    role: config
+  - name: attestor
+    globs:
+      - attestor/**
+    role: code
+  - name: docs
+    globs:
+      - docs/**
+    role: docs
+  - name: ledger
+    globs:
+      - ledger/**
+    role: code
+  - name: pages
+    globs:
+      - pages/**
+    role: code
+  - name: policy
+    globs:
+      - policy/**
+    role: code
+  - name: profiles
+    globs:
+      - profiles/**
+    role: config
+  - name: registry
+    globs:
+      - registry/**
+    role: code
+  - name: repomesh-cli
+    globs:
+      - packages/repomesh-cli/**
+    role: code
+  - name: root
+    globs:
+      - "*"
+    role: docs
+  - name: schemas
+    globs:
+      - schemas/**
+    role: config
+  - name: scripts
+    globs:
+      - scripts/**
+    role: config
+  - name: site
+    globs:
+      - site/**
+    role: docs
+  - name: templates
+    globs:
+      - templates/**
+    role: config
+  - name: tools
+    globs:
+      - tools/**
+    role: code
+  - name: verifiers
+    globs:
+      - verifiers/**
+    role: code

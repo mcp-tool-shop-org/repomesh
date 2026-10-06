@@ -21,6 +21,11 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { merkleRootForAlgo } from "./merkle.mjs";
+import {
+  BUNDLED_TRUSTED_ACCOUNTS,
+  resolveTrustedAnchorAccounts,
+  noteRippledBuild,
+} from "../../../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
 
 // Manifest version — bump when anchor format changes (future: version negotiation)
 const MANIFEST_VERSION = 1;
@@ -29,9 +34,8 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const LEDGER_PATH = path.join(ROOT, "ledger", "events", "events.jsonl");
 const CONFIG_PATH = path.join(import.meta.dirname, "..", "config.json");
 
-// Bundled fallback allowlist — pinned so that even when config.json is fetched/overridden remotely
-// (it is user-overridable via --ws-url / XRPL_WS_URL) the account check cannot be silently disabled.
-const BUNDLED_TRUSTED_ACCOUNTS = ["rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W"];
+// Re-export so callers and the drift test see the same array the CLI ships.
+export { BUNDLED_TRUSTED_ACCOUNTS };
 
 function hexToString(hex) { return Buffer.from(hex, "hex").toString("utf8"); }
 
@@ -111,11 +115,9 @@ function partitionEvents(events, partitionId) {
   return resolvePartition(events, partitionId).events;
 }
 
-// Resolve the trusted anchor accounts: config value UNION the bundled fallback. The fallback can
-// never be dropped, so a remotely-supplied config cannot turn the ANC-001 check off.
+// Shipped list is the ceiling. Config may drop an account. Config may not add one.
 function resolveTrustedAccounts(config) {
-  const fromConfig = Array.isArray(config?.trustedAnchorAccounts) ? config.trustedAnchorAccounts : [];
-  return [...new Set([...BUNDLED_TRUSTED_ACCOUNTS, ...fromConfig])];
+  return [...resolveTrustedAnchorAccounts(config)];
 }
 
 // Pure, testable core (D4 / ANC-001 / ANC-002 / REG-001). No network, no fs.
@@ -184,6 +186,7 @@ async function main() {
   const client = new xrpl.Client(WS_URL);
   try {
     await client.connect();
+    noteRippledBuild(client);
   } catch (connErr) {
     // ANC-B01: the rippled endpoint is unreachable (DNS/timeout/refused). Give recovery guidance,
     // not a raw stack trace — this is exactly when a trust tool must be legible.

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 // `node pages/build-pages.mjs` also emits pages/out/status.json (then copied to site/public by
 // pages-ci). buildStatus is the pure core; writeStatus reads the on-disk sources and writes the file.
 import { writeStatus } from "./build-status.mjs";
+import { explorerTxUri } from "../anchor/xrpl/scripts/explorer.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REGISTRY_DIR = path.join(ROOT, "registry");
@@ -25,10 +26,6 @@ const NPX_PKG = "npx @mcptoolshop/repomesh";
 
 // Public site origin for absolute links (badge → landing). The badges in README link here.
 const SITE_ORIGIN = "https://mcp-tool-shop-org.github.io/repomesh";
-
-// XRPL explorer base (testnet — matches anchor network in the ledger). A txHash deep-links
-// to the on-chain transaction so a reader can independently confirm the anchor exists.
-const XRPL_EXPLORER = "https://testnet.xrpl.org/transactions";
 
 // SB-PAGES-01: a value is the WRONG SHAPE when it parses as valid JSON but its top-level
 // type doesn't match what the generator expects (e.g. a truncated/half-written artifact
@@ -369,7 +366,7 @@ export function buildProofChain(entry, anchorRec) {
     status: tx ? "pass" : anchorRec ? "pending" : "missing",
     // Build the explorer URL ONLY for a real txHash. encodeURIComponent guards the path
     // segment; the caller still esc()'s the rendered href text.
-    txLink: tx ? `${XRPL_EXPLORER}/${encodeURIComponent(tx)}` : null,
+    txLink: tx ? explorerTxUri(anchorRec?.network || "testnet", tx) : null,
     txHash: tx,
     root: anchorRec?.root || null,
     partitionId: anchorRec?.partitionId || null,
@@ -665,7 +662,7 @@ for (const p of anchors.partitions) {
   <td class="hash">${shortHash(p.root)}</td>
   <td class="hash">${shortHash(p.manifestHash)}</td>
   <td class="hash">${shortHash(p.prev)}</td>
-  <td>${anchorTxBadge(p.txHash)}${p.txHash ? `<br><span class="hash">${anchorTxText(p.txHash, 12)}</span>` : ""}</td>
+  <td>${anchorTxBadge(p.txHash)}${p.txHash ? `<br><a href="${esc(explorerTxUri(p.network || "testnet", p.txHash))}" rel="noopener noreferrer"><span class="hash">${anchorTxText(p.txHash, 12)}</span></a>` : ""}</td>
 </tr>`;
 }
 anchorsBody += `</table>`;

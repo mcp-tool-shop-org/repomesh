@@ -119,6 +119,8 @@ describe("FC8 — composite verify Action", () => {
     assert.ok(doc.inputs && doc.inputs["cli-version"], "must declare a cli-version input");
     assert.match(String(doc.inputs["cli-version"].default), /^\d+\.\d+\.\d+$/,
       "cli-version default must be a concrete pinned X.Y.Z");
+    assert.equal(String(doc.inputs["cli-version"].default), "2.3.1",
+      "cli-version default must be the published pin (2.3.1)");
     assert.doesNotMatch(src, /node\s+tools\/repomesh\.mjs/, "must NOT re-implement via node tools/");
   });
 
@@ -131,6 +133,28 @@ describe("FC8 — composite verify Action", () => {
     assert.match(src, /--anchored/, "must conditionally pass --anchored");
     // FC1: the action must map the tri-state exit code (0 PASS / 1 FAIL / 3 UNVERIFIED / 2 error).
     assert.match(src, /\$\?|exit[_-]?code|GITHUB_OUTPUT/i, "must capture/map the process exit code");
+  });
+
+  it("logs the first failure reason and hint when the gating run exits non-zero", () => {
+    const src = fs.readFileSync(ACTION_PATH, "utf8");
+    const idx = src.search(/if\s+\[\s*"\$exit_code"\s+-ne\s+0\s+\]/);
+    assert.ok(idx >= 0, "non-zero gating exit must have its own branch");
+    const branch = src.slice(idx);
+    assert.match(branch, /gate\.failures/,
+      "failure reason must be taken from gate.failures in the captured JSON");
+    assert.match(
+      branch,
+      /printf 'RepoMesh verdict: %s \(exit %s, ok=%s\) reason: %s hint: %s\\n'/,
+      "the failure log line must include reason and hint",
+    );
+    assert.match(branch, /\$reason/, "log line must interpolate the extracted reason");
+    assert.match(branch, /\$hint/, "log line must interpolate the extracted hint");
+    assert.match(
+      branch,
+      /printf '\\n#### Gate failure\\n\\n- Reason: %s\\n- Hint: %s\\n'[\s\S]*?>> "\$GITHUB_STEP_SUMMARY"/,
+      "the job summary must include the same reason and hint",
+    );
+    assert.match(src, /exit "\$exit_code"/, "must still re-raise the CLI exit code");
   });
 
   it("writes the markdown summary to $GITHUB_STEP_SUMMARY", () => {

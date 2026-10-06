@@ -1,13 +1,11 @@
 name: ledger-ci
 
 on:
+  # No paths filter on pull requests, deliberately: this workflow emits the
+  # required status check, and a PR that matched no path (a docs-only change)
+  # would never report it and could never merge. This workflow has no push
+  # trigger, so there is nothing else to keep paths-gated.
   pull_request:
-    paths:
-      - 'ledger/**'
-      - 'schemas/**'
-      - 'registry/**'         # registry-ci's auto-update PRs must get the required validate-ledger
-      - 'verifier.policy.json' # check too, else auto-merge deadlocks (the check never runs).
-      - '.github/workflows/ledger-ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -33,6 +31,9 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+
+      - name: Atlas check
+        run: npx --yes @dogfood-lab/atlas@1.24.0 check
 
       - name: Install ledger deps
         working-directory: ledger

@@ -16,28 +16,38 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CHECKER = path.join(HERE, "..", "scripts", "check-policy.mjs");
 
-function makeEvent(version, ts) {
+function makeEvent(version, ts, opts = {}) {
   return {
     type: "ReleasePublished",
-    repo: "test-org/test-repo",
+    repo: opts.repo || "test-org/test-repo",
     version,
     commit: "a".repeat(40),
     timestamp: ts,
-    artifacts: [{ name: "b.js", sha256: "b".repeat(64), uri: "https://example.com/b.js" }],
+    artifacts: [{ name: "b.js", sha256: opts.sha256 || "b".repeat(64), uri: "https://example.com/b.js" }],
     attestations: [],
     signature: { alg: "ed25519", keyId: "k", value: "x".repeat(40), canonicalHash: "f".repeat(64) },
   };
 }
 
-function runPolicy(events) {
+function runPolicy(events, opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-policy-"));
   const ledgerPath = path.join(dir, "events.jsonl");
   fs.writeFileSync(ledgerPath, events.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const res = spawnSync("node", [CHECKER], {
-    env: { ...process.env, REPOMESH_LEDGER_PATH: ledgerPath, REPOMESH_NODES_PATH: path.join(dir, "nodes") },
-    encoding: "utf8",
-  });
-  return { code: res.status ?? 1, out: res.stdout || "", err: res.stderr || "" };
+  const args = [CHECKER];
+  let outPath = null;
+  if (opts.output) {
+    outPath = path.join(dir, "out.jsonl");
+    args.push("--output", outPath);
+  }
+  if (opts.sign) args.push("--sign");
+  const env = { ...process.env, REPOMESH_LEDGER_PATH: ledgerPath, REPOMESH_NODES_PATH: path.join(dir, "nodes") };
+  if (opts.sign) {
+    delete env.REPOMESH_SIGNING_KEY;
+    delete env.REPOMESH_KEY_ID;
+  }
+  const res = spawnSync("node", args, { env, encoding: "utf8" });
+  const outFile = outPath && fs.existsSync(outPath) ? fs.readFileSync(outPath) : null;
+  return { code: res.status ?? 1, out: res.stdout || "", err: res.stderr || "", outFile };
 }
 
 describe("LDG-005 compareSemver NaN guard", () => {
@@ -67,5 +77,40 @@ describe("LDG-005 compareSemver NaN guard", () => {
       makeEvent("1.1.0", "2026-01-03T00:00:00.000Z"),
     ]);
     assert.equal(r.code, 0, "clean monotonic sequence must pass\n" + r.out + r.err);
+  });
+});
+
+describe("warnings-only output is an empty file, not a counted blank line", () => {
+  const sharedHash = "c".repeat(64);
+
+  it("writes zero bytes when the only finding is a hash-collision warning", () => {
+    const r = runPolicy([
+      makeEvent("1.0.0", "2026-01-01T00:00:00.000Z", { sha256: sharedHash }),
+      makeEvent("1.0.1", "2026-01-02T00:00:00.000Z", { sha256: sharedHash, repo: "test-org/other" }),
+    ], { output: true });
+    assert.equal(r.code, 0, "a warning must not exit 2\n" + r.out + r.err);
+    assert.match(r.out, /hash\.collision/i);
+    assert.ok(r.outFile, "output file must exist");
+    assert.equal(r.outFile.length, 0, "warnings-only output must be 0 bytes, not a lone newline");
+  });
+
+  it("does not require a signing key when nothing will be ledgered", () => {
+    const r = runPolicy([
+      makeEvent("1.0.0", "2026-01-01T00:00:00.000Z", { sha256: sharedHash }),
+      makeEvent("1.0.1", "2026-01-02T00:00:00.000Z", { sha256: sharedHash, repo: "test-org/other" }),
+    ], { output: true, sign: true });
+    assert.equal(r.code, 0, "warnings-only --sign must not fail closed on a missing key\n" + r.err);
+    assert.equal(r.outFile.length, 0);
+  });
+
+  it("still writes one PolicyViolation line for a real downgrade", () => {
+    const r = runPolicy([
+      makeEvent("2.0.0", "2026-01-01T00:00:00.000Z"),
+      makeEvent("1.0.0", "2026-01-02T00:00:00.000Z"),
+    ], { output: true });
+    assert.equal(r.code, 2);
+    const lines = r.outFile.toString("utf8").split("\n").filter((l) => l.trim().length > 0);
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).type, "PolicyViolation");
   });
 });

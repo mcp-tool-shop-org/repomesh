@@ -9,14 +9,12 @@ export const DEFAULT_ANCHORS_URL = `${BASE}/registry/anchors.json`;
 export const DEFAULT_TRUST_URL = `${BASE}/registry/trust.json`;
 export const DEFAULT_ANCHOR_CONFIG_URL = `${BASE}/anchor/xrpl/config.json`;
 
-// D4: bundled fallback for the trusted XRPL anchor account allowlist. config.json is
-// user-overridable (via --ws-url and remote fetch), so the Account allowlist MUST be
-// pinned in the shipped binary too — a remote config can never WIDEN this set, only
-// be cross-checked against it. An anchor signed by any account NOT in this set is
-// rejected even if a fetched config claims to trust it.
-export const BUNDLED_TRUSTED_ANCHOR_ACCOUNTS = Object.freeze([
-  "rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W",
-]);
+// D4: the shipped anchor allowlist is the ceiling. The array lives in
+// trusted-anchor-accounts.mjs. A fetched config may drop an account. It may not add one.
+export {
+  BUNDLED_TRUSTED_ANCHOR_ACCOUNTS,
+  resolveTrustedAnchorAccounts,
+} from "./trusted-anchor-accounts.mjs";
 
 // D12: bundled trusted-attestor allowlist (CRITICAL #1). The consumer CLI re-verifies
 // arbitrary/remote ledgers WITHOUT running the in-repo validate-ledger.mjs (which loads

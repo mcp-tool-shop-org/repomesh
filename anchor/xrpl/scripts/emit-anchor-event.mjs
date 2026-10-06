@@ -17,28 +17,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { buildAttestationEvent, signEvent, writeJsonlLine, loadSigningKeyFromEnvOrFile } from "../../../verifiers/lib/common.mjs";
+import { explorerTxUri } from "./explorer.mjs";
 
-// STGB-ANCHOR-001 — map a network token to its XRPL explorer host. The two production networks have
-// distinct explorers (testnet.xrpl.org vs livenet.xrpl.org); any other recognized network uses its
-// own subdomain. An UNKNOWN network derives a host from the (sanitized) token itself — it never
-// silently falls back to testnet, because a live-looking testnet link in a non-testnet artifact is
-// exactly the trap this fix removes. `livenet` is the canonical mainnet explorer subdomain.
-const EXPLORER_HOSTS = {
-  mainnet: "livenet.xrpl.org",
-  testnet: "testnet.xrpl.org",
-  devnet: "devnet.xrpl.org",
-};
-export function explorerHostFor(network) {
-  const key = String(network || "").toLowerCase();
-  if (EXPLORER_HOSTS[key]) return EXPLORER_HOSTS[key];
-  // Unknown network: derive a subdomain from the sanitized token so the link self-describes the
-  // network instead of masquerading as testnet. Empty/garbage tokens degrade to "unknown.xrpl.org".
-  const safe = key.replace(/[^a-z0-9-]/g, "") || "unknown";
-  return `${safe}.xrpl.org`;
-}
-export function explorerTxUri(network, txHash) {
-  return `https://${explorerHostFor(network)}/transactions/${txHash}`;
-}
+export { explorerHostFor, explorerTxUri } from "./explorer.mjs";
 
 // STGB-ANCHOR-004 — assert the on-chain tx (anchor-result.json) and the local recompute
 // (partition-root.json) describe the SAME partition before we bind a signed event to the txHash.

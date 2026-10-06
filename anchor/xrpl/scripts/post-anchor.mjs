@@ -16,10 +16,14 @@
 //      or override per-invocation with XRPL_WS_URL (the env var takes precedence over config).
 //   2. funded wallet — mainnet requires a real XRP-funded account (testnet uses the faucet). Set
 //      XRPL_SEED to that wallet's seed. Each AccountSet anchor costs the standard XRP tx fee (drops).
-//   3. trust allowlist — add the mainnet wallet's classic address to `trustedAnchorAccounts` in
-//        config.json AND to BUNDLED_TRUSTED_ACCOUNTS in verify-anchor.mjs (the bundled fallback can
-//        never be dropped, so the verifier still enforces ANC-001 even with a remote config). The
-//        testnet account may stay in the allowlist for verifying historical anchors.
+//   3. trust allowlist — the shipped list is a ceiling (packages/repomesh-cli/src/
+//        trusted-anchor-accounts.mjs). Add the mainnet classic address there AND to
+//        `trustedAnchorAccounts` / `postingAccount` in config.json. A fetched config cannot
+//        add an account the binary does not already list. The testnet account stays so
+//        historical anchors still verify. Set `seedAlgorithm` to the family of the new seed
+//        (`ed25519` for an sEd… seed, or for a classic s… seed that was derived as ed25519
+//        by xrpl.js 4). xrpl.js 5 infers secp256k1 from a classic s… seed when the algorithm
+//        is omitted, which would sign as a different account.
 //   4. what changes downstream — the on-chain memo is network-tagged (`n: <network>`), so memos
 //      written on mainnet self-describe as mainnet and verify against the mainnet rippled. Existing
 //      testnet manifests/memos keep their `n: "testnet"` and verify only while the testnet tx
@@ -29,6 +33,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import xrpl from "xrpl";
+import {
+  resolveTrustedAnchorAccounts,
+  noteRippledBuild,
+} from "../../../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
 
 function stringToHex(s) { return Buffer.from(s, "utf8").toString("hex").toUpperCase(); }
 
@@ -51,6 +59,36 @@ export function validateSeedShape(seed) {
   // base58 (Bitcoin/Ripple alphabet) excludes 0, O, I, l.
   if (/[0OIl]/.test(seed) || !/^[1-9A-HJ-NP-Za-km-z]+$/.test(seed)) {
     return { ok: false, reason: "XRPL_SEED contains characters outside the base58 alphabet (no 0, O, I, l) — it is not a valid seed." };
+  }
+  return { ok: true };
+}
+
+// xrpl.js 5 infers the curve from the seed prefix when algorithm is omitted. Name it.
+export function resolveSeedAlgorithm(xrplNs, name) {
+  const key = String(name ?? "ed25519").toLowerCase();
+  const table = xrplNs?.ECDSA;
+  if (key === "ed25519" && table?.ed25519) return { ok: true, algorithm: table.ed25519 };
+  if (key === "secp256k1" && table?.secp256k1) return { ok: true, algorithm: table.secp256k1 };
+  return {
+    ok: false,
+    reason: `config.seedAlgorithm must be "ed25519" or "secp256k1" (got ${JSON.stringify(name)})`,
+  };
+}
+
+// The seed must derive config.postingAccount, and that account must be on the shipped ceiling.
+export function assertPostingAccount(address, config, trusted) {
+  const posting = config?.postingAccount;
+  if (typeof posting !== "string" || posting.length === 0) {
+    return { ok: false, reason: "config.postingAccount is unset — set it to the classic address of the funded anchor wallet" };
+  }
+  if (address !== posting) {
+    return {
+      ok: false,
+      reason: `XRPL_SEED derived ${address}, but config.postingAccount is ${posting}. Refusing to submit.`,
+    };
+  }
+  if (!trusted?.has(address)) {
+    return { ok: false, reason: `posting account ${address} is not in the shipped anchor allowlist` };
   }
   return { ok: true };
 }
@@ -112,6 +150,17 @@ async function main() {
   // seed otherwise surfaces as a raw Wallet.fromSeed crypto stack AFTER a needless connect.
   const seedCheck = validateSeedShape(SEED);
   if (!seedCheck.ok) { console.error(`\n  ${seedCheck.reason}\n  Set XRPL_SEED to the funded anchor wallet's seed (or add to anchor/xrpl/config.json). Generate with: xrpl wallet create\n`); process.exit(1); }
+  const algo = resolveSeedAlgorithm(xrpl, config.seedAlgorithm);
+  if (!algo.ok) { console.error(`\n  ${algo.reason}\n`); process.exit(1); }
+  let wallet;
+  try {
+    wallet = xrpl.Wallet.fromSeed(SEED, { algorithm: algo.algorithm });
+  } catch (seedErr) {
+    console.error(`\n  Invalid XRPL_SEED: ${seedErr.message}\n  Check the XRPL_SEED value — it must be a valid funded-wallet seed (generate with: xrpl wallet create).\n`);
+    process.exit(1);
+  }
+  const posting = assertPostingAccount(wallet.address, config, resolveTrustedAnchorAccounts(config));
+  if (!posting.ok) { console.error(`\n  ${posting.reason}\n`); process.exit(1); }
 
   const rootPath = path.join(import.meta.dirname, "..", "partition-root.json");
   if (!fs.existsSync(rootPath)) { console.error("Run compute-root.mjs first"); process.exit(1); }
@@ -122,6 +171,7 @@ async function main() {
   const client = new xrpl.Client(WS_URL);
   try {
     await client.connect();
+    noteRippledBuild(client);
   } catch (connErr) {
     // STGB-ANCHOR-002 (parity with verify-anchor's ANC-B01 read-path): an unreachable rippled
     // endpoint (DNS/timeout/refused) must give recovery guidance, not a raw stack — the write-path
@@ -135,16 +185,6 @@ async function main() {
     process.exit(1);
   }
   try {
-    let wallet;
-    try {
-      wallet = xrpl.Wallet.fromSeed(SEED);
-    } catch (seedErr) {
-      // STGB-ANCHOR-002 — the shape pre-check passed but xrpl still rejected the seed (e.g. a bad
-      // base58 checksum). Translate the crypto stack into an actionable message.
-      console.error(`\n  Invalid XRPL_SEED: ${seedErr.message}\n  Check the XRPL_SEED value — it must be a valid funded-wallet seed (generate with: xrpl wallet create).\n`);
-      await client.disconnect();
-      process.exit(1);
-    }
     const tx = {
       TransactionType: "AccountSet", Account: wallet.address,
       Memos: [buildAnchorMemo({

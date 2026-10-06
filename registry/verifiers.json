@@ -109,6 +109,34 @@
         "completed": [],
         "expected": [],
         "missing": []
+      },
+      "2.3.1": {
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
+        "expected": [],
+        "missing": []
+      },
+      "0.0.0-since-2026-06-22T01-13-38.818Z": {
+        "completed": [],
+        "expected": [],
+        "missing": []
+      },
+      "2.3.2": {
+        "completed": [
+          "license.audit",
+          "security.scan",
+          "repro.build"
+        ],
+        "expected": [],
+        "missing": []
+      },
+      "0.0.0-since-2026-09-24T03-56-02.711Z": {
+        "completed": [],
+        "expected": [],
+        "missing": []
       }
     }
   }

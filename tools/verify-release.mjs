@@ -23,6 +23,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { merkleRootForAlgo } from "../anchor/xrpl/scripts/merkle.mjs";
 import { verifyAnchorTx } from "../anchor/xrpl/scripts/verify-anchor.mjs";
+import { resolveTrustedAnchorAccounts } from "../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
 // Key-lifecycle trust predicate + trusted-time resolver (the shared stable secret, contract §5).
 // tools/ runs OFFLINE over the local ledger => the SYNC resolver only (no XRPL close-time rung).
 // Imported from the repo-root verifiers/lib mirror (byte-identical to the CLI copy).
@@ -907,9 +908,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     if (meta.txHash) {
       let config = {};
       try { config = JSON.parse(fs.readFileSync(ANCHOR_CONFIG_PATH, "utf8")); } catch { /* use bundled fallback in verifyAnchorTx via empty list */ }
-      const trustedAnchorAccounts = Array.isArray(config.trustedAnchorAccounts)
-        ? config.trustedAnchorAccounts
-        : ["rJmh6kBzcaAPdiQNMCxS3i548fn95ByN8W"];
+      const trustedAnchorAccounts = [...resolveTrustedAnchorAccounts(config)];
       const wsUrl = process.env.XRPL_WS_URL || config.rippledUrl;
 
       let onchain = null;

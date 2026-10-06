@@ -1,0 +1,43 @@
+name: xrpl-watch
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install XRPL client
+        run: cd anchor/xrpl && npm ci
+      - name: Compare rippled and amendments to the baseline
+        id: watch
+        run: |
+          set -euo pipefail
+          node anchor/xrpl/scripts/watch.mjs > /tmp/xrpl-watch.json
+          cat /tmp/xrpl-watch.json >> "$GITHUB_STEP_SUMMARY"
+          CHANGED=$(node -e 'const j=require("node:fs").readFileSync("/tmp/xrpl-watch.json","utf8"); process.stdout.write(JSON.parse(j).changed ? "true" : "false")')
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+      - name: Open an issue when the watched surface changes
+        if: steps.watch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="xrpl-watch: protocol surface changed"
+          BODY=$(cat /tmp/xrpl-watch.json)
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$(printf '%s\n\n```json\n%s\n```' "Still different from anchor/xrpl/watch-baseline.json." "$BODY")"
+          else
+            gh issue create --title "$TITLE" --body "$(printf '%s\n\n```json\n%s\n```' "anchor/xrpl/watch-baseline.json does not match the live rippled release or the Batch/Sponsor enabled flags. Update the baseline only after a human accepts the change. Do not add those transaction types from this issue." "$BODY")"
+          fi

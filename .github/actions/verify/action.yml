@@ -40,7 +40,7 @@ inputs:
       Pinned @mcptoolshop/repomesh version this action shells. Override only to test a
       different release; the default is pinned for byte-for-byte replayability (PIN_PER_STEP).
     required: false
-    default: "1.2.0"
+    default: "2.3.1"
   sarif:
     description: "When 'true', also write a SARIF report and upload it to the GitHub Security tab."
     required: false
@@ -110,6 +110,8 @@ runs:
         fi
 
         # 3) The gating run: JSON for machine-readable status, exit code drives the gate (FC1).
+        # stderr is discarded; on a non-zero exit the first failure's reason and hint are
+        # read back from this JSON (gate.failures[0], else error/hint) — no extra npx.
         json="$(npx --yes "@mcptoolshop/repomesh@${RM_CLI_VERSION}" verify-release \
           --repo "${RM_REPO}" \
           --version "${RM_VERSION}" \
@@ -139,7 +141,48 @@ runs:
           echo "exit_code=${exit_code}"
         } >> "$GITHUB_OUTPUT"
 
-        echo "RepoMesh verdict: ${status} (exit ${exit_code}, ok=${ok})"
+        # Non-zero gating exit: put the first failure reason and hint on the step log
+        # and in the job summary. Pass stays the short verdict line. Exit code is unchanged.
+        if [ "$exit_code" -ne 0 ]; then
+          read_failure='
+            let s = "";
+            process.stdin.on("data", d => s += d).on("end", () => {
+              let reason = "", hint = "";
+              try {
+                const start = s.indexOf("{");
+                const end = s.lastIndexOf("}");
+                const body = start >= 0 && end > start ? s.slice(start, end + 1) : s;
+                const o = JSON.parse(body);
+                const lists = [
+                  o && o.gate && o.gate.failures,
+                  o && o.failures,
+                  o && o.result && o.result.gate && o.result.gate.failures,
+                ];
+                let first = null;
+                for (const list of lists) {
+                  if (Array.isArray(list) && list.length && list[0] && typeof list[0] === "object") {
+                    first = list[0];
+                    break;
+                  }
+                }
+                const str = (v) => typeof v === "string" ? v : "";
+                reason = str(first && first.reason) || str(o && o.error) || str(o && o.reason) || str(o && o.result && o.result.error) || str(o && o.result && o.result.reason);
+                hint = str(first && first.hint) || str(o && o.hint) || str(o && o.result && o.result.hint);
+              } catch {}
+              const flat = (t) => String(t).replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+              process.stdout.write(flat(reason) + "\u001e" + flat(hint) + "\n");
+            });
+          '
+          detail="$(printf '%s' "$json" | node -e "$read_failure")"
+          reason="${detail%%$'\x1e'*}"
+          hint="${detail#*$'\x1e'}"
+          printf 'RepoMesh verdict: %s (exit %s, ok=%s) reason: %s hint: %s\n' \
+            "$status" "$exit_code" "$ok" "$reason" "$hint"
+          printf '\n#### Gate failure\n\n- Reason: %s\n- Hint: %s\n' \
+            "$reason" "$hint" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "RepoMesh verdict: ${status} (exit ${exit_code}, ok=${ok})"
+        fi
 
         # Re-raise the CLI exit code so the step (and the job) fail per the FC1 contract.
         # exit 2 (usage/internal error) and exit 1 (FAIL) and exit 3 (UNVERIFIED, strict) all fail.

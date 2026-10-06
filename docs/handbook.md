@@ -6,6 +6,8 @@
 
 RepoMesh is trust infrastructure for repo networks. Repos publish signed release facts. Verifiers publish signed attestations about those releases. Anchors post cryptographic checkpoints to a public ledger. A registry computes trust scores from all of it. No runtime dependency, no blockchain token, no ceremony — just verifiable facts about software.
 
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+
 ### 0.2 Who this is for
 
 **Repo owners** — you want your releases to be verifiable and trusted. Start at [Section 3: Onboarding a Repo](#3-onboarding-a-repo).
@@ -789,7 +791,8 @@ cat registry/snippets/your-org/your-repo.md
 | `ledger-ci` | PR to `ledger/**` or `schemas/**` | Validates ledger: schema, signatures, uniqueness, timestamps |
 | `registry-ci` | Push to `main` touching `ledger/**` or `registry/scripts/**` | Rebuilds registry indexes (nodes, trust, deps, verifiers, anchors, badges, snippets) |
 | `attestor-ci` | Every 6 hours + manual | Runs attestor + all verifiers, opens PR with new events |
-| `anchor-xrpl` | Daily at midnight UTC + manual | Computes Merkle root, posts to XRPL, commits manifest |
+| `anchor-xrpl` | Daily at midnight UTC + manual | Computes Merkle root, posts to XRPL from the container image, commits manifest |
+| `xrpl-watch` | Weekly + manual | Reads the latest rippled release, the connected server build, and whether Batch or Sponsor is enabled. Opens an issue when that differs from `anchor/xrpl/watch-baseline.json` |
 | `pages-ci` | Push to `main` touching `registry/**`, `pages/**`, `site/**`, `docs/**` | Builds landing page + registry explorer, deploys to GitHub Pages |
 
 All workflows use `ubuntu-latest`, have concurrency guards, and include `workflow_dispatch` for manual triggers.
@@ -853,7 +856,21 @@ Symptom: `anchor-xrpl` workflow fails.
 2. Check wallet balance: does the anchor wallet have XRP?
 3. If XRPL is down: do nothing. The next daily run will pick up where it left off. Anchoring is eventual, not critical-path.
 
-### 8.4 Performance and scaling
+### 8.4 Container image
+
+`ghcr.io/mcp-tool-shop-org/repomesh` is the verify CLI and the anchor poster. Node 22, non-root. `XRPL_SEED` and `REPOMESH_SIGNING_KEY` are runtime environment variables. They are not build arguments.
+
+```bash
+docker run --rm ghcr.io/mcp-tool-shop-org/repomesh verify-anchor --tx <TX_HASH>
+```
+
+The image is pushed on the same release that publishes the npm package, tagged with that version and with `sha-<commit>`. `anchor-xrpl` builds the image from the checkout and uses it for the post, so the daily post runs the same Dockerfile.
+
+`anchor/xrpl/config.json` is still testnet. `seedAlgorithm` is `ed25519`, which is what xrpl.js 4 derived for the current seed. xrpl.js 5 would otherwise treat a classic `s…` seed as secp256k1 and sign as a different account. `postingAccount` must equal the address that seed derives, and that address must be in the shipped allowlist (`packages/repomesh-cli/src/trusted-anchor-accounts.mjs`). A fetched config cannot add an account.
+
+Moving the post to mainnet is an operator step after that address is in a published CLI: fund the account above the base reserve `server_info` reports, replace the `XRPL_SEED` Actions secret, then set `network` and `rippledUrl` in config. One organization still operates the log, the attestors, the policy check, and the anchor.
+
+### 8.5 Performance and scaling
 
 **Batching PRs:** The attestor-ci rate limiter prevents PR pile-up. If you need faster throughput, increase the cron frequency (currently every 6 hours).
 

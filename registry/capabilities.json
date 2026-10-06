@@ -1,4 +1,19 @@
 {
+  "governance.policy.v1": [
+    "mcp-tool-shop-org/cognate"
+  ],
+  "governance.identity.v1": [
+    "mcp-tool-shop-org/cognate"
+  ],
+  "governance.model-registry.v1": [
+    "mcp-tool-shop-org/cognate"
+  ],
+  "governance.prompt-store.v1": [
+    "mcp-tool-shop-org/cognate"
+  ],
+  "governance.repomesh-bridge.v1": [
+    "mcp-tool-shop-org/cognate"
+  ],
   "network.registry.v1": [
     "mcp-tool-shop-org/repomesh"
   ],
