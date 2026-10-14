@@ -1,14 +1,14 @@
 # repomesh: how it works
 
-Mapped at 2026-10-14 from commit 8571651 by Atlas 1.24.0.
+Mapped at 2026-10-14 from commit 78ded40 by Atlas 1.24.0.
 
 ## What this is
 
 18 parts, mostly JavaScript (175 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
 
-## What changed since 2026-10-01 (dbdaa6d)
+## What changed since 2026-10-14 (8571651)
 
-Nothing structural changed since 2026-10-01; 1 file added and 23 changed content.
+Nothing structural changed since 2026-10-14; no file changed.
 
 ## What comes in
 
