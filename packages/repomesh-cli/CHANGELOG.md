@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.3.3] - 2026-10-14
+
+### Changed
+
+- Test fixtures build fake credentials at runtime so secret scanners do not flag them.
+
 ## [2.3.2] - 2026-10-01
 
 ### Changed

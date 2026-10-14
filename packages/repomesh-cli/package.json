@@ -1,6 +1,6 @@
 {
   "name": "@mcptoolshop/repomesh",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "description": "Release ledger and XRPL-anchored trust clock for a repo network: signed events, node manifests, and verification. Separate from Attestia's event store.",
   "type": "module",
   "bin": {

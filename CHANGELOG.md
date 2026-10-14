@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [2.3.3] - 2026-10-14
+
+### Changed
+
+- Test fixtures build fake credentials at runtime so secret scanners do not flag them.
+
 ## [2.3.2] - 2026-10-01
 
 ### Changed

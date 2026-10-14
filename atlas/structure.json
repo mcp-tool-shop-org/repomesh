@@ -76,7 +76,7 @@
           "path": "anchor/xrpl/manifests/2026-02-28.json"
         },
         {
-          "hash": "51c5e8935a9bf6247646506e98e753f06152720f6440b16929595e5f41b9007b",
+          "hash": "d66059e7d71521acee1a09f09ca4bb3d95f2198cb454d6b6267631f238d234d8",
           "path": "anchor/xrpl/manifests/all.json"
         },
         {
@@ -90,6 +90,10 @@
         {
           "hash": "9e4c3fde2ab10599a0206e39d57770a35a2f133395442475b01b9dce8964d0f4",
           "path": "anchor/xrpl/manifests/since-2026-06-22T01-13-38.818Z.json"
+        },
+        {
+          "hash": "6c65186a309f68d3c1a8662ecb70fd117c17f262f34ddde5870480a2a61f0a58",
+          "path": "anchor/xrpl/manifests/since-2026-09-24T03-56-02.711Z.json"
         },
         {
           "hash": "a29aef08203051802082962f1122e23ce5e5f2ec52a8cdcfa492b153419398d3",
@@ -982,7 +986,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "e7bb6392ff27ba450318c53dc68f05244ce4d8d2371dc55142e8f9df479f2801",
+          "hash": "2c3bc254a5830fd724a72085c75753a580931ffcaf6ff0c8fdf6900d7ca79b8c",
           "path": "ledger/events/events.jsonl"
         },
         {
@@ -1680,7 +1684,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "0cf1ff486b82298f730588ba96c4656ec5d52d2e829f3ecfc8bdc29c3e819b28",
+          "hash": "28823b0f31b23bf6403759c36514db2a02da7c71d6603e448771c363f3dd9629",
           "path": "registry/anchors.json"
         },
         {
@@ -2213,7 +2217,7 @@
           "path": "registry/scripts/verify-trust.mjs"
         },
         {
-          "hash": "3a0636606c2e5e8daa2612ef282afff85cfe5113197e3887173b3d58aff45257",
+          "hash": "7f78707735baa05d5e00fc9174f26cbaf53d67e1873f5e150257dc4349f7a536",
           "path": "registry/snippets/mcp-tool-shop-org/repomesh.md"
         },
         {
@@ -2337,11 +2341,11 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "3dad4c9145c04faf16f7c4bc4852b52599f90972936757176ad0de37f7f7d848",
+          "hash": "0c12ff489731c054e6a75c5ffa291b4bc29ee18a2329ca73a4dac18aa1958db5",
           "path": "registry/trust.json"
         },
         {
-          "hash": "073c2ca2584c8849c127c35df312bda2844a6cf1f6310a53e0ef17b679e8b9ec",
+          "hash": "ffcb9ece90fbd6c3dc69e42ee59272d59c434ebe34116d0360d694e8d8de561b",
           "path": "registry/verifiers.json"
         }
       ],
@@ -2381,7 +2385,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "881cd49b9f16292a923be7cd53e199429ca06527381b1a8f8205034ee3636efc",
+          "hash": "3ed10fcc47ed926f2903c12a24922529d00ce5e304f29f120c04511d3af2b580",
           "path": "packages/repomesh-cli/CHANGELOG.md"
         },
         {
@@ -2393,7 +2397,7 @@
           "path": "packages/repomesh-cli/README.md"
         },
         {
-          "hash": "7e7438aa87fa68de7a140b3688e0c9f13de310e6c4ecda7ff88ab4713472396f",
+          "hash": "8d39b87bcdcdb7bc2aeebb3d0f5c456987dfc6f5a11481e5f2e717ef55ee1454",
           "path": "packages/repomesh-cli/package.json"
         },
         {
@@ -3336,7 +3340,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "06b2e305f659e7865da1f61468e45fa1adddca3847d4cc115950881658502471",
+          "hash": "4123b6c01ce38efd0c4dbf897847d6107be41fc48497b8819d7cee8d69aebbd6",
           "names": [
             "packages/repomesh-cli/src/init.mjs",
             "packages/repomesh-cli/src/key/rotate-revoke.mjs"
@@ -3576,11 +3580,11 @@
           "path": ".gitignore"
         },
         {
-          "hash": "4e89eb779504ce5e363cf1150544629e85d9b6585b194f0fafcddf29a4f36ee2",
+          "hash": "74b4843d65ec82655e3b20286d599b738c18ad547ef61305e3ecc3404ee9b6c8",
           "path": "CHANGELOG.md"
         },
         {
-          "hash": "5a77bed45aad94abb02e616f55320bb794fdb48ebca3ae24c87bd43eb6fda09f",
+          "hash": "eda9d6f01abeadfd3715e1cdea4718bb40c83625bfce2c9b42b7341ed60a1129",
           "path": "Dockerfile"
         },
         {
@@ -3588,35 +3592,35 @@
           "path": "LICENSE"
         },
         {
-          "hash": "ff608ed736714d501f21b81a03d01709a8c62a4c880ad826520c63d3abb49fe6",
+          "hash": "134b475263a2b2303fb3c5cd548732ec06cd220918421627d10d2c4e4ebc0d2e",
           "path": "README.es.md"
         },
         {
-          "hash": "b3e902199633ae80cf2a26907ae874554bc17f7b2c516aae842bc9c905bb06a5",
+          "hash": "03838ea1a7477b5b7510348d67b57f8678c19c7688f3698a96ca37572703243c",
           "path": "README.fr.md"
         },
         {
-          "hash": "d81d8dee8eb7d720659e454689599a192d1fec3ddcc1f9bf13561f5be2988851",
+          "hash": "c361bc44af04e50c7f2e790b9fabe821f34d16d937b64c4061205b4a9a17cfd1",
           "path": "README.hi.md"
         },
         {
-          "hash": "6e4fd00942162005044e17a5864e6e9c673b81dd0284e7730548f89d2ed92e93",
+          "hash": "e4d8651b98ec042b5c6b945073c5e65d27272f264d6554ce15f6ce145d80fa54",
           "path": "README.it.md"
         },
         {
-          "hash": "24e44db340d7ed5e22c7f141b8bdaddd247f99d1f3b3be3d39d2427e31fcdae5",
+          "hash": "f1d42817ead63960c7566a131f9b97c0022c35504708998d51702d9629fe23e8",
           "path": "README.ja.md"
         },
         {
-          "hash": "683e1e9cb671a802aa958202fa67eddab935ad0291ce8b7e5dd25e203cbaee22",
+          "hash": "b75bad2fb5c1762eabe1e166facbb8389516cb204581fbf28e607b3a465e31f2",
           "path": "README.md"
         },
         {
-          "hash": "212eb859fab45ff8eedaefe0f25130beb41f8b37ddb8a75d43412167a80929ba",
+          "hash": "b62da774689e716b8d15d11b32be4b1c18647785d4adefd34bbaa7e2d4d942c4",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "eb2e52a11c9665459f998d3cb1c0bda0b657edb999609b3211268d413b6f4e43",
+          "hash": "055267edbf39d0930aa6fd2ecf5c0e8aac70bc405221702b4b0b3db7eef281a9",
           "path": "README.zh.md"
         },
         {
@@ -3636,7 +3640,7 @@
           "path": "node.json"
         },
         {
-          "hash": "e9400026ed1875f4d867f68565d6fc4f51e88ddb6312a9cfb8b665dad443fe68",
+          "hash": "5496ac7dbdf0a3fe7be5a8c9bd0057d1a74de4be246c49eda58aecfdd06db8fd",
           "path": "package-lock.json"
         },
         {
@@ -3733,7 +3737,7 @@
           "path": "site/astro.config.mjs"
         },
         {
-          "hash": "af5d4f54dca60686724d306eb58759fb25b6f5ba4d66559ab84a968112a184e5",
+          "hash": "0607a19c4f60b635244a906c7ad2424359b50e20c4a83bc140f202abce4a941e",
           "path": "site/package-lock.json"
         },
         {
@@ -3758,7 +3762,7 @@
           "path": "site/src/content/docs/handbook/getting-started.md"
         },
         {
-          "hash": "d7ed2ca4e0d8d112a9961371a0714e0706746f3925496ddfa2a03fc3fd6a94eb",
+          "hash": "c1ef28749055174263dbddc974a2a60dc50dd57b80eabf76c924738940f0d470",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -4176,7 +4180,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "33d141a7875df0061af35635b91f760c2c356cac7ec37be0028b2f4a67c47a7c",
+          "hash": "35be7f97cc7975d685170974b6397cb0ae4679d1f21e3856a1d36b0e514fc8be",
           "importOrder": [
             "tools/keygen.mjs",
             "anchor/xrpl/scripts/merkle.mjs",
@@ -10507,8 +10511,8 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "dbdaa6da65bad57acfa09ca7583bcbbd9edcf42f",
-    "tracked": 299
+    "commit": "78ded40ef51c517b2acf2f9d40abd02247cf193c",
+    "tracked": 300
   },
   "landings": [
     {
