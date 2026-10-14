@@ -10,19 +10,6 @@
     "site/",
     "templates/"
   ],
-  "authoredWritten": [
-    {
-      "byPeople": 23,
-      "commits": 33,
-      "place": "ledger/events/events.jsonl",
-      "writers": [
-        ".github/workflows/anchor-xrpl.yml",
-        ".github/workflows/attestor-ci.yml",
-        "attestor/scripts/emit-key-event.mjs",
-        "packages/repomesh-cli/src/key/rotate-revoke.mjs"
-      ]
-    }
-  ],
   "breaks": [
     {
       "doors": 6,
@@ -138,38 +125,31 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 0,
-      "changed": 1,
+      "added": 1,
+      "changed": 23,
       "moved": 0,
-      "parts": 1,
+      "parts": 7,
       "removed": 0
     },
     "items": [
       {
-        "kind": "door",
-        "sentence": "ledger-ci's pull request trigger no longer names `.github/workflows/**`, `atlas/**`, `ledger/**`, `package-lock.json`, `package.json`, `packages/*/package.json`, `registry/**`, `schemas/**`, `site/astro.config.mjs`, `site/package-lock.json`, `site/package.json` and `verifier.policy.json`.",
-        "subjects": [
-          ".github/workflows/ledger-ci.yml"
-        ]
-      },
-      {
         "kind": "counts",
-        "sentence": "1 file changed content, across 1 part.",
+        "sentence": "Nothing structural changed since 2026-10-01; 1 file added and 23 changed content.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "bcd11b280249b7d3f87b51dcda3c971002bbd801",
-      "generatedAt": "2026-10-01T00:13:06.921Z"
+      "commit": "dbdaa6da65bad57acfa09ca7583bcbbd9edcf42f",
+      "generatedAt": "2026-10-01T02:12:37.349Z"
     },
-    "unchanged": false
+    "unchanged": true
   },
   "changesTogether": [],
   "changesTogetherNote": [
     "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
   ],
   "changesTogetherWithTests": 0,
-  "commit": "dbdaa6da65bad57acfa09ca7583bcbbd9edcf42f",
+  "commit": "85716513f24e567f6a803323f25345b0e2a80246",
   "defaultBranch": "main",
   "derived": "18 parts, mostly JavaScript (175 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.",
   "doors": [
@@ -823,6 +803,15 @@
       ]
     },
     {
+      "place": "ledger/events/events.jsonl",
+      "writers": [
+        ".github/workflows/anchor-xrpl.yml",
+        ".github/workflows/attestor-ci.yml",
+        "attestor/scripts/emit-key-event.mjs",
+        "packages/repomesh-cli/src/key/rotate-revoke.mjs"
+      ]
+    },
+    {
       "place": "ledger/nodes/",
       "writers": [
         "attestor/scripts/emit-key-event.mjs",
@@ -879,7 +868,7 @@
       ]
     }
   ],
-  "generatedAt": "2026-10-01T02:12:37.349Z",
+  "generatedAt": "2026-10-14T22:47:04.949Z",
   "limits": [
     "107 imports could not be resolved: `attestor/tests/emit-key-event.test.mjs` imports a path built at run time, twice; `packages/repomesh-cli/tests/anchor-leaf-window.test.mjs` imports a path built at run time; `packages/repomesh-cli/tests/anchor-prev-chain.test.mjs` imports a path built at run time, twice; and 102 more.",
     "6 reads use paths built at run time and are not named here.",
