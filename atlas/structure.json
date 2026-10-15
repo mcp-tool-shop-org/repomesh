@@ -986,7 +986,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "2c3bc254a5830fd724a72085c75753a580931ffcaf6ff0c8fdf6900d7ca79b8c",
+          "hash": "fee86fae3c208f35015e67868aab831208bff83f050bf88c1cf492d6aeeea4fb",
           "path": "ledger/events/events.jsonl"
         },
         {
@@ -1026,7 +1026,7 @@
           "path": "ledger/nodes/mcp-tool-shop-org/shipcheck/repomesh.profile.json"
         },
         {
-          "hash": "ecd4e9a515ec274efb95cc1201e8a6d869b8116bbb33b9631fa2e0c515262654",
+          "hash": "9c755c7dd98bb89c88b4917b6ef6108e9e71ef5aac4c02d0e825d66d45352c4c",
           "path": "ledger/package-lock.json"
         },
         {
@@ -1684,7 +1684,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "28823b0f31b23bf6403759c36514db2a02da7c71d6603e448771c363f3dd9629",
+          "hash": "890675c402b5987ee04e3c20ec253f0dbdaad643ca386e57988e62ace12d2e2b",
           "path": "registry/anchors.json"
         },
         {
@@ -1696,7 +1696,7 @@
           "path": "registry/badges/mcp-tool-shop-org/repomesh/assurance.svg"
         },
         {
-          "hash": "0b2f2022026620650080cb59cdd77695e2df112d0916501d9b7c0bdd9720f71a",
+          "hash": "7d1c5b9c113c88fe64a3c883bc7a6a943b4fd83f04b64db0767620fb1bbb9d65",
           "path": "registry/badges/mcp-tool-shop-org/repomesh/integrity.svg"
         },
         {
@@ -2217,7 +2217,7 @@
           "path": "registry/scripts/verify-trust.mjs"
         },
         {
-          "hash": "7f78707735baa05d5e00fc9174f26cbaf53d67e1873f5e150257dc4349f7a536",
+          "hash": "06d2992bcb6df464e38d84367570c3bbd6a96d58874d364970dcd2b62e1b0caf",
           "path": "registry/snippets/mcp-tool-shop-org/repomesh.md"
         },
         {
@@ -2341,11 +2341,11 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "0c12ff489731c054e6a75c5ffa291b4bc29ee18a2329ca73a4dac18aa1958db5",
+          "hash": "a9820506668d552879b3952169ecfd71134964bf9ceba84accf3f4b72ee24640",
           "path": "registry/trust.json"
         },
         {
-          "hash": "ffcb9ece90fbd6c3dc69e42ee59272d59c434ebe34116d0360d694e8d8de561b",
+          "hash": "13288c1035b93188e9e237fd0cf9c322fb16da036956cf82d76f470b21869ba9",
           "path": "registry/verifiers.json"
         }
       ],
@@ -3737,7 +3737,7 @@
           "path": "site/astro.config.mjs"
         },
         {
-          "hash": "0607a19c4f60b635244a906c7ad2424359b50e20c4a83bc140f202abce4a941e",
+          "hash": "1be0148ea2a3b47ec21f091b74d4135dbd06aa34d69b5643bb4fe65d8dad4b64",
           "path": "site/package-lock.json"
         },
         {
@@ -10511,7 +10511,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "78ded40ef51c517b2acf2f9d40abd02247cf193c",
+    "commit": "c8967c9cbce97fd434831f2958e9c68c0c5d730b",
     "tracked": 300
   },
   "landings": [
