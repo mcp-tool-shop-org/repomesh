@@ -577,12 +577,12 @@
       },
       {
         "commits": 9,
-        "lines": 3801,
+        "lines": 3799,
         "path": "atlas/page.json"
       },
       {
         "commits": 9,
-        "lines": 4897,
+        "lines": 4943,
         "path": "atlas/statistics.json"
       },
       {
@@ -681,8 +681,8 @@
         "path": "docs/xrpl-web3-6mo.study-swarm.dispatch.md"
       },
       {
-        "commits": 25,
-        "lines": 85,
+        "commits": 27,
+        "lines": 87,
         "path": "ledger/events/events.jsonl"
       },
       {
@@ -1101,8 +1101,8 @@
         "path": "policy/tests/violation-event-schema.test.mjs"
       },
       {
-        "commits": 21,
-        "lines": 482,
+        "commits": 23,
+        "lines": 502,
         "path": "registry/anchors.json"
       },
       {
@@ -1116,8 +1116,8 @@
         "path": "registry/badges/mcp-tool-shop-org/repomesh/assurance.svg"
       },
       {
-        "commits": 14,
-        "lines": 177,
+        "commits": 16,
+        "lines": 205,
         "path": "registry/badges/mcp-tool-shop-org/repomesh/integrity.svg"
       },
       {
@@ -1166,8 +1166,8 @@
         "path": "registry/scripts/verify-trust.mjs"
       },
       {
-        "commits": 10,
-        "lines": 65,
+        "commits": 12,
+        "lines": 73,
         "path": "registry/snippets/mcp-tool-shop-org/repomesh.md"
       },
       {
@@ -1231,13 +1231,13 @@
         "path": "registry/tests/verify-trust-disputes.test.mjs"
       },
       {
-        "commits": 17,
-        "lines": 3250,
+        "commits": 19,
+        "lines": 3372,
         "path": "registry/trust.json"
       },
       {
-        "commits": 25,
-        "lines": 188,
+        "commits": 27,
+        "lines": 198,
         "path": "registry/verifiers.json"
       },
       {
@@ -1561,9 +1561,9 @@
     "level": "low",
     "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-10-14T22:49:27.815Z",
+  "generatedAt": "2026-10-15T02:30:35.200Z",
   "generatedFrom": {
-    "commit": "78ded40ef51c517b2acf2f9d40abd02247cf193c"
+    "commit": "c8967c9cbce97fd434831f2958e9c68c0c5d730b"
   },
   "pairs": [
     {
@@ -1947,9 +1947,9 @@
     {
       "a": "anchor/xrpl/manifests/all.json",
       "b": "registry/anchors.json",
-      "either": 10,
+      "either": 11,
       "shared": 6,
-      "strength": 0.6
+      "strength": 0.545455
     },
     {
       "a": "atlas/README.md",
@@ -2003,30 +2003,30 @@
     {
       "a": "registry/anchors.json",
       "b": "registry/snippets/mcp-tool-shop-org/repomesh.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "registry/badges/mcp-tool-shop-org/repomesh/integrity.svg",
+      "b": "registry/trust.json",
+      "either": 10,
+      "shared": 7,
+      "strength": 0.7
+    },
+    {
+      "a": "registry/snippets/mcp-tool-shop-org/repomesh.md",
       "b": "registry/trust.json",
       "either": 9,
       "shared": 6,
       "strength": 0.666667
     },
     {
-      "a": "registry/snippets/mcp-tool-shop-org/repomesh.md",
-      "b": "registry/trust.json",
-      "either": 8,
-      "shared": 5,
-      "strength": 0.625
-    },
-    {
       "a": "registry/trust.json",
       "b": "registry/verifiers.json",
-      "either": 13,
-      "shared": 8,
-      "strength": 0.615385
+      "either": 14,
+      "shared": 9,
+      "strength": 0.642857
     }
   ],
   "parameters": {
@@ -2039,16 +2039,16 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-10-14T18:47:11-04:00",
+    "headDate": "2026-10-14T16:04:32-07:00",
     "inScopeFiles": 305,
     "pinnedStart": null,
     "priorFloor": "fallen",
-    "qualifyingCommits": 60,
+    "qualifyingCommits": 62,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-17T22:47:11.000Z",
+    "since": "2026-04-17T23:04:32.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",
