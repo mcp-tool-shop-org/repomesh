@@ -1,10 +1,29 @@
 name: ledger-ci
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'anchor/**'
+      - 'attestor/**'
+      - 'ledger/**'
+      - 'packages/**'
+      - 'pages/**'
+      - 'policy/**'
+      - 'profiles/**'
+      - 'registry/**'
+      - 'schemas/**'
+      - 'scripts/**'
+      - 'tools/**'
+      - 'verifiers/**'
+      - 'atlas/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'verifier.policy.json'
+      - '.github/workflows/ledger-ci.yml'
   # No paths filter on pull requests, deliberately: this workflow emits the
-  # required status check, and a PR that matched no path (a docs-only change)
-  # would never report it and could never merge. This workflow has no push
-  # trigger, so there is nothing else to keep paths-gated.
+  # required status checks (validate-ledger, test), and a PR that matched no
+  # path (a docs-only change) would never report them and could never merge.
   pull_request:
   workflow_dispatch:
 
@@ -98,3 +117,43 @@ jobs:
           echo "::error::Ledger validation failed. Check the validator output above for details."
           echo "::error::Common causes: schema violation, invalid signature, duplicate event, or timestamp issue."
           echo "::error::See docs/handbook.md CI Troubleshooting section for resolution steps."
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # STGB-CI-004: bound wall-clock
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix anchor/xrpl ci
+          npm --prefix ledger ci
+
+      - name: Build CLI
+        run: npm --prefix packages/repomesh-cli run build
+
+      - name: Run tests with coverage floor
+        run: |
+          node --test --experimental-test-coverage --test-coverage-exclude="**/*.test.mjs" --test-coverage-lines=57 \
+            anchor/xrpl/tests/*.test.mjs \
+            attestor/tests/*.test.mjs \
+            ledger/tests/*.test.mjs \
+            packages/repomesh-cli/tests/*.test.mjs \
+            pages/tests/*.test.mjs \
+            policy/tests/*.test.mjs \
+            registry/tests/*.test.mjs \
+            tools/tests/*.test.mjs \
+            verifiers/tests/*.test.mjs
+
+      - name: Audit production dependencies
+        run: |
+          npm audit --audit-level=high --omit=dev
+          npm audit --audit-level=high --omit=dev --prefix anchor/xrpl
+          npm audit --audit-level=high --omit=dev --prefix ledger
