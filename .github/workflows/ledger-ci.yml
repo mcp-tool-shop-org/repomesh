@@ -21,6 +21,7 @@ on:
       - 'package-lock.json'
       - 'verifier.policy.json'
       - '.github/workflows/ledger-ci.yml'
+      - '.github/workflows/registry-ci.yml'
   # No paths filter on pull requests, deliberately: this workflow emits the
   # required status checks (validate-ledger, test), and a PR that matched no
   # path (a docs-only change) would never report them and could never merge.
