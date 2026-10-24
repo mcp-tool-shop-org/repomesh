@@ -42,7 +42,7 @@
   "properties": {
     "type": {
       "type": "string",
-      "description": "Event envelope type. EMITTED today: ReleasePublished, AttestationPublished (also carries attestation.dispute events), PolicyViolation. RESERVED / PLANNED (declared in the schema but NOT yet emitted by any tool — no code produces them): BreakingChangeDetected, HealthCheckFailed, DependencyVulnFound, InterfaceUpdated. KeyRotation/KeyRevocation are the key-lifecycle events (big-swing #8): they carry a `key` object instead of version/commit/artifacts. The reserved values are kept so the schema is forward-stable, but the live ledger contains only the emitted types.",
+      "description": "Event envelope type. EMITTED today: ReleasePublished, AttestationPublished (also carries attestation.dispute and Cognate run attestations: run.preregistered, run.outcome, cognate.root.anchored), PolicyViolation. RESERVED / PLANNED (declared in the schema but NOT yet emitted by any tool — no code produces them): BreakingChangeDetected, HealthCheckFailed, DependencyVulnFound, InterfaceUpdated. KeyRotation/KeyRevocation are the key-lifecycle events (big-swing #8): they carry a `key` object instead of version/commit/artifacts. The reserved values are kept so the schema is forward-stable, but the live ledger contains only the emitted types.",
       "enum": [
         "ReleasePublished",
         "AttestationPublished",
@@ -99,10 +99,52 @@
       "additionalProperties": false,
       "required": ["type", "uri"],
       "properties": {
-        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute"] },
+        "type": { "type": "string", "enum": ["sbom", "provenance", "contract-report", "policy-report", "security.scan", "license.audit", "sbom.present", "provenance.present", "signature.chain", "repro.build", "policy.check", "ledger.anchor", "attestation.dispute", "run.preregistered", "run.outcome", "cognate.root.anchored"] },
         "uri": { "type": "string", "minLength": 1, "maxLength": 600 },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional digest of the referenced artifact (e.g. SBOM bytes). When present, verifiers MUST bind trust to this digest (D6). Old events may omit it (grandfathered)." }
-      }
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional digest of the referenced artifact (e.g. SBOM bytes). When present, verifiers MUST bind trust to this digest (D6). Old events may omit it (grandfathered). Required for run.preregistered, run.outcome, and cognate.root.anchored." }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["run.preregistered", "run.outcome", "cognate.root.anchored"] }
+            }
+          },
+          "then": {
+            "required": ["sha256"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "run.preregistered" } }
+          },
+          "then": {
+            "properties": {
+              "uri": { "pattern": "^urn:cognate:run:prereg:[A-Za-z0-9_.-]+$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "run.outcome" } }
+          },
+          "then": {
+            "properties": {
+              "uri": { "pattern": "^urn:cognate:run:outcome:[A-Za-z0-9_.-]+(:prereg:[0-9a-f]{64})?$" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "cognate.root.anchored" } }
+          },
+          "then": {
+            "properties": {
+              "uri": { "pattern": "^urn:cognate:root:anchored:[A-Za-z0-9_.:-]+$" }
+            }
+          }
+        }
+      ]
     },
     "keyLifecycle": {
       "type": "object",

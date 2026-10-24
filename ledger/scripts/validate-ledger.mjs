@@ -134,6 +134,100 @@ function buildEventKey(ev) {
   return `${ev.repo}|${ev.version}|${ev.type}`;
 }
 
+// Run-event attestation types (Trio Phase 1, GAPS §3 PR 3):
+//   - run.preregistered: uri = urn:cognate:run:prereg:<runId>, sha256 = <preregSha256>
+//   - run.outcome:       uri = urn:cognate:run:outcome:<runId>[:prereg:<preregSha256>], sha256 = <outcomeSha256>
+//   - cognate.root.anchored: uri = urn:cognate:root:anchored:<partitionId>, sha256 = <rootSha256>
+// Cross-event invariant enforced below: every run.outcome must reference a runId that already has a
+// prior run.preregistered event in the ledger (and any linked prereg hash must match).
+export const RUN_ATTESTATION_TYPES = Object.freeze([
+  "run.preregistered",
+  "run.outcome",
+  "cognate.root.anchored",
+]);
+const RUN_PREREG_URI_RE = /^urn:cognate:run:prereg:([A-Za-z0-9_.-]+)$/;
+const RUN_OUTCOME_URI_RE = /^urn:cognate:run:outcome:([A-Za-z0-9_.-]+)(?::prereg:([0-9a-f]{64}))?$/;
+const COGNATE_ROOT_URI_RE = /^urn:cognate:root:anchored:([A-Za-z0-9_.:-]+)$/;
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+function recordRunPreregistrations(ev, preregByRunId) {
+  if (!ev || ev.type !== "AttestationPublished" || !Array.isArray(ev.attestations)) return;
+  for (const att of ev.attestations) {
+    if (!att || att.type !== "run.preregistered") continue;
+    const m = typeof att.uri === "string" ? att.uri.match(RUN_PREREG_URI_RE) : null;
+    if (m && typeof att.sha256 === "string" && SHA256_HEX_RE.test(att.sha256)) {
+      const runId = m[1];
+      let set = preregByRunId.get(runId);
+      if (!set) {
+        set = new Set();
+        preregByRunId.set(runId, set);
+      }
+      set.add(att.sha256);
+    }
+  }
+}
+
+function validateRunAttestations(ev, lineNo, preregByRunId) {
+  if (!ev || !Array.isArray(ev.attestations)) return;
+  for (const att of ev.attestations) {
+    if (!att || !RUN_ATTESTATION_TYPES.includes(att.type)) continue;
+    if (typeof att.sha256 !== "string" || !SHA256_HEX_RE.test(att.sha256)) {
+      fail(`Run attestation "${att.type}" at line ${lineNo} must carry a 64-hex sha256 digest.`);
+    }
+    if (att.type === "run.preregistered") {
+      const m = typeof att.uri === "string" ? att.uri.match(RUN_PREREG_URI_RE) : null;
+      if (!m) {
+        fail(
+          `Invalid run.preregistered uri at line ${lineNo}: expected "urn:cognate:run:prereg:<runId>", got "${att.uri}".`
+        );
+      }
+      const runId = m[1];
+      let set = preregByRunId.get(runId);
+      if (!set) {
+        set = new Set();
+        preregByRunId.set(runId, set);
+      }
+      set.add(att.sha256);
+    } else if (att.type === "run.outcome") {
+      const m = typeof att.uri === "string" ? att.uri.match(RUN_OUTCOME_URI_RE) : null;
+      if (!m) {
+        fail(
+          `Invalid run.outcome uri at line ${lineNo}: expected "urn:cognate:run:outcome:<runId>[:prereg:<sha256>]", got "${att.uri}".`
+        );
+      }
+      const runId = m[1];
+      const uriPreregHash = m[2] || null;
+      const notePreregMatch = typeof ev.notes === "string" ? ev.notes.match(/\bprereg=([0-9a-f]{64})\b/) : null;
+      const notePreregHash = notePreregMatch ? notePreregMatch[1] : null;
+      const artPrereg = (ev.artifacts || []).find(
+        (a) => a && a.uri === `urn:cognate:run:prereg:${runId}` && typeof a.sha256 === "string"
+      );
+      const artPreregHash = artPrereg ? artPrereg.sha256 : null;
+
+      const registeredHashes = preregByRunId.get(runId);
+      if (!registeredHashes || registeredHashes.size === 0) {
+        fail(
+          `Invalid run.outcome at line ${lineNo}: run "${runId}" has no prior run.preregistered event in the ledger.`
+        );
+      }
+      for (const linkedHash of [uriPreregHash, notePreregHash, artPreregHash].filter(Boolean)) {
+        if (!registeredHashes.has(linkedHash)) {
+          fail(
+            `Invalid run.outcome at line ${lineNo}: run "${runId}" references pre-registration hash ${linkedHash}, ` +
+            `which does not match prior run.preregistered sha256 (${[...registeredHashes].join(", ")}).`
+          );
+        }
+      }
+    } else if (att.type === "cognate.root.anchored") {
+      if (typeof att.uri !== "string" || !COGNATE_ROOT_URI_RE.test(att.uri)) {
+        fail(
+          `Invalid cognate.root.anchored uri at line ${lineNo}: expected "urn:cognate:root:anchored:<partitionId>", got "${att.uri}".`
+        );
+      }
+    }
+  }
+}
+
 function findNodeManifest(repoId) {
   const [org, repo] = repoId.split("/");
   if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) {
@@ -566,12 +660,14 @@ if (newLines.length === 0) {
 console.error(`[validate] Checking ${newLines.length} events...`);
 console.log(`Validating ${newLines.length} new event(s)...\n`);
 
-// Build uniqueness set from existing (base) events using the SAME key-builder (LDG-002).
+// Build uniqueness set and run pre-registration index from existing (base) events (LDG-002).
 const seen = new Set();
+const preregByRunId = new Map();
 for (const line of baseLines) {
   try {
     const ev = JSON.parse(line);
     seen.add(buildEventKey(ev));
+    recordRunPreregistrations(ev, preregByRunId);
   } catch {
     // Base lines already validated; skip parse errors
   }
@@ -803,6 +899,9 @@ for (let idx = 0; idx < newLines.length; idx++) {
       );
     }
   }
+
+  // Trio Phase 1 (GAPS §3 PR 3): validate run attestation structure and outcome -> preregistration link.
+  validateRunAttestations(ev, lineNo, preregByRunId);
 
   // Canonical hash verification
   const computedHash = computeCanonicalHash(ev);
