@@ -2,9 +2,10 @@
   "v": 2,
   "description": "Verifier registration policy (#7 verifier-plugin contract). Defines the check-kinds registry (mode + trusted-set + weights + category), the node-kinds permission map (which node kind may sign which event type), and conflict/quorum policies. Adopters extend the network by editing this file — adding a new check kind is data-only (no code change). v1 → v2 is backward-compatible: v1 fields read unchanged; v2 adds `nodeKinds`, `scoreableResults`, and per-check `category` / `weights` / `attestorGated`.",
   "nodeKinds": {
-    "attestor": { "canSign": ["AttestationPublished"] },
-    "registry": { "canSign": ["AttestationPublished", "PolicyViolation"] },
-    "policy":   { "canSign": ["PolicyViolation"] }
+    "attestor":   { "canSign": ["AttestationPublished"] },
+    "registry":   { "canSign": ["AttestationPublished", "PolicyViolation"] },
+    "policy":     { "canSign": ["PolicyViolation"] },
+    "governance": { "canSign": ["run.preregistered", "run.outcome", "cognate.root.anchored"] }
   },
   "scoreableResults": ["pass", "warn", "fail"],
   "trustedAttestors": [
@@ -12,7 +13,11 @@
     "mcp-tool-shop-org/repomesh-license-verifier",
     "mcp-tool-shop-org/repomesh-security-verifier",
     "mcp-tool-shop-org/repomesh-repro-verifier",
-    "mcp-tool-shop-org/repomesh-xrpl-anchor"
+    "mcp-tool-shop-org/repomesh-xrpl-anchor",
+    "mcp-tool-shop-org/cognate"
+  ],
+  "trustedRunAttestors": [
+    "mcp-tool-shop-org/cognate"
   ],
   "trustedPolicy": [
     "mcp-tool-shop-org/repomesh"

@@ -48,6 +48,7 @@ import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
   BUNDLED_TRUSTED_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
+  BUNDLED_RUN_ATTESTATION_TYPES,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
@@ -155,12 +156,20 @@ function effectiveTrustedAttestors(opts) {
   return bundled;
 }
 
-// A resolved third-party signer is trusted iff its node id is in the effective allowlist AND its
-// node kind is one of {attestor, registry}. Used to gate attestation key resolution (D12).
-function isTrustedAttestorNode(key, allowlist) {
+// A resolved third-party signer is trusted for release verification iff its node id is in the
+// effective allowlist AND its node kind is in BUNDLED_ATTESTOR_KINDS, excluding `governance`
+// on non-run events (`governance` nodes may only sign run.preregistered / run.outcome /
+// cognate.root.anchored, never releases or release attestations).
+function isTrustedAttestorNode(key, allowlist, event = null) {
   if (!key || !key.nodeId) return false;
   if (!allowlist.has(key.nodeId)) return false;
   if (!BUNDLED_ATTESTOR_KINDS.includes(key.kind)) return false;
+  if (key.kind === "governance") {
+    const atts = Array.isArray(event?.attestations) ? event.attestations : [];
+    if (atts.length === 0 || !atts.every((a) => a && BUNDLED_RUN_ATTESTATION_TYPES.includes(a.type))) {
+      return false;
+    }
+  }
   return true;
 }
 

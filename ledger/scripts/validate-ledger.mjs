@@ -32,7 +32,10 @@ import {
 import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
 // #7 verifier-plugin contract: node-kind permissions (which node KIND may sign which event type) are
 // resolved from verifier.policy.json, not hardcoded here. Falls back, per-field, to the v1 map.
-import { nodeKindsForEvent } from "../../verifiers/lib/policy.mjs";
+import {
+  nodeKindsForEvent,
+  canNodeSignAttestations,
+} from "../../verifiers/lib/policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(ROOT, "..");
@@ -134,6 +137,100 @@ function buildEventKey(ev) {
   return `${ev.repo}|${ev.version}|${ev.type}`;
 }
 
+// Run-event attestation types (Trio Phase 1, GAPS §3 PR 3):
+//   - run.preregistered: uri = urn:cognate:run:prereg:<runId>, sha256 = <preregSha256>
+//   - run.outcome:       uri = urn:cognate:run:outcome:<runId>[:prereg:<preregSha256>], sha256 = <outcomeSha256>
+//   - cognate.root.anchored: uri = urn:cognate:root:anchored:<partitionId>, sha256 = <rootSha256>
+// Cross-event invariant enforced below: every run.outcome must reference a runId that already has a
+// prior run.preregistered event in the ledger (and any linked prereg hash must match).
+export const RUN_ATTESTATION_TYPES = Object.freeze([
+  "run.preregistered",
+  "run.outcome",
+  "cognate.root.anchored",
+]);
+const RUN_PREREG_URI_RE = /^urn:cognate:run:prereg:([A-Za-z0-9_.-]+)$/;
+const RUN_OUTCOME_URI_RE = /^urn:cognate:run:outcome:([A-Za-z0-9_.-]+)(?::prereg:([0-9a-f]{64}))?$/;
+const COGNATE_ROOT_URI_RE = /^urn:cognate:root:anchored:([A-Za-z0-9_.:-]+)$/;
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+export function recordRunPreregistrations(ev, preregByRunId) {
+  if (!ev || ev.type !== "AttestationPublished" || !Array.isArray(ev.attestations)) return;
+  for (const att of ev.attestations) {
+    if (!att || att.type !== "run.preregistered") continue;
+    const m = typeof att.uri === "string" ? att.uri.match(RUN_PREREG_URI_RE) : null;
+    if (m && typeof att.sha256 === "string" && SHA256_HEX_RE.test(att.sha256)) {
+      const runId = m[1];
+      let set = preregByRunId.get(runId);
+      if (!set) {
+        set = new Set();
+        preregByRunId.set(runId, set);
+      }
+      set.add(att.sha256);
+    }
+  }
+}
+
+export function validateRunAttestations(ev, lineNo, preregByRunId) {
+  if (!ev || !Array.isArray(ev.attestations)) return;
+  for (const att of ev.attestations) {
+    if (!att || !RUN_ATTESTATION_TYPES.includes(att.type)) continue;
+    if (typeof att.sha256 !== "string" || !SHA256_HEX_RE.test(att.sha256)) {
+      fail(`Run attestation "${att.type}" at line ${lineNo} must carry a 64-hex sha256 digest.`);
+    }
+    if (att.type === "run.preregistered") {
+      const m = typeof att.uri === "string" ? att.uri.match(RUN_PREREG_URI_RE) : null;
+      if (!m) {
+        fail(
+          `Invalid run.preregistered uri at line ${lineNo}: expected "urn:cognate:run:prereg:<runId>", got "${att.uri}".`
+        );
+      }
+      const runId = m[1];
+      let set = preregByRunId.get(runId);
+      if (!set) {
+        set = new Set();
+        preregByRunId.set(runId, set);
+      }
+      set.add(att.sha256);
+    } else if (att.type === "run.outcome") {
+      const m = typeof att.uri === "string" ? att.uri.match(RUN_OUTCOME_URI_RE) : null;
+      if (!m) {
+        fail(
+          `Invalid run.outcome uri at line ${lineNo}: expected "urn:cognate:run:outcome:<runId>[:prereg:<sha256>]", got "${att.uri}".`
+        );
+      }
+      const runId = m[1];
+      const uriPreregHash = m[2] || null;
+      const notePreregMatch = typeof ev.notes === "string" ? ev.notes.match(/\bprereg=([0-9a-f]{64})\b/) : null;
+      const notePreregHash = notePreregMatch ? notePreregMatch[1] : null;
+      const artPrereg = (ev.artifacts || []).find(
+        (a) => a && a.uri === `urn:cognate:run:prereg:${runId}` && typeof a.sha256 === "string"
+      );
+      const artPreregHash = artPrereg ? artPrereg.sha256 : null;
+
+      const registeredHashes = preregByRunId.get(runId);
+      if (!registeredHashes || registeredHashes.size === 0) {
+        fail(
+          `Invalid run.outcome at line ${lineNo}: run "${runId}" has no prior run.preregistered event in the ledger.`
+        );
+      }
+      for (const linkedHash of [uriPreregHash, notePreregHash, artPreregHash].filter(Boolean)) {
+        if (!registeredHashes.has(linkedHash)) {
+          fail(
+            `Invalid run.outcome at line ${lineNo}: run "${runId}" references pre-registration hash ${linkedHash}, ` +
+            `which does not match prior run.preregistered sha256 (${[...registeredHashes].join(", ")}).`
+          );
+        }
+      }
+    } else if (att.type === "cognate.root.anchored") {
+      if (typeof att.uri !== "string" || !COGNATE_ROOT_URI_RE.test(att.uri)) {
+        fail(
+          `Invalid cognate.root.anchored uri at line ${lineNo}: expected "urn:cognate:root:anchored:<partitionId>", got "${att.uri}".`
+        );
+      }
+    }
+  }
+}
+
 function findNodeManifest(repoId) {
   const [org, repo] = repoId.split("/");
   if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) {
@@ -219,7 +316,7 @@ function listNodeManifests() {
 // D2 + LDG-007: resolve the verifying key for a third-party event from a TRUSTED, correctly-kinded
 // node whose maintainer advertises this keyId. Fails on: not-allowlisted signer, wrong kind, or
 // keyId collision across trusted nodes (ambiguous resolution).
-function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowCheck) {
+function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowCheck, ev = null) {
   const matches = [];
   for (const { id, manifest } of listNodeManifests()) {
     if (!allowlist.has(id)) continue;
@@ -235,6 +332,17 @@ function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowChec
               `Maintainer "${keyId}" in trusted node ${id} has an empty contact. ` +
               `Every maintainer key must have an attributable contact.`,
           };
+        }
+        // Trio Phase 1 (GAPS §3 PR 3): governance nodes and trustedRunAttestors are restricted
+        // strictly to run attestation types (run.preregistered, run.outcome, cognate.root.anchored).
+        if (eventType === "AttestationPublished") {
+          const attTypes = Array.isArray(ev?.attestations)
+            ? ev.attestations.map((a) => a?.type).filter(Boolean)
+            : [];
+          const scopeCheck = canNodeSignAttestations(verifierPolicy, id, manifest.kind, attTypes);
+          if (!scopeCheck.ok) {
+            return { error: scopeCheck.reason };
+          }
         }
         // Key-lifecycle time gate (contract §5.3): a windowed third-party key whose signature falls
         // outside its valid window must not resolve. Grandfathered keys (no window fields) pass
@@ -273,8 +381,15 @@ function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowChec
   return { pk: matches[0].pk, signerNode: matches[0].id };
 }
 
-function verifyEd25519(pubKeyPem, msgHex, sigB64) {
+// Ed25519 signing contract (New 1, Trio Phase 1):
+//   RepoMesh Ed25519 signatures MUST sign the raw 32-byte SHA-256 digest:
+//     Buffer.from(canonicalHash, "hex")   (32 raw bytes)
+//   and NEVER the UTF-8 canonical JSON bytes (Buffer.from(canonicalJson, "utf8")) or the 64-byte
+//   ASCII hex string (Buffer.from(canonicalHash, "utf8")).
+export function verifyEd25519(pubKeyPem, msgHex, sigB64) {
+  if (typeof msgHex !== "string" || !SHA256_HEX_RE.test(msgHex)) return false;
   const msg = Buffer.from(msgHex, "hex");
+  if (msg.length !== 32) return false;
   const sig = Buffer.from(sigB64, "base64");
   try {
     return crypto.verify(null, msg, pubKeyPem, sig);
@@ -282,6 +397,34 @@ function verifyEd25519(pubKeyPem, msgHex, sigB64) {
     console.error("Signature verification error: " + e.message);
     return false;
   }
+}
+
+export function diagnoseEd25519Failure(pubKeyPem, ev, sigB64) {
+  const sig = Buffer.from(sigB64 || "", "base64");
+  try {
+    const canonicalJson = canonicalizeForHash(stripSignature(ev));
+    if (crypto.verify(null, Buffer.from(canonicalJson, "utf8"), pubKeyPem, sig)) {
+      return (
+        `signature was computed over UTF-8 canonical JSON instead of the raw 32-byte ` +
+        `canonicalHash digest (Buffer.from(canonicalHash, "hex")). RepoMesh Ed25519 signatures ` +
+        `must sign the raw 32 bytes Buffer.from(canonicalHash, "hex").`
+      );
+    }
+    const msgHex = ev?.signature?.canonicalHash || "";
+    if (crypto.verify(null, Buffer.from(msgHex, "utf8"), pubKeyPem, sig)) {
+      return (
+        `signature was computed over the 64-byte UTF-8 hex string instead of the raw 32-byte ` +
+        `canonicalHash digest (Buffer.from(canonicalHash, "hex")). RepoMesh Ed25519 signatures ` +
+        `must sign the raw 32 bytes Buffer.from(canonicalHash, "hex").`
+      );
+    }
+  } catch {
+    // Fall through to default contract message
+  }
+  return (
+    `Ed25519 signature did not verify against the raw 32-byte canonicalHash digest ` +
+    `(Buffer.from(canonicalHash, "hex")).`
+  );
 }
 
 // --- Offline trusted-time ctx (contract §5.2/§5.3) --------------------------------------------
@@ -338,6 +481,7 @@ function buildOfflineTrustCtx(events, trustedAttestorsSet) {
     if (!keyId) return false;
     for (const id of trustedAttestorsSet) {
       const node = loadNode(id);
+      if (!node || node.kind === "governance") continue;
       const m = (node?.maintainers || []).find((x) => x.keyId === keyId);
       if (!m?.publicKey) continue;
       const pem = String(m.publicKey).trim();
@@ -526,9 +670,16 @@ const trustedPolicy = new Set(verifierPolicy.trustedPolicy || verifierPolicy.tru
 // the v1 map (AttestationPublished → attestor/registry; PolicyViolation → policy/registry) when the
 // policy omits nodeKinds, so a v1 policy (or the shipped v2 whose map mirrors the old constants)
 // authorizes byte-identically to the pre-#7 hardcoded sets. Resolved once per event type.
-const ATTESTOR_KINDS = nodeKindsForEvent(verifierPolicy, "AttestationPublished");
-const POLICY_KINDS = nodeKindsForEvent(verifierPolicy, "PolicyViolation");
+// Must mirror packages/repomesh-cli/src/remote-defaults.mjs BUNDLED_ATTESTOR_KINDS and
+// registry/scripts/build-trust.mjs ATTESTOR_KINDS.
+export const ATTESTOR_KINDS = nodeKindsForEvent(verifierPolicy, "AttestationPublished");
+export const POLICY_KINDS = nodeKindsForEvent(verifierPolicy, "PolicyViolation");
 
+const INVOKED_AS_SCRIPT =
+  Boolean(process.argv[1]) &&
+  path.resolve(process.argv[1]) === path.resolve(import.meta.dirname, "validate-ledger.mjs");
+
+if (INVOKED_AS_SCRIPT) {
 const headLines = readLines(headPath);
 const baseLines = basePath ? readLines(basePath) : [];
 console.error(`[validate] Base: ${baseLines.length} events, Head: ${headLines.length} events`);
@@ -566,12 +717,14 @@ if (newLines.length === 0) {
 console.error(`[validate] Checking ${newLines.length} events...`);
 console.log(`Validating ${newLines.length} new event(s)...\n`);
 
-// Build uniqueness set from existing (base) events using the SAME key-builder (LDG-002).
+// Build uniqueness set and run pre-registration index from existing (base) events (LDG-002).
 const seen = new Set();
+const preregByRunId = new Map();
 for (const line of baseLines) {
   try {
     const ev = JSON.parse(line);
     seen.add(buildEventKey(ev));
+    recordRunPreregistrations(ev, preregByRunId);
   } catch {
     // Base lines already validated; skip parse errors
   }
@@ -804,6 +957,9 @@ for (let idx = 0; idx < newLines.length; idx++) {
     }
   }
 
+  // Trio Phase 1 (GAPS §3 PR 3): validate run attestation structure and outcome -> preregistration link.
+  validateRunAttestations(ev, lineNo, preregByRunId);
+
   // Canonical hash verification
   const computedHash = computeCanonicalHash(ev);
   if (computedHash !== ev.signature.canonicalHash) {
@@ -836,7 +992,7 @@ for (let idx = 0; idx < newLines.length; idx++) {
   if (isThirdPartySigned) {
     const allowlist = ev.type === "PolicyViolation" ? trustedPolicy : trustedAttestors;
     const kinds = ev.type === "PolicyViolation" ? POLICY_KINDS : ATTESTOR_KINDS;
-    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds, windowCheck);
+    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds, windowCheck, ev);
     if (resolved.error) {
       fail(`${resolved.error} (line ${lineNo})`);
     }
@@ -844,6 +1000,13 @@ for (let idx = 0; idx < newLines.length; idx++) {
   } else {
     // Repo-bound: load + validate the event's own repo node manifest.
     const node = findNodeManifest(ev.repo);
+    // Trio Phase 1 (GAPS §3 PR 3): a `governance` node may only sign run attestation types, not releases.
+    if (node.kind === "governance") {
+      fail(
+        `Node "${ev.repo}" has kind="governance", which may only sign run attestation types ` +
+        `(${RUN_ATTESTATION_TYPES.join(", ")}), not ${ev.type} (line ${lineNo}).`
+      );
+    }
     if (!validateNode(node)) {
       fail(`node.json schema failed for ${ev.repo}: ${ajv.errorsText(validateNode.errors)}`);
     }
@@ -861,10 +1024,12 @@ for (let idx = 0; idx < newLines.length; idx++) {
 
   const ok = verifyEd25519(pubKeyPem, ev.signature.canonicalHash, ev.signature.value);
   if (!ok) {
-    fail(`Signature verification failed at line ${lineNo} for ${ev.repo} (keyId=${ev.signature.keyId}).`);
+    const reason = diagnoseEd25519Failure(pubKeyPem, ev, ev.signature.value);
+    fail(`Signature verification failed at line ${lineNo} for ${ev.repo} (keyId=${ev.signature.keyId}): ${reason}`);
   }
 
   console.log(`  ✅ line ${lineNo}: ${ev.type} ${ev.repo}@${ev.version} — verified`);
 }
 
 console.log(`\n✅ All ${newLines.length} event(s) validated. Append-only preserved. Signatures verified.`);
+}

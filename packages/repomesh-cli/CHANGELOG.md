@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-24
+
+### Added
+
+- **Run event attestation types (`run.preregistered`, `run.outcome`, `cognate.root.anchored`)** in `schemas/event.schema.json` requiring `sha256` digests and structured `urn:cognate:...` URIs, with cross-event `run.outcome` to `run.preregistered` verification in `validate-ledger.mjs`.
+- **Scoped `governance` attestor kind** in `remote-defaults.mjs`, `verify-release.mjs`, `validate-ledger.mjs`, and `build-trust.mjs`, authorizing `mcp-tool-shop-org/cognate` (`BUNDLED_TRUSTED_RUN_ATTESTORS`) exclusively for run attestation types while keeping `BUNDLED_TRUSTED_ATTESTORS` narrow under D12.
+- **Explicit Ed25519 32-byte raw signing contract check** (`Buffer.from(canonicalHash, "hex")`) in `validate-ledger.mjs`, diagnosing and refusing signatures over UTF-8 canonical JSON or 64-byte ASCII hex.
+
 ## [2.3.3] - 2026-10-14
 
 ### Changed

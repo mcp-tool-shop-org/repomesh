@@ -33,10 +33,25 @@ export const BUNDLED_TRUSTED_ATTESTORS = Object.freeze([
   "mcp-tool-shop-org/repomesh-xrpl-anchor",       // kind: attestor (signs anchor events)
 ]);
 
-// D12: the only node kinds that may sign attestations — dedicated attestor nodes plus the
-// network registry (which bootstraps attestations + anchors at genesis). Mirrors
-// validate-ledger.mjs ATTESTOR_KINDS and build-trust.mjs ATTESTOR_KINDS exactly.
-export const BUNDLED_ATTESTOR_KINDS = Object.freeze(["attestor", "registry"]);
+// D12: the node kinds that may sign third-party AttestationPublished events — dedicated attestor
+// nodes, the network registry, and governance nodes (scoped exclusively to run attestation types:
+// run.preregistered, run.outcome, cognate.root.anchored; never releases or release attestations).
+// Mirrors validate-ledger.mjs ATTESTOR_KINDS and build-trust.mjs ATTESTOR_KINDS exactly.
+export const BUNDLED_ATTESTOR_KINDS = Object.freeze(["attestor", "registry", "governance"]);
+
+// Scoped allowlist for governance run-event attestations (run.preregistered, run.outcome,
+// cognate.root.anchored). Kept separate from BUNDLED_TRUSTED_ATTESTORS so the release-verifier
+// and XRPL anchor-clock trust ceiling stays narrow (5 nodes), while preserving the D12 rule
+// (a fetched policy may narrow this set, never widen it).
+export const BUNDLED_TRUSTED_RUN_ATTESTORS = Object.freeze([
+  "mcp-tool-shop-org/cognate",
+]);
+
+export const BUNDLED_RUN_ATTESTATION_TYPES = Object.freeze([
+  "run.preregistered",
+  "run.outcome",
+  "cognate.root.anchored",
+]);
 
 // STGB-CLI-001 (observability): in REMOTE mode the local revocation defenses — the §12.1
 // derive-stricter key-window narrowing and the LEDGER-A-005 ledger-immutability check — are

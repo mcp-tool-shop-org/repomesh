@@ -1,14 +1,20 @@
 # repomesh: how it works
 
-Mapped at 2026-10-15 from commit c8967c9 by Atlas 1.24.0.
+Mapped at 2026-10-24 from commit 5716064 by Atlas 1.24.0.
 
 ## What this is
 
-18 parts, mostly JavaScript (175 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
+18 parts, mostly JavaScript (176 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
 
-## What changed since 2026-10-14 (78ded40)
+## What changed since 2026-10-15 (c8967c9)
 
-Nothing structural changed since 2026-10-14; 8 files changed content.
+- ledger now imports registry, which closes the cycle ledger → registry → ledger.
+- ledger now imports repomesh-cli.
+- ledger/scripts/validate-ledger.mjs is now also read by ledger/tests/run-events-and-governance.test.mjs.
+- packages/repomesh-cli/schemas/event.schema.json is now also read by ledger/tests/run-events-and-governance.test.mjs.
+- registry/scripts/build-trust.mjs is now read by ledger/tests/run-events-and-governance.test.mjs.
+- And 3 more new writers and readers of places.
+- 2 files added and 28 changed content, across 10 parts.
 
 ## What comes in
 
@@ -61,8 +67,8 @@ Release writes only to packages/repomesh-cli/dist/, which is not tracked.
 ## What breaks what
 
 - **verifiers** is imported by 5 parts (anchor, attestor, ledger, registry, tools), and by 1 more only from tests; it sits on the path of 6 doors.
+- **repomesh-cli** is imported by 2 parts (anchor, tools), and by 1 more only from tests; it sits on the path of 4 doors.
 - **anchor** is imported by 2 parts (pages, tools) and sits on the path of 4 doors.
-- **repomesh-cli** is imported by 2 parts (anchor, tools) and sits on the path of 4 doors.
 - **ledger** is imported by 1 part (registry), and by 1 more only from tests; it sits on the path of 5 doors.
 - **registry** is run as a child process by 2 parts (repomesh-cli, tools) and sits on the path of 4 doors.
 - **pages** is run as a child process by 2 parts (repomesh-cli, tools) and sits on the path of 3 doors.
@@ -71,7 +77,9 @@ Release writes only to packages/repomesh-cli/dist/, which is not tracked.
 
 ## What tends to change together
 
-No two source files changed together often enough to name.
+- **ledger/scripts/validate-ledger.mjs** and **registry/scripts/build-trust.mjs** changed together in 5 of 7 commits, and the ledger part and the registry part import each other.
+
+Confidence is low: fewer than 25 source files reach 10 revisions in the window.
 
 Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do.
 
@@ -79,7 +87,7 @@ Window: 180 days; a pair counts from 3 shared commits, since 0 source files reac
 
 Every code part is imported by at least one test.
 
-72 test files run in no workflow: anchor/xrpl/tests/anchor-writepath-stagec.test.mjs, anchor/xrpl/tests/docker-image.test.mjs, anchor/xrpl/tests/idle-epoch.test.mjs and 69 more.
+73 test files run in no workflow: anchor/xrpl/tests/anchor-writepath-stagec.test.mjs, anchor/xrpl/tests/docker-image.test.mjs, anchor/xrpl/tests/idle-epoch.test.mjs and 70 more.
 
 ## Written but never read
 
@@ -119,7 +127,7 @@ People write .github/, assets/, docs/, profiles/, the repository root, schemas/,
 
 ## Where to start
 
-.github/workflows/ledger-ci.yml → ledger/scripts/validate-ledger.mjs → verifiers/lib/key-window.mjs
+.github/workflows/ledger-ci.yml → ledger/scripts/validate-ledger.mjs
 
 Read those in order to follow one pull request end to end.
 
