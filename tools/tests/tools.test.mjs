@@ -5,9 +5,13 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 // require shim for node:test ESM context (used by Amend Wave A1 tests below)
 const require = createRequire(import.meta.url);
+
+const HAS_OPENSSL = spawnSync("openssl", ["version"], { stdio: "ignore" }).status === 0;
+const OPENSSL_SKIP_REASON = "openssl binary not found in PATH";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,14 +81,18 @@ describe("keygen.mjs", () => {
   before(() => { tmpDir = makeTempDir(); });
   after(() => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
 
-  it("generates valid Ed25519 PEM files", async () => {
+  it("generates valid Ed25519 PEM files", async (t) => {
+    if (!HAS_OPENSSL) {
+      t.skip(OPENSSL_SKIP_REASON);
+      return;
+    }
     const { generateKeypair } = await import("../../tools/keygen.mjs");
     const outDir = path.join(tmpDir, "keys");
     const result = generateKeypair(outDir);
 
     // openssl might not be available in all CI environments
     if (result === null) {
-      // If openssl is missing, skip gracefully
+      t.skip(OPENSSL_SKIP_REASON);
       return;
     }
 
@@ -1133,13 +1141,20 @@ describe("D5 attestation gate", () => {
 // D11 / TOOLS-003 — init-node must NOT print the private PEM body; keygen chmod 0600.
 // ---------------------------------------------------------------------------
 describe("D11/TOOLS-003 private key not printed", () => {
-  it("keygen sets 0600 perms on private.pem (POSIX)", async () => {
+  it("keygen sets 0600 perms on private.pem (POSIX)", async (t) => {
+    if (!HAS_OPENSSL) {
+      t.skip(OPENSSL_SKIP_REASON);
+      return;
+    }
     const { generateKeypair } = await import("../../tools/keygen.mjs");
     const tmpDir = makeTempDir();
     try {
       const outDir = path.join(tmpDir, "k");
       const result = generateKeypair(outDir);
-      if (result === null) return; // openssl missing — skip
+      if (result === null) {
+        t.skip(OPENSSL_SKIP_REASON);
+        return;
+      }
       if (process.platform !== "win32") {
         const mode = fs.statSync(result.privatePath).mode & 0o777;
         assert.equal(mode, 0o600, "private.pem is chmod 0600 on POSIX");
@@ -1149,7 +1164,11 @@ describe("D11/TOOLS-003 private key not printed", () => {
     }
   });
 
-  it("init-node output never contains BEGIN PRIVATE KEY", () => {
+  it("init-node output never contains BEGIN PRIVATE KEY", (t) => {
+    if (!HAS_OPENSSL) {
+      t.skip(OPENSSL_SKIP_REASON);
+      return;
+    }
     const tmpDir = makeTempDir();
     try {
       const { execSync } = require("node:child_process");
@@ -1477,7 +1496,11 @@ describe("SB-TOOLS-01 init produces schema-valid node.json for uppercase repos",
   const CAP = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*\.v[0-9]+$/;
 
   for (const repo of ["Foo/MyRepo", "org/ETL-Pipeline", "x/9Lives"]) {
-    it(`init --repo ${repo} writes a node.json that passes the node schema`, () => {
+    it(`init --repo ${repo} writes a node.json that passes the node schema`, (t) => {
+      if (!HAS_OPENSSL) {
+        t.skip(OPENSSL_SKIP_REASON);
+        return;
+      }
       const { execSync } = require("node:child_process");
       const tmpDir = makeTempDir();
       try {
@@ -1530,7 +1553,11 @@ describe("SB-TOOLS-01 init produces schema-valid node.json for uppercase repos",
 // example broke); GREEN after implementing --json.
 // ---------------------------------------------------------------------------
 describe("SB-DOCS-01 init --json emits a clean machine-readable summary", () => {
-  it("stdout is pure parseable JSON with ok:true on success", () => {
+  it("stdout is pure parseable JSON with ok:true on success", (t) => {
+    if (!HAS_OPENSSL) {
+      t.skip(OPENSSL_SKIP_REASON);
+      return;
+    }
     const { execSync } = require("node:child_process");
     const tmpDir = makeTempDir();
     try {

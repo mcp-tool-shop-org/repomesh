@@ -16,7 +16,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { generateKeypair } from "./keygen.mjs";
@@ -69,9 +68,6 @@ export function validateNodeJson(nodeJson) {
     .map(err => `${err.instancePath || "/"} ${err.message}`)
     .join("; ");
 }
-
-// Early validation: OpenSSL is required for key generation
-try { execSync('openssl version', { stdio: 'pipe' }); } catch { console.error('Error: openssl not found. Install: https://wiki.openssl.org/index.php/Binaries'); process.exit(1); }
 
 function parseArgs(argv) {
   const args = { _: [] };
