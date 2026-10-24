@@ -10,10 +10,14 @@
 // (verify-anchor.mjs now reports this with recovery guidance, see ANC-B01). For durable, citable
 // anchors, migrate to mainnet:
 //
-//   1. config switch — set `anchor/xrpl/config.json`:
-//        "network":      "mainnet"                       (was "testnet")
-//        "rippledUrl":   "wss://xrplcluster.com"         (was a testnet wss:// endpoint)
-//      or override per-invocation with XRPL_WS_URL (the env var takes precedence over config).
+//   1. config switch — set `anchor/xrpl/config.json` (both fields are required by the fail-closed
+//      guard; XRPL_WS_URL alone or network="mainnet" alone is refused before opening a socket):
+//        "network":                 "mainnet"                   (was "testnet")
+//        "allowMainnetPosting":     true                        (explicit reviewed opt-in)
+//        "mainnetAllowedEndpoints": ["wss://xrplcluster.com"]   (explicit allowlist of mainnet wss:// URLs)
+//        "rippledUrl":              "wss://xrplcluster.com"     (must appear in mainnetAllowedEndpoints)
+//      XRPL_WS_URL may override rippledUrl per-invocation only if the URL is also in the active
+//      network's allowlist (KNOWN_TESTNET_WS_URLS on testnet, or mainnetAllowedEndpoints on mainnet).
 //   2. funded wallet — mainnet requires a real XRP-funded account (testnet uses the faucet). Set
 //      XRPL_SEED to that wallet's seed. Each AccountSet anchor costs the standard XRP tx fee (drops).
 //   3. trust allowlist — the shipped list is a ceiling (packages/repomesh-cli/src/
@@ -93,6 +97,105 @@ export function assertPostingAccount(address, config, trusted) {
   return { ok: true };
 }
 
+// Known public XRPL Testnet WebSocket endpoints:
+//   - wss://s.altnet.rippletest.net:51233 (anchor/xrpl/config.json default; Ripple / XRPL Foundation public testnet rippled, https://xrpl.org/docs/tutorials/public-servers)
+//   - wss://clio.altnet.rippletest.net:51233 (Ripple / XRPL Foundation public testnet Clio server, https://xrpl.org/docs/tutorials/public-servers)
+//   - wss://testnet.xrpl-labs.com (XRPL Labs public testnet WebSocket server, https://xrpl.org/docs/tutorials/public-servers)
+export const KNOWN_TESTNET_WS_URLS = Object.freeze([
+  "wss://s.altnet.rippletest.net:51233",
+  "wss://clio.altnet.rippletest.net:51233",
+  "wss://testnet.xrpl-labs.com",
+]);
+
+export function normalizeWsUrl(raw) {
+  if (typeof raw !== "string") return "";
+  return raw.trim().replace(/\/+$/, "");
+}
+
+// Fail-closed testnet guard: post-anchor refuses to post unless BOTH hold:
+//   1. the resolved network is "testnet" AND the resolved WebSocket URL is on KNOWN_TESTNET_WS_URLS;
+//   2. OR mainnet has been explicitly opted into in committed config via BOTH
+//      `config.allowMainnetPosting === true` AND `config.mainnetAllowedEndpoints` containing the URL
+//      (never just an environment variable).
+export function assertPostingEndpoint(config, env = process.env) {
+  const network = typeof config?.network === "string" ? config.network.trim() : "";
+  const wsUrl = normalizeWsUrl(env?.XRPL_WS_URL || config?.rippledUrl);
+
+  if (!wsUrl) {
+    return {
+      ok: false,
+      network,
+      wsUrl,
+      reason: `Refusing to post anchor: resolved network=${JSON.stringify(network || "(unset)")}, resolved wsUrl="(unset)" — no WebSocket endpoint configured.`,
+    };
+  }
+
+  if (network === "testnet") {
+    if (KNOWN_TESTNET_WS_URLS.includes(wsUrl)) {
+      return { ok: true, network, wsUrl, mode: "testnet" };
+    }
+    return {
+      ok: false,
+      network,
+      wsUrl,
+      reason: `Refusing to post anchor: resolved network="testnet", resolved wsUrl="${wsUrl}" is not on the known XRPL testnet allowlist (${KNOWN_TESTNET_WS_URLS.join(", ")}).`,
+    };
+  }
+
+  if (network === "mainnet") {
+    if (config?.allowMainnetPosting !== true) {
+      return {
+        ok: false,
+        network,
+        wsUrl,
+        reason: `Refusing to post anchor: resolved network="mainnet", resolved wsUrl="${wsUrl}" — mainnet posting is disabled (requires committed config.allowMainnetPosting === true and config.mainnetAllowedEndpoints containing the URL).`,
+      };
+    }
+    const allowedMainnet = Array.isArray(config?.mainnetAllowedEndpoints)
+      ? config.mainnetAllowedEndpoints.map(normalizeWsUrl).filter(Boolean)
+      : [];
+    if (allowedMainnet.length === 0 || !allowedMainnet.includes(wsUrl)) {
+      return {
+        ok: false,
+        network,
+        wsUrl,
+        reason: `Refusing to post anchor: resolved network="mainnet", resolved wsUrl="${wsUrl}" is not in config.mainnetAllowedEndpoints.`,
+      };
+    }
+    if (!wsUrl.startsWith("wss://") || KNOWN_TESTNET_WS_URLS.includes(wsUrl)) {
+      return {
+        ok: false,
+        network,
+        wsUrl,
+        reason: `Refusing to post anchor: resolved network="mainnet", resolved wsUrl="${wsUrl}" must be a non-testnet wss:// endpoint.`,
+      };
+    }
+    return { ok: true, network, wsUrl, mode: "mainnet" };
+  }
+
+  return {
+    ok: false,
+    network,
+    wsUrl,
+    reason: `Refusing to post anchor: resolved network=${JSON.stringify(network || "(unset)")}, resolved wsUrl="${wsUrl}" — network must be "testnet" (or "mainnet" with explicit allowMainnetPosting + mainnetAllowedEndpoints opt-in).`,
+  };
+}
+
+// Validate the target network/endpoint BEFORE constructing or connecting an xrpl.Client.
+export async function connectValidatedClient(
+  config,
+  env = process.env,
+  { createClient = (url) => new xrpl.Client(url) } = {}
+) {
+  const check = assertPostingEndpoint(config, env);
+  if (!check.ok) {
+    return { ...check, client: null };
+  }
+  const client = createClient(check.wsUrl);
+  await client.connect();
+  return { ...check, client };
+}
+
 // LEDGER-A-004 / STGB-ANCHOR-005 — convert an XRPL Ripple-epoch close-time (seconds since
 // 2000-01-01T00:00:00Z) into an ISO-8601 string. submitAndWait returns the validated tx, whose
 // `result.date` is the ledger close-time — the ONLY trustworthy clock for this anchor. Mirrors
@@ -141,10 +244,17 @@ export function buildAnchorMemo({ partitionId, network, rootHex, manifestHash, c
 }
 
 async function main() {
-  const configPath = path.join(import.meta.dirname, "..", "config.json");
+  const configPath = process.env.REPOMESH_XRPL_CONFIG
+    ? path.resolve(process.env.REPOMESH_XRPL_CONFIG)
+    : path.join(import.meta.dirname, "..", "config.json");
   let config;
   try { config = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch (e) { console.error("Failed to read " + configPath + ": " + e.message); process.exit(1); }
-  const WS_URL = process.env.XRPL_WS_URL || config.rippledUrl;
+  const endpointCheck = assertPostingEndpoint(config, process.env);
+  if (!endpointCheck.ok) {
+    console.error(`\n  ${endpointCheck.reason}\n`);
+    process.exit(1);
+  }
+  const WS_URL = endpointCheck.wsUrl;
   const SEED = process.env.XRPL_SEED;
   // STGB-ANCHOR-002 — validate the seed shape up front (before opening a socket). A malformed/missing
   // seed otherwise surfaces as a raw Wallet.fromSeed crypto stack AFTER a needless connect.

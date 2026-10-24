@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-24
+
+### Added
+
+- **CI test and coverage gate (`ledger-ci.yml`)**: runs all 9 repository `node --test` suites with `--experimental-test-coverage` (`--test-coverage-lines=57`) and production `npm audit --audit-level=high` on every pull request and paths-gated push to `main`.
+- **Fail-closed XRPL testnet guard (`anchor/xrpl/scripts/post-anchor.mjs`)**: exports `KNOWN_TESTNET_WS_URLS`, `normalizeWsUrl`, `assertPostingEndpoint`, and `connectValidatedClient`, with offline unit and subprocess tests in `anchor/xrpl/tests/testnet-guard.test.mjs`.
+
+### Security
+
+- **Fail-closed XRPL anchor posting**: `post-anchor.mjs` refuses to post and opens no `xrpl.Client` connection unless `config.network === "testnet"` and the resolved WebSocket URL (`XRPL_WS_URL` or `config.rippledUrl`) is on `KNOWN_TESTNET_WS_URLS`. Mainnet posting cannot be triggered by an environment variable alone and requires both `allowMainnetPosting: true` and `mainnetAllowedEndpoints` in committed `anchor/xrpl/config.json`.
+
 ## [2.4.0] - 2026-10-24
 
 ### Added
