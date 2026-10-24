@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalizeForHash } from "../../ledger/scripts/canonicalize.mjs";
+import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
 import { buildTrust } from "../scripts/build-trust.mjs";
 import { badge, escapeXml } from "../scripts/build-badges.mjs";
 
@@ -256,18 +257,51 @@ describe("REG-005 dead code", () => {
 // ---------------------------------------------------------------------------
 describe("ANC-004 committed anchors.json reflects manifestHash-only binding", () => {
   let anchors;
+  let boundByManifestHash;
   before(() => {
     anchors = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "registry", "anchors.json"), "utf8"));
+    const eventsRaw = fs.readFileSync(path.join(REPO_ROOT, "ledger", "events", "events.jsonl"), "utf8");
+    boundByManifestHash = new Map();
+    for (const line of eventsRaw.split("\n")) {
+      if (!line.trim()) continue;
+      const ev = JSON.parse(line);
+      if (ev.type !== "AttestationPublished") continue;
+      if (!(ev.attestations || []).some((a) => a.type === "ledger.anchor")) continue;
+      const meta = parseAnchorPartitionMeta(ev.notes || "");
+      if (meta?.manifestHash && !boundByManifestHash.has(meta.manifestHash)) {
+        boundByManifestHash.set(meta.manifestHash, meta.txHash || null);
+      }
+    }
   });
 
   it("only the partition whose manifestHash matches the on-chain memo carries a txHash", () => {
-    // The single genuine anchor memo binds manifestHash 19d31032... (the genesis manifest).
-    // Partitions with a DIFFERENT manifestHash must have txHash === null.
+    // Partitions whose manifestHash appears in a ledger.anchor memo carry that memo's txHash;
+    // partitions with a DIFFERENT manifestHash (even if they share a Merkle root, like 2026-02-28 vs genesis)
+    // must have txHash === null.
     const withTx = anchors.partitions.filter((p) => p.txHash);
-    for (const p of withTx) {
-      assert.equal(p.manifestHash, "19d31032af4c49b83edb1a56733083c6243d04dd061f146c88ec0e49bd120790",
-        `partition ${p.partitionId} carries a txHash but its manifestHash does not match the on-chain memo`);
+    assert.ok(withTx.length > 0, "at least one partition must carry a bound txHash");
+    for (const p of anchors.partitions) {
+      if (boundByManifestHash.has(p.manifestHash)) {
+        assert.equal(
+          p.txHash,
+          boundByManifestHash.get(p.manifestHash),
+          `partition ${p.partitionId} must carry the txHash bound to manifestHash ${p.manifestHash}`
+        );
+      } else {
+        assert.equal(
+          p.txHash,
+          null,
+          `partition ${p.partitionId} has no on-chain memo for manifestHash ${p.manifestHash} and must have txHash === null`
+        );
+      }
     }
+    const genesis = anchors.partitions.find((p) => p.partitionId === "genesis");
+    const feb28 = anchors.partitions.find((p) => p.partitionId === "2026-02-28");
+    assert.ok(genesis && feb28, "genesis and 2026-02-28 partitions must be present");
+    assert.equal(genesis.root, feb28.root, "genesis and 2026-02-28 share the same Merkle root");
+    assert.notEqual(genesis.manifestHash, feb28.manifestHash, "genesis and 2026-02-28 have distinct manifestHashes");
+    assert.ok(genesis.txHash, "genesis carries its bound txHash");
+    assert.equal(feb28.txHash, null, "2026-02-28 must NOT inherit genesis's txHash via shared root");
   });
 
   it("no txHash is bound to more than one DISTINCT manifestHash", () => {

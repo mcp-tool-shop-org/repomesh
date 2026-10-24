@@ -13,6 +13,19 @@ import path from "node:path";
 import { execSync, execFileSync } from "node:child_process";
 
 export function generateKeypair(outputDir) {
+  const privatePath = path.join(outputDir, "private.pem");
+  const publicPath = path.join(outputDir, "public.pem");
+
+  // Don't overwrite existing keys
+  if (fs.existsSync(privatePath)) {
+    console.log(`\u26A0\uFE0F Keys already exist at ${outputDir}`);
+    return {
+      privatePath,
+      publicPath,
+      publicKeyPem: fs.readFileSync(publicPath, "utf8").trim()
+    };
+  }
+
   // Check openssl is available
   try {
     const ver = execSync("openssl version", { stdio: "pipe", encoding: "utf8" }).trim();
@@ -29,19 +42,6 @@ export function generateKeypair(outputDir) {
   }
 
   fs.mkdirSync(outputDir, { recursive: true });
-
-  const privatePath = path.join(outputDir, "private.pem");
-  const publicPath = path.join(outputDir, "public.pem");
-
-  // Don't overwrite existing keys
-  if (fs.existsSync(privatePath)) {
-    console.log(`\u26A0\uFE0F Keys already exist at ${outputDir}`);
-    return {
-      privatePath,
-      publicPath,
-      publicKeyPem: fs.readFileSync(publicPath, "utf8").trim()
-    };
-  }
 
   try {
     execFileSync('openssl', ['genpkey', '-algorithm', 'ED25519', '-out', privatePath], { stdio: "pipe" });

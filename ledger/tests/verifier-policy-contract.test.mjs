@@ -9,7 +9,7 @@
 //      schemas/verifier.policy.schema.json, and validate-ledger FAILS CLOSED on a malformed policy
 //      (a bad trust policy must HALT, never be silently trusted).
 //
-// THE NON-NEGOTIABLE GATE: validate-ledger must still pass on the REAL 58-event ledger unchanged.
+// THE NON-NEGOTIABLE GATE: validate-ledger must still pass on the REAL ledger unchanged.
 //
 // Strategy mirrors key-lifecycle.test.mjs: write a fixture nodes/ tree + events.jsonl + a policy to a
 // temp dir, run the REAL validate-ledger.mjs as a subprocess via env overrides, assert on exit/output.
@@ -152,19 +152,34 @@ const ATTESTOR_NODE = (kind = "attestor") =>
 // ===========================================================================
 
 describe("#7 regression gate — real ledger still validates", () => {
-  it("validates the full current ledger (exit 0, '58 event(s) validated')", () => {
+  it("validates the full current ledger (exit 0, every event validated, append-only, signatures verified)", () => {
     // Run with NO env overrides → the real ledger, real nodes/, real manifests, real policy. This is
     // the documented `node ledger/scripts/validate-ledger.mjs` path and the non-negotiable gate.
+    const raw = fs.readFileSync(REAL_LEDGER, "utf8").replace(/\r?\n$/, "");
+    const lines = raw.length === 0 ? [] : raw.split("\n");
+    assert.ok(lines.length > 0, "real ledger must contain at least one event");
+
     const res = spawnSync("node", [VALIDATOR], { env: process.env, encoding: "utf8" });
     const all = (res.stdout || "") + (res.stderr || "");
     assert.equal(res.status, 0, "real ledger must validate after the #7 refactor\n" + all);
-    assert.match(all, /All 58 event\(s\) validated\. Append-only preserved\. Signatures verified\./);
+    assert.match(
+      all,
+      new RegExp(`All ${lines.length} event\\(s\\) validated\\. Append-only preserved\\. Signatures verified\\.`)
+    );
   });
 
-  it("the real ledger file has exactly 58 events (guards the count the gate asserts)", () => {
+  it("every event in the real ledger file is well-formed JSON with a canonicalHash and validated", () => {
     const raw = fs.readFileSync(REAL_LEDGER, "utf8").replace(/\r?\n$/, "");
     const lines = raw.length === 0 ? [] : raw.split("\n");
-    assert.equal(lines.length, 58, "the regression gate's '58' must match the live ledger count");
+    assert.ok(lines.length > 0, "real ledger must not be empty");
+    for (let i = 0; i < lines.length; i++) {
+      const ev = JSON.parse(lines[i]);
+      assert.match(
+        ev?.signature?.canonicalHash || "",
+        /^[0-9a-f]{64}$/,
+        `line ${i + 1} must carry a 64-hex signature.canonicalHash`
+      );
+    }
   });
 });
 

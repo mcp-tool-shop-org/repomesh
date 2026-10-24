@@ -335,7 +335,14 @@ docker run --rm -e XRPL_SEED --entrypoint node ghcr.io/mcp-tool-shop-org/repomes
   anchor/xrpl/scripts/post-anchor.mjs
 ```
 
-The daily workflow builds this image from the checkout and posts with it. The network in `anchor/xrpl/config.json` is still testnet. A mainnet post waits on a funded account whose classic address is added to the shipped allowlist in a CLI release first. That allowlist is a ceiling: a fetched config can drop an account and cannot add one.
+The daily workflow builds this image from the checkout and posts with it.
+
+### XRPL Anchoring (Testnet Guard)
+
+Anchoring in `anchor/xrpl/config.json` is **testnet only** (`"network": "testnet"`). `anchor/xrpl/scripts/post-anchor.mjs` enforces a fail-closed endpoint guard (`assertPostingEndpoint`) before validating `XRPL_SEED` or constructing an `xrpl.Client`:
+
+- **Default testnet check:** posting is refused (non-zero exit, no socket opened) unless `config.network === "testnet"` **and** the resolved WebSocket URL (`process.env.XRPL_WS_URL || config.rippledUrl`) is in `KNOWN_TESTNET_WS_URLS` (`wss://s.altnet.rippletest.net:51233`, `wss://clio.altnet.rippletest.net:51233`, `wss://testnet.xrpl-labs.com`). Setting `XRPL_WS_URL` to a mainnet or unknown URL is refused immediately with a message naming both the resolved network and the resolved URL.
+- **Mainnet opt-in (disabled):** an environment variable alone can never switch posting to mainnet. Opting into mainnet requires a reviewed commit in `anchor/xrpl/config.json` setting `"network": "mainnet"`, `"allowMainnetPosting": true`, and `"mainnetAllowedEndpoints": ["wss://..."]` containing the target `wss://` endpoint, after adding the funded mainnet classic address to the shipped allowlist ceiling (`packages/repomesh-cli/src/trusted-anchor-accounts.mjs`). That allowlist is a ceiling: a fetched config can drop an account and cannot add one.
 
 `--fail-on <fail\|unverified>` sets strictness. Default `unverified` fails on both FAIL and
 UNVERIFIED; `--fail-on=fail` lets UNVERIFIED pass (exit 0, with a warning) for warn-mode adoption.
