@@ -86,8 +86,8 @@ describe("D12: bundled trusted-attestor allowlist is present + correct", () => {
       "mcp-tool-shop-org/repomesh-xrpl-anchor",
     ].sort());
   });
-  it("allows only {attestor, registry} kinds", () => {
-    assert.deepEqual([...BUNDLED_ATTESTOR_KINDS].sort(), ["attestor", "registry"]);
+  it("allows {attestor, governance, registry} kinds (with governance scoped strictly to run types)", () => {
+    assert.deepEqual([...BUNDLED_ATTESTOR_KINDS].sort(), ["attestor", "governance", "registry"]);
   });
 });
 

@@ -19,6 +19,12 @@
       "uniqueItems": true,
       "description": "Nodes whose AttestationPublished events may earn trust credit (D2 allowlist)."
     },
+    "trustedRunAttestors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repoId" },
+      "uniqueItems": true,
+      "description": "Nodes in trustedAttestors whose trust is scoped strictly to run attestation types (run.preregistered, run.outcome, cognate.root.anchored), never releases or release attestations."
+    },
     "trustedPolicy": {
       "type": "array",
       "items": { "$ref": "#/$defs/repoId" },

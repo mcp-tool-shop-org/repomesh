@@ -74,9 +74,11 @@ const BUNDLED_TRUSTED_ATTESTORS = Object.freeze([
   "mcp-tool-shop-org/repomesh-repro-verifier",    // kind: attestor
   "mcp-tool-shop-org/repomesh-xrpl-anchor",       // kind: attestor (signs anchor events)
 ]);
-// Allowed node kinds for attestations — dedicated attestor nodes plus the genesis registry. Mirrors
-// validate-ledger.mjs ATTESTOR_KINDS / build-trust.mjs ATTESTOR_KINDS exactly.
-const BUNDLED_ATTESTOR_KINDS = new Set(["attestor", "registry"]);
+// Allowed node kinds for attestations — dedicated attestor nodes, the genesis registry, and
+// governance nodes (scoped exclusively to run attestation types). Mirrors
+// validate-ledger.mjs ATTESTOR_KINDS / build-trust.mjs ATTESTOR_KINDS / remote-defaults.mjs BUNDLED_ATTESTOR_KINDS.
+const BUNDLED_ATTESTOR_KINDS = new Set(["attestor", "registry", "governance"]);
+const BUNDLED_RUN_ATTESTATION_TYPES = new Set(["run.preregistered", "run.outcome", "cognate.root.anchored"]);
 
 // D12: the EFFECTIVE trusted-attestor allowlist. Bundled set is the non-removable floor; a LOCAL
 // verifier.policy.json may NARROW (intersection only), never widen. Mirrors the packages copy's
@@ -96,12 +98,19 @@ function effectiveTrustedAttestors() {
   return bundled;
 }
 
-// A resolved third-party signer is trusted iff its node id is in the effective allowlist AND its
-// node kind is one of {attestor, registry} (D12).
-function isTrustedAttestorNode(key, allowlist) {
+// A resolved third-party signer is trusted for release verification iff its node id is in the
+// effective allowlist AND its node kind is in BUNDLED_ATTESTOR_KINDS, excluding `governance`
+// on non-run events (`governance` nodes may only sign run attestation types, never releases).
+function isTrustedAttestorNode(key, allowlist, event = null) {
   if (!key || !key.nodeId) return false;
   if (!allowlist.has(key.nodeId)) return false;
   if (!BUNDLED_ATTESTOR_KINDS.has(key.kind)) return false;
+  if (key.kind === "governance") {
+    const atts = Array.isArray(event?.attestations) ? event.attestations : [];
+    if (atts.length === 0 || !atts.every((a) => a && BUNDLED_RUN_ATTESTATION_TYPES.has(a.type))) {
+      return false;
+    }
+  }
   return true;
 }
 

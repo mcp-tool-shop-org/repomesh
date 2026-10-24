@@ -32,7 +32,10 @@ import {
 import { parseAnchorPartitionMeta } from "../../verifiers/lib/anchor-notes.mjs";
 // #7 verifier-plugin contract: node-kind permissions (which node KIND may sign which event type) are
 // resolved from verifier.policy.json, not hardcoded here. Falls back, per-field, to the v1 map.
-import { nodeKindsForEvent } from "../../verifiers/lib/policy.mjs";
+import {
+  nodeKindsForEvent,
+  canNodeSignAttestations,
+} from "../../verifiers/lib/policy.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(ROOT, "..");
@@ -313,7 +316,7 @@ function listNodeManifests() {
 // D2 + LDG-007: resolve the verifying key for a third-party event from a TRUSTED, correctly-kinded
 // node whose maintainer advertises this keyId. Fails on: not-allowlisted signer, wrong kind, or
 // keyId collision across trusted nodes (ambiguous resolution).
-function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowCheck) {
+function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowCheck, ev = null) {
   const matches = [];
   for (const { id, manifest } of listNodeManifests()) {
     if (!allowlist.has(id)) continue;
@@ -329,6 +332,17 @@ function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowChec
               `Maintainer "${keyId}" in trusted node ${id} has an empty contact. ` +
               `Every maintainer key must have an attributable contact.`,
           };
+        }
+        // Trio Phase 1 (GAPS §3 PR 3): governance nodes and trustedRunAttestors are restricted
+        // strictly to run attestation types (run.preregistered, run.outcome, cognate.root.anchored).
+        if (eventType === "AttestationPublished") {
+          const attTypes = Array.isArray(ev?.attestations)
+            ? ev.attestations.map((a) => a?.type).filter(Boolean)
+            : [];
+          const scopeCheck = canNodeSignAttestations(verifierPolicy, id, manifest.kind, attTypes);
+          if (!scopeCheck.ok) {
+            return { error: scopeCheck.reason };
+          }
         }
         // Key-lifecycle time gate (contract §5.3): a windowed third-party key whose signature falls
         // outside its valid window must not resolve. Grandfathered keys (no window fields) pass
@@ -432,6 +446,7 @@ function buildOfflineTrustCtx(events, trustedAttestorsSet) {
     if (!keyId) return false;
     for (const id of trustedAttestorsSet) {
       const node = loadNode(id);
+      if (!node || node.kind === "governance") continue;
       const m = (node?.maintainers || []).find((x) => x.keyId === keyId);
       if (!m?.publicKey) continue;
       const pem = String(m.publicKey).trim();
@@ -620,9 +635,16 @@ const trustedPolicy = new Set(verifierPolicy.trustedPolicy || verifierPolicy.tru
 // the v1 map (AttestationPublished → attestor/registry; PolicyViolation → policy/registry) when the
 // policy omits nodeKinds, so a v1 policy (or the shipped v2 whose map mirrors the old constants)
 // authorizes byte-identically to the pre-#7 hardcoded sets. Resolved once per event type.
-const ATTESTOR_KINDS = nodeKindsForEvent(verifierPolicy, "AttestationPublished");
-const POLICY_KINDS = nodeKindsForEvent(verifierPolicy, "PolicyViolation");
+// Must mirror packages/repomesh-cli/src/remote-defaults.mjs BUNDLED_ATTESTOR_KINDS and
+// registry/scripts/build-trust.mjs ATTESTOR_KINDS.
+export const ATTESTOR_KINDS = nodeKindsForEvent(verifierPolicy, "AttestationPublished");
+export const POLICY_KINDS = nodeKindsForEvent(verifierPolicy, "PolicyViolation");
 
+const INVOKED_AS_SCRIPT =
+  Boolean(process.argv[1]) &&
+  path.resolve(process.argv[1]) === path.resolve(import.meta.dirname, "validate-ledger.mjs");
+
+if (INVOKED_AS_SCRIPT) {
 const headLines = readLines(headPath);
 const baseLines = basePath ? readLines(basePath) : [];
 console.error(`[validate] Base: ${baseLines.length} events, Head: ${headLines.length} events`);
@@ -935,7 +957,7 @@ for (let idx = 0; idx < newLines.length; idx++) {
   if (isThirdPartySigned) {
     const allowlist = ev.type === "PolicyViolation" ? trustedPolicy : trustedAttestors;
     const kinds = ev.type === "PolicyViolation" ? POLICY_KINDS : ATTESTOR_KINDS;
-    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds, windowCheck);
+    const resolved = resolveTrustedKey(ev.signature.keyId, ev.type, allowlist, kinds, windowCheck, ev);
     if (resolved.error) {
       fail(`${resolved.error} (line ${lineNo})`);
     }
@@ -945,6 +967,13 @@ for (let idx = 0; idx < newLines.length; idx++) {
     const node = findNodeManifest(ev.repo);
     if (!validateNode(node)) {
       fail(`node.json schema failed for ${ev.repo}: ${ajv.errorsText(validateNode.errors)}`);
+    }
+    // Trio Phase 1 (GAPS §3 PR 3): a `governance` node may only sign run attestation types, not releases.
+    if (node.kind === "governance") {
+      fail(
+        `Node "${ev.repo}" has kind="governance", which may only sign run attestation types ` +
+        `(${RUN_ATTESTATION_TYPES.join(", ")}), not ${ev.type} (line ${lineNo}).`
+      );
     }
     // LDG-006: every maintainer must carry a non-empty contact.
     for (const m of node.maintainers || []) {
@@ -967,3 +996,4 @@ for (let idx = 0; idx < newLines.length; idx++) {
 }
 
 console.log(`\n✅ All ${newLines.length} event(s) validated. Append-only preserved. Signatures verified.`);
+}

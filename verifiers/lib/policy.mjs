@@ -25,6 +25,26 @@ export const V1_NODE_KINDS = {
   AttestationPublished: ["attestor", "registry"],
   PolicyViolation: ["policy", "registry"],
 };
+export const RUN_ATTESTATION_TYPES = Object.freeze([
+  "run.preregistered",
+  "run.outcome",
+  "cognate.root.anchored",
+]);
+const RUN_ATTESTATION_TYPES_SET = new Set(RUN_ATTESTATION_TYPES);
+
+export function isRunAttestationType(type) {
+  return RUN_ATTESTATION_TYPES_SET.has(type);
+}
+
+// D12 rule: a fetched/on-disk policy may NARROW a bundled trusted list via intersection, never WIDEN it.
+export function intersectBundledTrust(bundledList, fetchedList) {
+  const bundled = new Set(bundledList || []);
+  if (Array.isArray(fetchedList)) {
+    const intersected = fetchedList.filter((id) => bundled.has(id));
+    if (intersected.length > 0) return new Set(intersected);
+  }
+  return bundled;
+}
 export const V1_INTEGRITY_CHECK_WEIGHTS = {
   "sbom.present": 20,
   "provenance.present": 20,
@@ -58,11 +78,57 @@ export function nodeKindsForEvent(policy, eventType) {
     const out = new Set();
     for (const [kind, def] of Object.entries(nk)) {
       const canSign = Array.isArray(def?.canSign) ? def.canSign : [];
-      if (canSign.includes(eventType)) out.add(kind);
+      if (canSign.includes(eventType)) {
+        out.add(kind);
+      } else if (
+        eventType === "AttestationPublished" &&
+        canSign.some((t) => RUN_ATTESTATION_TYPES_SET.has(t))
+      ) {
+        out.add(kind);
+      }
     }
     return out;
   }
   return new Set(V1_NODE_KINDS[eventType] || []);
+}
+
+// Check whether a node of `kind` and `nodeId` is permitted by `policy` to sign an AttestationPublished
+// event carrying `attestationTypes`. Governance nodes and nodes in `trustedRunAttestors` are restricted
+// exclusively to the three run attestation types (run.preregistered, run.outcome, cognate.root.anchored),
+// never release attestations or anchor/dispute events.
+export function canNodeSignAttestations(policy, nodeId, kind, attestationTypes) {
+  const types = Array.isArray(attestationTypes) ? attestationTypes : [];
+  const nk = policy?.nodeKinds;
+  const spec = nk && typeof nk === "object" ? nk[kind] : null;
+  const canSign = Array.isArray(spec?.canSign) ? spec.canSign : null;
+
+  if (kind === "governance" || (canSign && !canSign.includes("AttestationPublished"))) {
+    const allowedSet = canSign ? new Set(canSign) : RUN_ATTESTATION_TYPES_SET;
+    if (types.length === 0 || !types.every((t) => allowedSet.has(t) && RUN_ATTESTATION_TYPES_SET.has(t))) {
+      return {
+        ok: false,
+        reason:
+          `Node "${nodeId}" (kind=${kind}) is only authorized for run attestation types ` +
+          `[${[...allowedSet].join(", ")}], not [${types.join(", ") || "none"}].`,
+      };
+    }
+  }
+
+  const runScoped = Array.isArray(policy?.trustedRunAttestors)
+    ? new Set(policy.trustedRunAttestors)
+    : new Set();
+  if (runScoped.has(nodeId)) {
+    if (types.length === 0 || !types.every((t) => RUN_ATTESTATION_TYPES_SET.has(t))) {
+      return {
+        ok: false,
+        reason:
+          `Node "${nodeId}" in trustedRunAttestors is only authorized for run attestation types ` +
+          `[${RUN_ATTESTATION_TYPES.join(", ")}], not [${types.join(", ") || "none"}].`,
+      };
+    }
+  }
+
+  return { ok: true };
 }
 
 // integrityCheckWeights(policy) -> { [kind]: passWeight }

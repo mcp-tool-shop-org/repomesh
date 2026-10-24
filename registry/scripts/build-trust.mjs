@@ -52,6 +52,7 @@ import { writeJsonAtomic } from "../../verifiers/lib/common.mjs";
 // (whose values mirror the old constants) and any v1 policy score BYTE-IDENTICALLY to pre-#7.
 import {
   nodeKindsForEvent,
+  canNodeSignAttestations,
   integrityCheckWeights,
   assuranceWeights as resolveAssuranceWeightDefaults,
   attestorGatedIntegrity,
@@ -60,6 +61,18 @@ import {
 } from "../../verifiers/lib/policy.mjs";
 
 const DEFAULT_ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+// Module-level ATTESTOR_KINDS resolved from the shipped verifier.policy.json. Must mirror
+// packages/repomesh-cli/src/remote-defaults.mjs BUNDLED_ATTESTOR_KINDS and
+// ledger/scripts/validate-ledger.mjs ATTESTOR_KINDS.
+export const ATTESTOR_KINDS = (() => {
+  const p = path.join(DEFAULT_ROOT, "verifier.policy.json");
+  try {
+    return nodeKindsForEvent(JSON.parse(fs.readFileSync(p, "utf8")), "AttestationPublished");
+  } catch {
+    return nodeKindsForEvent({}, "AttestationPublished");
+  }
+})();
 
 const REPO_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
@@ -189,7 +202,8 @@ function pemFor(manifest, keyId) {
 }
 
 // Resolve the public key for a repo-bound (e.g. ReleasePublished) event: the signer MUST be a
-// maintainer of the event's OWN repo. Returns { pem } or { error }.
+// maintainer of the event's OWN repo, and may NOT be a `governance` node (governance nodes may
+// only sign run attestation types, not releases). Returns { pem } or { error }.
 function resolveRepoBoundKey(nodesDir, repoId, keyId) {
   if (!REPO_ID_RE.test(repoId)) return { error: `invalid repoId ${repoId}` };
   const [org, repo] = repoId.split("/");
@@ -198,6 +212,9 @@ function resolveRepoBoundKey(nodesDir, repoId, keyId) {
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(nodePath, "utf8")); }
   catch (e) { return { error: `invalid node.json for ${repoId}: ${e.message}` }; }
+  if (manifest?.kind === "governance") {
+    return { error: `governance node ${repoId} may only sign run attestation types, not releases` };
+  }
   const hit = pemFor(manifest, keyId);
   if (!hit) return { error: `no maintainer with keyId=${keyId} in ${repoId} node.json` };
   return { pem: hit.pem, maintainer: hit.maintainer, signerNode: repoId };
@@ -205,13 +222,24 @@ function resolveRepoBoundKey(nodesDir, repoId, keyId) {
 
 // Resolve the public key for a third-party event from a TRUSTED, correctly-kinded node whose
 // maintainer advertises this keyId. FATAL on keyId collision across trusted nodes (ambiguous).
-function resolveTrustedKey(nodeManifests, keyId, allowlist, allowedKinds, eventType) {
+function resolveTrustedKey(nodeManifests, keyId, allowlist, allowedKinds, eventType, event = null, verifierPolicy = null) {
   const matches = [];
   for (const { id, manifest } of nodeManifests) {
     if (!allowlist.has(id)) continue;
     if (!allowedKinds.has(manifest.kind)) continue;
     const hit = pemFor(manifest, keyId);
-    if (hit) matches.push({ id, pem: hit.pem, maintainer: hit.maintainer });
+    if (hit) {
+      if (eventType === "AttestationPublished" && event) {
+        const attTypes = Array.isArray(event.attestations)
+          ? event.attestations.map((a) => a?.type).filter(Boolean)
+          : [];
+        const scopeCheck = canNodeSignAttestations(verifierPolicy, id, manifest.kind, attTypes);
+        if (!scopeCheck.ok) {
+          return { error: scopeCheck.reason };
+        }
+      }
+      matches.push({ id, pem: hit.pem, maintainer: hit.maintainer });
+    }
   }
   if (matches.length === 0) {
     return { error: `no TRUSTED ${eventType} signer advertises keyId=${keyId}` };
@@ -251,7 +279,7 @@ function verifyEventSignature(event, ctx) {
     // #7: which node KINDS may sign this event type comes from verifier.policy.json (nodeKinds map),
     // resolved once into ctx.nodeKindsForEvent. v1 fallback reproduces the old ATTESTOR/POLICY_KINDS.
     const kinds = ctx.nodeKindsForEvent(event.type);
-    resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, allowlist, kinds, event.type);
+    resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, allowlist, kinds, event.type, event, ctx.verifierPolicy);
   } else {
     resolved = resolveRepoBoundKey(ctx.nodesDir, event.repo, sig.keyId);
   }
@@ -395,7 +423,7 @@ function buildTimeCtx(events, ctx) {
       // #7: an anchor is an AttestationPublished — its signer kinds come from the policy's
       // AttestationPublished node-kinds via ctx. v1 fallback = old ATTESTOR_KINDS.
       const attestorKinds = ctx.nodeKindsForEvent("AttestationPublished");
-      resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedAttestors, attestorKinds, ev.type);
+      resolved = resolveTrustedKey(ctx.nodeManifests, sig.keyId, ctx.trustedAttestors, attestorKinds, ev.type, ev, ctx.verifierPolicy);
     } catch { continue; } // keyId collision among trusted nodes — not a trusted clock here.
     if (resolved.error || !verifyEd25519(resolved.pem, sig.canonicalHash, sig.value)) continue;
     trustedAnchors.push({ ev, meta, signerNode: resolved.signerNode });
@@ -607,6 +635,7 @@ export function buildTrust(opts = {}) {
   const ctx = {
     nodesDir,
     nodeManifests,
+    verifierPolicy,
     trustedAttestors: new Set(verifierPolicy?.trustedAttestors || []),
     trustedPolicy: new Set(verifierPolicy?.trustedPolicy || verifierPolicy?.trustedAttestors || []),
     // #7: which node KINDS may sign a given event type, resolved from the policy's nodeKinds map (v1
