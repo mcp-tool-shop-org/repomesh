@@ -115,9 +115,11 @@ jobs:
       - name: Image tags
         id: tags
         working-directory: packages/repomesh-cli
+        env:
+          WF_EVENT_NAME: ${{ github.event_name }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if [ "${{ github.event_name }}" = "release" ]; then
+          if [ "${WF_EVENT_NAME}" = "release" ]; then
             TAG_VERSION="${GITHUB_REF_NAME#v}"
             if [ "$VERSION" != "$TAG_VERSION" ]; then
               echo "::error::Release tag ${TAG_VERSION} does not match package.json version ${VERSION}"

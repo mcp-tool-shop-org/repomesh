@@ -214,8 +214,8 @@ jobs:
       - name: Append to ledger via PR
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+          REPO_SLUG: ${{ github.event.repository.name }}
         run: |
-          REPO_SLUG="${{ github.event.repository.name }}"
           VERSION="${{ inputs.version || github.ref_name }}"
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 

@@ -29,18 +29,24 @@ jobs:
     steps:
       - name: Verify workflow_run origin (main of this repository only)
         if: github.event_name == 'workflow_run'
+        env:
+          WF_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          WF_REPO: ${{ github.repository }}
+          WF_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WF_EVENT: ${{ github.event.workflow_run.event }}
+          WF_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event.workflow_run.head_repository.full_name }}" != "${{ github.repository }}" ]; then
-            echo "::error::Refusing workflow_run from external repository ${{ github.event.workflow_run.head_repository.full_name }}"
+          if [ "${WF_HEAD_REPO}" != "${WF_REPO}" ]; then
+            echo "::error::Refusing workflow_run from external repository ${WF_HEAD_REPO}"
             exit 1
           fi
-          if [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
-            echo "::error::Refusing workflow_run from non-main branch ${{ github.event.workflow_run.head_branch }}"
+          if [ "${WF_HEAD_BRANCH}" != "main" ]; then
+            echo "::error::Refusing workflow_run from non-main branch ${WF_HEAD_BRANCH}"
             exit 1
           fi
-          if [ "${{ github.event.workflow_run.event }}" != "push" ] || [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-            echo "::error::Refusing workflow_run with event=${{ github.event.workflow_run.event }} conclusion=${{ github.event.workflow_run.conclusion }}"
+          if [ "${WF_EVENT}" != "push" ] || [ "${WF_CONCLUSION}" != "success" ]; then
+            echo "::error::Refusing workflow_run with event=${WF_EVENT} conclusion=${WF_CONCLUSION}"
             exit 1
           fi
 
@@ -50,31 +56,53 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Check registry-relevant path changes
         id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WF_REPO: ${{ github.repository }}
+          WF_EVENT_NAME: ${{ github.event_name }}
+          WF_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual workflow_dispatch — running registry build."
+          if [ "${WF_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "Manual workflow_dispatch — running registry build unconditionally."
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-          PRIOR_SHA="$(git rev-parse "${HEAD_SHA}~1")"
-          CHANGED="$(git diff --name-only "$PRIOR_SHA" "$HEAD_SHA" -- \
+          if [ -z "${WF_HEAD_SHA:-}" ]; then
+            echo "No workflow_run head_sha provided — running registry build unconditionally."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PRIOR_SHA=""
+          if LAST_SHA="$(gh api "repos/${WF_REPO}/actions/workflows/registry-ci.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null)" && [ -n "$LAST_SHA" ]; then
+            if git cat-file -e "${LAST_SHA}^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$LAST_SHA" "$WF_HEAD_SHA" 2>/dev/null \
+              && [ "$LAST_SHA" != "$WF_HEAD_SHA" ]; then
+              PRIOR_SHA="$LAST_SHA"
+            fi
+          fi
+          if [ -z "$PRIOR_SHA" ]; then
+            echo "No reachable prior successful registry-ci head_sha found — running registry build unconditionally."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "$PRIOR_SHA" "$WF_HEAD_SHA" -- \
             'ledger/nodes/**' \
             'ledger/events/**' \
             'registry/scripts/**' \
             'profiles/**' \
             '.github/workflows/registry-ci.yml')"
           if [ -z "$CHANGED" ]; then
-            echo "No registry paths changed between ${PRIOR_SHA} and ${HEAD_SHA}. Exiting early."
+            echo "No registry paths changed between ${PRIOR_SHA} and ${WF_HEAD_SHA}. Exiting early."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "Registry paths changed between ${PRIOR_SHA} and ${HEAD_SHA}:"
+          echo "Registry paths changed between ${PRIOR_SHA} and ${WF_HEAD_SHA}:"
           echo "$CHANGED"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 

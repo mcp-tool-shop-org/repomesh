@@ -185,11 +185,23 @@ export function assertPostingEndpoint(config, env = process.env) {
 export async function connectValidatedClient(
   config,
   env = process.env,
-  { createClient = (url) => new xrpl.Client(url) } = {}
+  { createClient = (url) => new xrpl.Client(url), assertedEndpoint = null } = {}
 ) {
   const check = assertPostingEndpoint(config, env);
   if (!check.ok) {
     return { ...check, client: null };
+  }
+  if (
+    assertedEndpoint &&
+    (check.wsUrl !== assertedEndpoint.wsUrl || check.network !== assertedEndpoint.network)
+  ) {
+    return {
+      ok: false,
+      network: check.network,
+      wsUrl: check.wsUrl,
+      reason: `Refusing to post anchor: endpoint changed after initial assertion (asserted ${assertedEndpoint.network}@${assertedEndpoint.wsUrl}, got ${check.network}@${check.wsUrl}).`,
+      client: null,
+    };
   }
   const client = createClient(check.wsUrl);
   await client.connect();
@@ -249,7 +261,7 @@ async function main() {
     : path.join(import.meta.dirname, "..", "config.json");
   let config;
   try { config = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch (e) { console.error("Failed to read " + configPath + ": " + e.message); process.exit(1); }
-  const endpointCheck = assertPostingEndpoint(config, process.env);
+  const endpointCheck = Object.freeze(assertPostingEndpoint(config, process.env));
   if (!endpointCheck.ok) {
     console.error(`\n  ${endpointCheck.reason}\n`);
     process.exit(1);
@@ -278,9 +290,16 @@ async function main() {
   try { rootData = JSON.parse(fs.readFileSync(rootPath, "utf8")); } catch (e) { console.error("Failed to read " + rootPath + ": " + e.message); process.exit(1); }
   if (!rootData.root) { console.log("Empty partition. Skipping."); process.exit(0); }
 
-  const client = new xrpl.Client(WS_URL);
+  let client;
   try {
-    await client.connect();
+    const conn = await connectValidatedClient(config, process.env, {
+      assertedEndpoint: endpointCheck,
+    });
+    if (!conn.ok) {
+      console.error(`\n  ${conn.reason}\n`);
+      process.exit(1);
+    }
+    client = conn.client;
     noteRippledBuild(client);
   } catch (connErr) {
     // STGB-ANCHOR-002 (parity with verify-anchor's ANC-B01 read-path): an unreachable rippled

@@ -212,4 +212,32 @@ describe("XRPL fail-closed testnet guard (post-anchor.mjs)", () => {
     assert.equal(clientInstantiations, 1);
     assert.equal(connectCalls, 1);
   });
+
+  it("main() connects through connectValidatedClient and refuses when the environment URL changes after assertion", async () => {
+    const src = fs.readFileSync(POST_ANCHOR_SCRIPT, "utf8");
+    const mainBody = src.slice(src.indexOf("async function main()"));
+    assert.match(mainBody, /connectValidatedClient\s*\(/, "main() must connect through connectValidatedClient");
+    assert.doesNotMatch(mainBody, /new\s+xrpl\.Client\s*\(/, "main() must not construct new xrpl.Client directly");
+
+    let clientInstantiations = 0;
+    const createClient = (url) => {
+      clientInstantiations++;
+      return { url, async connect() {} };
+    };
+
+    const initialEnv = { XRPL_WS_URL: "wss://s.altnet.rippletest.net:51233" };
+    const asserted = postAnchor.assertPostingEndpoint(SHIPPED_CONFIG, initialEnv);
+    assert.equal(asserted.ok, true);
+
+    // Environment mutates after initial assertion to a different endpoint (even another testnet endpoint)
+    const mutatedEnv = { XRPL_WS_URL: "wss://testnet.xrpl-labs.com" };
+    const drifted = await postAnchor.connectValidatedClient(SHIPPED_CONFIG, mutatedEnv, {
+      createClient,
+      assertedEndpoint: asserted,
+    });
+    assert.equal(drifted.ok, false, "must refuse when current env URL differs from assertedEndpoint");
+    assert.equal(drifted.client, null);
+    assert.equal(clientInstantiations, 0, "must not instantiate client when assertedEndpoint and current env differ");
+    assert.match(drifted.reason || "", /endpoint changed after initial assertion/i);
+  });
 });
