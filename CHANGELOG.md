@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-24
+
+### Added
+
+- **Run event attestation types (`run.preregistered`, `run.outcome`, `cognate.root.anchored`)** in `schemas/event.schema.json` (and the CLI schema mirror), requiring `sha256` digests and structured `urn:cognate:...` URIs, with cross-event enforcement in `validate-ledger.mjs` that every `run.outcome` references a prior `run.preregistered` event.
+- **Scoped `governance` attestor kind** in `verifier.policy.json` (`nodeKinds.governance`), `remote-defaults.mjs`, `validate-ledger.mjs`, and `build-trust.mjs`, authorizing `mcp-tool-shop-org/cognate` exclusively for the three run attestation types (never `ReleasePublished` or release attestations) while keeping the bundled trusted release-attestor ceiling narrow (D12).
+- **Explicit Ed25519 32-byte raw signing contract check** in `validate-ledger.mjs` (`Buffer.from(canonicalHash, "hex")`), diagnosing and refusing signatures computed over UTF-8 canonical JSON or 64-byte ASCII hex strings.
+
 ## [2.3.3] - 2026-10-14
 
 ### Changed

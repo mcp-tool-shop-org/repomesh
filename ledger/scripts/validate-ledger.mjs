@@ -153,7 +153,7 @@ const RUN_OUTCOME_URI_RE = /^urn:cognate:run:outcome:([A-Za-z0-9_.-]+)(?::prereg
 const COGNATE_ROOT_URI_RE = /^urn:cognate:root:anchored:([A-Za-z0-9_.:-]+)$/;
 const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
-function recordRunPreregistrations(ev, preregByRunId) {
+export function recordRunPreregistrations(ev, preregByRunId) {
   if (!ev || ev.type !== "AttestationPublished" || !Array.isArray(ev.attestations)) return;
   for (const att of ev.attestations) {
     if (!att || att.type !== "run.preregistered") continue;
@@ -170,7 +170,7 @@ function recordRunPreregistrations(ev, preregByRunId) {
   }
 }
 
-function validateRunAttestations(ev, lineNo, preregByRunId) {
+export function validateRunAttestations(ev, lineNo, preregByRunId) {
   if (!ev || !Array.isArray(ev.attestations)) return;
   for (const att of ev.attestations) {
     if (!att || !RUN_ATTESTATION_TYPES.includes(att.type)) continue;
@@ -381,8 +381,15 @@ function resolveTrustedKey(keyId, eventType, allowlist, allowedKinds, windowChec
   return { pk: matches[0].pk, signerNode: matches[0].id };
 }
 
-function verifyEd25519(pubKeyPem, msgHex, sigB64) {
+// Ed25519 signing contract (New 1, Trio Phase 1):
+//   RepoMesh Ed25519 signatures MUST sign the raw 32-byte SHA-256 digest:
+//     Buffer.from(canonicalHash, "hex")   (32 raw bytes)
+//   and NEVER the UTF-8 canonical JSON bytes (Buffer.from(canonicalJson, "utf8")) or the 64-byte
+//   ASCII hex string (Buffer.from(canonicalHash, "utf8")).
+export function verifyEd25519(pubKeyPem, msgHex, sigB64) {
+  if (typeof msgHex !== "string" || !SHA256_HEX_RE.test(msgHex)) return false;
   const msg = Buffer.from(msgHex, "hex");
+  if (msg.length !== 32) return false;
   const sig = Buffer.from(sigB64, "base64");
   try {
     return crypto.verify(null, msg, pubKeyPem, sig);
@@ -390,6 +397,34 @@ function verifyEd25519(pubKeyPem, msgHex, sigB64) {
     console.error("Signature verification error: " + e.message);
     return false;
   }
+}
+
+export function diagnoseEd25519Failure(pubKeyPem, ev, sigB64) {
+  const sig = Buffer.from(sigB64 || "", "base64");
+  try {
+    const canonicalJson = canonicalizeForHash(stripSignature(ev));
+    if (crypto.verify(null, Buffer.from(canonicalJson, "utf8"), pubKeyPem, sig)) {
+      return (
+        `signature was computed over UTF-8 canonical JSON instead of the raw 32-byte ` +
+        `canonicalHash digest (Buffer.from(canonicalHash, "hex")). RepoMesh Ed25519 signatures ` +
+        `must sign the raw 32 bytes Buffer.from(canonicalHash, "hex").`
+      );
+    }
+    const msgHex = ev?.signature?.canonicalHash || "";
+    if (crypto.verify(null, Buffer.from(msgHex, "utf8"), pubKeyPem, sig)) {
+      return (
+        `signature was computed over the 64-byte UTF-8 hex string instead of the raw 32-byte ` +
+        `canonicalHash digest (Buffer.from(canonicalHash, "hex")). RepoMesh Ed25519 signatures ` +
+        `must sign the raw 32 bytes Buffer.from(canonicalHash, "hex").`
+      );
+    }
+  } catch {
+    // Fall through to default contract message
+  }
+  return (
+    `Ed25519 signature did not verify against the raw 32-byte canonicalHash digest ` +
+    `(Buffer.from(canonicalHash, "hex")).`
+  );
 }
 
 // --- Offline trusted-time ctx (contract §5.2/§5.3) --------------------------------------------
@@ -965,15 +1000,15 @@ for (let idx = 0; idx < newLines.length; idx++) {
   } else {
     // Repo-bound: load + validate the event's own repo node manifest.
     const node = findNodeManifest(ev.repo);
-    if (!validateNode(node)) {
-      fail(`node.json schema failed for ${ev.repo}: ${ajv.errorsText(validateNode.errors)}`);
-    }
     // Trio Phase 1 (GAPS §3 PR 3): a `governance` node may only sign run attestation types, not releases.
     if (node.kind === "governance") {
       fail(
         `Node "${ev.repo}" has kind="governance", which may only sign run attestation types ` +
         `(${RUN_ATTESTATION_TYPES.join(", ")}), not ${ev.type} (line ${lineNo}).`
       );
+    }
+    if (!validateNode(node)) {
+      fail(`node.json schema failed for ${ev.repo}: ${ajv.errorsText(validateNode.errors)}`);
     }
     // LDG-006: every maintainer must carry a non-empty contact.
     for (const m of node.maintainers || []) {
@@ -989,7 +1024,8 @@ for (let idx = 0; idx < newLines.length; idx++) {
 
   const ok = verifyEd25519(pubKeyPem, ev.signature.canonicalHash, ev.signature.value);
   if (!ok) {
-    fail(`Signature verification failed at line ${lineNo} for ${ev.repo} (keyId=${ev.signature.keyId}).`);
+    const reason = diagnoseEd25519Failure(pubKeyPem, ev, ev.signature.value);
+    fail(`Signature verification failed at line ${lineNo} for ${ev.repo} (keyId=${ev.signature.keyId}): ${reason}`);
   }
 
   console.log(`  ✅ line ${lineNo}: ${ev.type} ${ev.repo}@${ev.version} — verified`);
