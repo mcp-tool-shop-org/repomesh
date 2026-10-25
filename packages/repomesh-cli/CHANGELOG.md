@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [2.5.0] - 2026-10-24
+## [2.5.0] - 2026-10-25
 
 ### Added
 
@@ -14,6 +14,8 @@
 - **Fail-closed XRPL anchor posting**: `post-anchor.mjs` refuses to post and opens no `xrpl.Client` connection unless `config.network === "testnet"` and the resolved WebSocket URL (`XRPL_WS_URL` or `config.rippledUrl`) is on `KNOWN_TESTNET_WS_URLS`. Mainnet posting cannot be triggered by an environment variable alone and requires both `allowMainnetPosting: true` and `mainnetAllowedEndpoints` in committed `anchor/xrpl/config.json`.
 
 ## [2.4.0] - 2026-10-24
+
+Not published separately; these changes ship in 2.5.0.
 
 ### Added
 
