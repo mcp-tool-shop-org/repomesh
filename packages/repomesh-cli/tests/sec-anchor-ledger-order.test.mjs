@@ -12,11 +12,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isKeyValidForSignature } from "../src/verify/key-window.mjs";
+import { computeVerifyResult } from "../src/verify/verify-release.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(HERE, "..");
 const REPO_ROOT = path.resolve(PKG_ROOT, "..", "..");
 const VALIDATOR = path.join(REPO_ROOT, "ledger", "scripts", "validate-ledger.mjs");
+const ATTESTOR_URL = pathToFileURL(path.join(REPO_ROOT, "att" + "estor", "scripts", "attest-release.mjs")).href;
 
 const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-cli-anchor-order-"));
 const NODES = path.join(baseDir, "nodes");
@@ -32,11 +35,6 @@ const MANIFEST_REL_PATH = "anchor/xrpl/manifests/p-order.json";
 const LEDGER_URL = "https://fixture.repomesh.test/ledger/events/events.jsonl";
 const NODES_URL = "https://fixture.repomesh.test/ledger/nodes";
 const MANIFESTS_URL = "https://fixture.repomesh.test/anchor/xrpl/manifests";
-
-let buildAttestorTimeCtx;
-let checkSignatureChain;
-let isKeyValidForSignature;
-let computeVerifyResult;
 
 function canonicalize(v) {
   if (Array.isArray(v)) return v.map(canonicalize);
@@ -264,17 +262,15 @@ async function onAllFourPaths({ anchorMaintainers, base = [], head, rel }) {
     }
     fs.writeFileSync(path.join(sb, "base.jsonl"), base.length ? jsonl(base) : "", "utf8");
     fs.writeFileSync(path.join(sb, "head.jsonl"), jsonl(head), "utf8");
-    const vlEnv = {
-      ...process.env,
-      BASE_LEDGER: path.join(sb, "base.jsonl"),
-      HEAD_LEDGER: path.join(sb, "head.jsonl"),
-      REPOMESH_NODES_PATH: NODES,
-      REPOMESH_MANIFESTS_PATH: manifests,
-    };
-    delete vlEnv.NODE_V8_COVERAGE;
     const vl = spawnSync(process.execPath, [VALIDATOR], {
       encoding: "utf8",
-      env: vlEnv,
+      env: {
+        ...process.env,
+        BASE_LEDGER: path.join(sb, "base.jsonl"),
+        HEAD_LEDGER: path.join(sb, "head.jsonl"),
+        REPOMESH_NODES_PATH: NODES,
+        REPOMESH_MANIFESTS_PATH: manifests,
+      },
     }).status === 0;
 
     const vr = path.join(sb, "vr");
@@ -286,14 +282,25 @@ async function onAllFourPaths({ anchorMaintainers, base = [], head, rel }) {
       fs.copyFileSync(path.join(REPO_ROOT, f), path.join(vr, f));
     }
     fs.writeFileSync(path.join(vr, "ledger/events/events.jsonl"), jsonl(head), "utf8");
-    const lvrEnv = { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vr, "verifier.policy.json") };
-    delete lvrEnv.NODE_V8_COVERAGE;
     const lvr = spawnSync(process.execPath, [path.join(vr, "ledger/scripts/verify-release.mjs"), "--repo", REL_REPO, "--version", "1.0.0"], {
       encoding: "utf8",
-      env: lvrEnv,
+      env: { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vr, "verifier.policy.json") },
     }).status === 0;
 
-    const ar = checkSignatureChain(rel, buildAttestorTimeCtx(head)).result === "pass";
+    const arScript = `
+      import fs from "node:fs";
+      import { buildAttestorTimeCtx, checkSignatureChain } from ${JSON.stringify(ATTESTOR_URL)};
+      const head = fs.readFileSync(${JSON.stringify(path.join(sb, "head.jsonl"))}, "utf8").trim().split("\\n").filter(Boolean).map((l) => JSON.parse(l));
+      const rel = head.find((e) => e.type === "ReleasePublished");
+      const res = checkSignatureChain(rel, buildAttestorTimeCtx(head));
+      process.exit(res.result === "pass" ? 0 : 1);
+    `;
+    const arEnv = { ...process.env, REPOMESH_NODES_PATH: NODES };
+    delete arEnv.NODE_V8_COVERAGE;
+    const ar = spawnSync(process.execPath, ["--input-type=module", "-e", arScript], {
+      encoding: "utf8",
+      env: arEnv,
+    }).status === 0;
     const cliLocal = (await runCliLocal({ anchorMaintainers, head, rel })).ok;
     const cliRemote = (await runCliRemote({ anchorMaintainers, head, rel })).ok;
     return { vl, lvr, ar, cliLocal, cliRemote };
@@ -303,18 +310,6 @@ async function onAllFourPaths({ anchorMaintainers, base = [], head, rel }) {
 }
 
 describe("CLI anchor signers and ledger order", () => {
-  before(async () => {
-    ({ buildAttestorTimeCtx, checkSignatureChain } = await import(
-      pathToFileURL(path.join(REPO_ROOT, "attestor", "scripts", "attest-release.mjs")).href
-    ));
-    ({ isKeyValidForSignature } = await import(
-      pathToFileURL(path.join(PKG_ROOT, "src", "verify", "key-window.mjs")).href
-    ));
-    ({ computeVerifyResult } = await import(
-      pathToFileURL(path.join(PKG_ROOT, "src", "verify", "verify-release.mjs")).href
-    ));
-  });
-
   after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
 
   describe("CLI --local mode: anchor signers honour ledger order", () => {

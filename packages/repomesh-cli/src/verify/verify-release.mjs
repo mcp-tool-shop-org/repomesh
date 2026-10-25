@@ -177,17 +177,9 @@ function isTrustedAttestorNode(key, allowlist, event = null) {
 
 function effectiveTrustedRunAttestors(opts) {
   const out = new Set(BUNDLED_TRUSTED_RUN_ATTESTORS);
-  if (opts?.local && opts?.root) {
-    try {
-      const p = path.join(opts.root, "verifier.policy.json");
-      if (fs.existsSync(p)) {
-        const policy = parseStrictJson(fs.readFileSync(p, "utf8"));
-        const runIds = Array.isArray(policy?.trustedRunAttestors) ? policy.trustedRunAttestors : [];
-        for (const id of runIds) {
-          if (typeof id === "string") out.add(id);
-        }
-      }
-    } catch (e) { debugLog(`trustedRunAttestors read failed: ${e.message}`); }
+  const policy = readVerifierPolicy(opts);
+  for (const id of Array.isArray(policy?.trustedRunAttestors) ? policy.trustedRunAttestors : []) {
+    if (typeof id === "string") out.add(id);
   }
   return out;
 }
@@ -217,147 +209,68 @@ async function preloadNodeForOpts(repoId, opts) {
   if (opts?.local) return loadNodeSync(repoId, opts);
   const cache = getNodeCache(opts);
   if (cache.has(repoId)) return cache.get(repoId);
-  const nodesUrl = opts?.nodesUrl || DEFAULT_NODES_URL;
   try {
-    const node = await fetchJson(`${nodesUrl}/${repoId}/node.json`, TRUST_FETCH_OPTS);
-    const validNode = node && typeof node === "object" ? node : null;
-    cache.set(repoId, validNode);
-    return validNode;
-  } catch (e) {
-    debugLog(e.message);
-    cache.set(repoId, null);
-    return null;
-  }
+    const node = await fetchJson(`${opts?.nodesUrl || DEFAULT_NODES_URL}/${repoId}/node.json`, TRUST_FETCH_OPTS);
+    const valid = node && typeof node === "object" ? node : null;
+    cache.set(repoId, valid);
+    return valid;
+  } catch (e) { debugLog(e.message); cache.set(repoId, null); return null; }
 }
 
 async function preloadKeyEventNodes(events, opts, trustedPolicy) {
   if (opts?.local || !Array.isArray(events)) return;
   const needed = new Set();
-  let hasKeyEvents = false;
   for (const ev of events) {
-    if (ev && (ev.type === "KeyRotation" || ev.type === "KeyRevocation")) {
-      hasKeyEvents = true;
-      if (typeof ev.repo === "string" && ev.repo.includes("/")) needed.add(ev.repo);
-    }
-  }
-  if (hasKeyEvents && trustedPolicy) {
-    for (const p of trustedPolicy) {
-      if (typeof p === "string" && p.includes("/")) needed.add(p);
+    if (ev && (ev.type === "KeyRotation" || ev.type === "KeyRevocation") && typeof ev.repo === "string") {
+      needed.add(ev.repo);
+      for (const p of trustedPolicy || []) needed.add(p);
     }
   }
   await Promise.all([...needed].map((id) => preloadNodeForOpts(id, opts)));
 }
 
-// Shared anchor-trust evaluation (#153):
-// Decides anchor trust with the shared isBundledTrustedAnchorEvent rule over the already-loaded
-// ledger events and a node loader over the active source (remote or --local). Fails closed when
-// events or nodes needed to place and judge the anchor cannot be loaded.
+// Shared anchor-trust evaluation (#153): decides anchor trust with isBundledTrustedAnchorEvent
+// over the loaded ledger events and active node source (--local or remote), failing closed.
 async function evaluateAnchorTrust(anchorEvent, events, opts) {
-  if (!anchorEvent || typeof anchorEvent !== "object") {
-    return { trusted: false, nodeId: null, reason: "anchor event missing" };
+  const sig = anchorEvent?.signature;
+  if (!sig?.keyId || !Array.isArray(events) || events.length === 0) {
+    return { trusted: false, nodeId: null, reason: "anchor event signature invalid" };
   }
-  if (!Array.isArray(events) || events.length === 0) {
-    return { trusted: false, nodeId: null, reason: "no ledger events available to judge anchor" };
-  }
-  let ev;
-  try {
-    ev = parseStrictJson(JSON.stringify(anchorEvent));
-  } catch (e) {
-    return { trusted: false, nodeId: null, reason: `anchor event rejected: ${e.message}` };
-  }
-  const sig = ev.signature;
-  if (!sig || typeof sig !== "object" || !sig.canonicalHash || !sig.value || !sig.keyId) {
-    return { trusted: false, nodeId: null, reason: "anchor event missing signature" };
-  }
-  const body = { ...ev };
-  delete body.signature;
-  const canonHash = crypto.createHash("sha256").update(canonicalize(body), "utf8").digest("hex");
-  if (canonHash !== sig.canonicalHash) {
-    return { trusted: false, nodeId: null, reason: "anchor event canonical hash mismatch" };
-  }
-
   const trustedPolicy = readTrustedPolicyNodes(opts);
   const trustedRunAttestors = effectiveTrustedRunAttestors(opts);
   const allowlist = effectiveTrustedAttestors(opts);
-
+  const candidates = BUNDLED_TRUSTED_ATTESTORS.filter((id) => !trustedRunAttestors.has(id));
   if (!opts?.local) {
-    if (typeof anchorEvent.repo === "string" && anchorEvent.repo.includes("/")) {
-      await preloadNodeForOpts(anchorEvent.repo, opts);
-    }
+    if (typeof anchorEvent.repo === "string") await preloadNodeForOpts(anchorEvent.repo, opts);
     await preloadKeyEventNodes(events, opts, trustedPolicy);
-    let keyFoundInCached = false;
-    for (const id of BUNDLED_TRUSTED_ATTESTORS) {
-      if (trustedRunAttestors.has(id)) continue;
-      const n = loadNodeSync(id, opts);
-      if (n && (n.maintainers || []).some((m) => m.keyId === sig.keyId)) {
-        keyFoundInCached = true;
-        break;
-      }
-    }
-    if (!keyFoundInCached) {
-      await Promise.all(
-        BUNDLED_TRUSTED_ATTESTORS
-          .filter((id) => !trustedRunAttestors.has(id))
-          .map((id) => preloadNodeForOpts(id, opts))
-      );
+    if (!candidates.some((id) => (loadNodeSync(id, opts)?.maintainers || []).some((m) => m.keyId === sig.keyId))) {
+      await Promise.all(candidates.map((id) => preloadNodeForOpts(id, opts)));
     }
   }
-
   const loadNode = (repoId) => loadNodeSync(repoId, opts);
-
-  if (typeof anchorEvent.repo === "string" && anchorEvent.repo.length > 0) {
-    if (!loadNode(anchorEvent.repo)) {
-      return {
-        trusted: false,
-        nodeId: null,
-        reason: `anchor event repo node ${anchorEvent.repo} could not be loaded`,
-      };
-    }
+  if (typeof anchorEvent.repo === "string" && anchorEvent.repo && !loadNode(anchorEvent.repo)) {
+    return { trusted: false, nodeId: null, reason: `anchor node ${anchorEvent.repo} could not be loaded` };
   }
-
   for (const e of events) {
-    if (e && (e.type === "KeyRotation" || e.type === "KeyRevocation")) {
-      if (typeof e.repo === "string" && BUNDLED_TRUSTED_ATTESTORS.includes(e.repo) && !loadNode(e.repo)) {
-        return {
-          trusted: false,
-          nodeId: null,
-          reason: `node ${e.repo} needed to judge anchor key lifecycle could not be loaded`,
-        };
-      }
+    if (e && (e.type === "KeyRotation" || e.type === "KeyRevocation") && BUNDLED_TRUSTED_ATTESTORS.includes(e.repo) && !loadNode(e.repo)) {
+      return { trusted: false, nodeId: null, reason: `node ${e.repo} could not be loaded` };
     }
   }
-
   const verifySig = (pem, targetEv) => verifyKeyEventSig(targetEv, pem);
   const sharedTrusted = isBundledTrustedAnchorEvent(anchorEvent, {
-    trustedAttestors: BUNDLED_TRUSTED_ATTESTORS,
-    trustedRunAttestors,
-    loadNode,
-    events,
-    verifySignature: verifySig,
-    trustedPolicy,
+    trustedAttestors: BUNDLED_TRUSTED_ATTESTORS, trustedRunAttestors, loadNode, events, verifySignature: verifySig, trustedPolicy,
   });
-
-  let matchedNodeId = null;
-  for (const id of BUNDLED_TRUSTED_ATTESTORS) {
-    if (trustedRunAttestors.has(id)) continue;
+  const matchedNodeId = candidates.find((id) => {
     const node = loadNode(id);
-    if (!node || node.kind === "governance") continue;
-    const m = (node.maintainers || []).find((x) => x.keyId === sig.keyId);
-    const pem = String(m?.publicKey || "").trim();
-    if (!pem.includes("BEGIN PUBLIC KEY")) continue;
-    if (verifySig(pem, anchorEvent)) {
-      matchedNodeId = id;
-      break;
-    }
-  }
-
+    const m = node && node.kind !== "governance" ? (node.maintainers || []).find((x) => x.keyId === sig.keyId) : null;
+    return m?.publicKey && verifySig(String(m.publicKey).trim(), anchorEvent);
+  }) || null;
   if (!sharedTrusted || !matchedNodeId || !allowlist.has(matchedNodeId)) {
     const reason = matchedNodeId && !allowlist.has(matchedNodeId)
       ? `anchor signed by non-allowlisted node ${matchedNodeId}`
       : `anchor event signature invalid: no valid trusted anchor key for keyId=${sig.keyId}`;
     return { trusted: false, nodeId: matchedNodeId, reason };
   }
-
   return { trusted: true, nodeId: matchedNodeId, reason: null };
 }
 
@@ -663,48 +576,20 @@ async function verifySignature(event, opts, keyOpts) {
   }
 
   const key = await findPublicKey(sig.keyId, event, opts, keyCtx);
-  if (keyCtx && !keyCtx.trustedTime) {
-    const tt = keyCtx.online
-      ? await resolveTrustedSignatureTime(event, keyCtx.ctx)
-      : resolveTrustedSignatureTimeSync(event, keyCtx.ctx);
-    keyCtx.trustedTime = { source: tt.source, provable: tt.provable };
-  }
   const signatureTime = keyCtx?.trustedTime ?? null;
-  if (!key) {
-    return {
-      ok: false,
-      reason: `no public key for keyId=${sig.keyId}`,
-      hint: "Ensure the signing repo has registered node.json in the ledger. Run: npx repomesh doctor --repo <org/repo> to check node registration",
-      ...(signatureTime ? { signatureTime } : {}),
-    };
-  }
+  const withTime = (r) => (signatureTime ? { ...r, signatureTime } : r);
+  if (!key) return withTime({ ok: false, reason: `no public key for keyId=${sig.keyId}`, hint: "Ensure the signing repo has registered node.json in the ledger. Run: npx repomesh doctor --repo <org/repo> to check node registration" });
 
   // D1: for non-third-party events, the resolving node MUST be the event's own repo.
   if (!THIRD_PARTY_TYPES.has(event?.type) && key.nodeId !== event.repo) {
-    return {
-      ok: false,
-      reason: `signer node ${key.nodeId} does not match event repo ${event.repo}`,
-      ...(signatureTime ? { signatureTime } : {}),
-    };
+    return withTime({ ok: false, reason: `signer node ${key.nodeId} does not match event repo ${event.repo}` });
   }
 
   try {
     const ok = crypto.verify(null, Buffer.from(canonHash, "hex"), key.publicKey, Buffer.from(sig.value, "base64"));
-    return ok
-      ? { ok: true, nodeId: key.nodeId, ...(signatureTime ? { signatureTime } : {}) }
-      : {
-          ok: false,
-          reason: "signature invalid",
-          hint: "The release may have been tampered with, or the signing key has changed",
-          ...(signatureTime ? { signatureTime } : {}),
-        };
+    return withTime(ok ? { ok: true, nodeId: key.nodeId } : { ok: false, reason: "signature invalid", hint: "The release may have been tampered with, or the signing key has changed" });
   } catch (e) {
-    return {
-      ok: false,
-      reason: `verify error: ${e.message}`,
-      hint: "The release may have been tampered with, or the signing key has changed",
-      ...(signatureTime ? { signatureTime } : {}),
-    };
+    return withTime({ ok: false, reason: `verify error: ${e.message}`, hint: "The release may have been tampered with, or the signing key has changed" });
   }
 }
 
