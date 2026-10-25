@@ -265,10 +265,14 @@ export function buildAttestorTimeCtx(events) {
     return earliest ? { anchor: earliest } : null;
   }
 
+  const trustedPolicy = loadTrustedPolicy();
+
   function isBundledTrustedAnchor(anchorEvent) {
     return isBundledTrustedAnchorEvent(anchorEvent, {
       trustedAttestors: trusted,
       trustedRunAttestors,
+      trustedPolicy,
+      events: evs,
       loadNode: findNodeManifestForAnchor,
       verifySignature: (pem, ev) => verifyEventSig(ev, pem),
     });
@@ -278,7 +282,6 @@ export function buildAttestorTimeCtx(events) {
   // (verifySignature/getMaintainer/timeOf/trustedPolicy) so checkSignatureChain can derive the
   // signed-event window floor via the ORDER-AWARE forward pass and merge the stricter window. The opts
   // close over `ctx` (this object) so timeOf resolves trusted time against the same anchor index.
-  const trustedPolicy = loadTrustedPolicy();
   const ctx = { findEarliestAnchorForLeaf, isBundledTrustedAnchor, events: evs };
   ctx.deriveOpts = makeDeriveOpts(ctx, trustedPolicy);
   return ctx;

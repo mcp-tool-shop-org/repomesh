@@ -101,19 +101,20 @@ export function isKeyValidForSignature(maintainer, trustedTime) {
   if (w.validUntil && t >= w.validUntil) {
     return { valid: false, reason: "signature at/after validUntil (key rotated out)" };
   }
-  if (w.revokedAt) {
-    if (w.revocationReason === "compromise") {
+  if (w.revokedAt || w.invalidAfter) {
+    if (w.revocationReason === "rotation" || w.revocationReason === "retirement") {
+      // 'rotation' | 'retirement' — prospective; past signatures trusted.
+      if (w.revokedAt && t >= w.revokedAt) {
+        return { valid: false, reason: "signature at/after revocation" };
+      }
+    } else {
+      // 'compromise' or no reason — fail closed as compromise.
       const boundary = w.invalidAfter ?? w.revokedAt;
       if (t >= boundary) {
         return { valid: false, reason: "signature at/after compromise invalidity date" };
       }
       if (!tt.provable) {
         return { valid: false, reason: "compromised key requires a provable (anchored) signature time" };
-      }
-    } else {
-      // 'rotation' | 'retirement' — prospective; past signatures trusted.
-      if (t >= w.revokedAt) {
-        return { valid: false, reason: "signature at/after revocation" };
       }
     }
   }
@@ -543,7 +544,18 @@ export function mergeStricterWindow(maintainer, constraint) {
 // isBundledTrustedAnchorEvent(anchorEvent, opts) -> boolean
 // Shared anchor-trust gate across validate-ledger.mjs, ledger/scripts/verify-release.mjs, and
 // attestor/scripts/attest-release.mjs. Governance nodes and run-scoped attestors never anchor trust,
-// and the anchor's signature must verify against a non-governance trustedAttestors maintainer key.
+// and the anchor's signature must verify against a non-governance trustedAttestors maintainer key
+// whose rotation or revocation does not precede the anchor in ledger order.
+function findAnchorEventIndex(events, anchorEvent) {
+  const idx = events.indexOf(anchorEvent);
+  if (idx !== -1) return idx;
+  const h = anchorEvent?.signature?.canonicalHash;
+  if (typeof h === "string" && h.length > 0) {
+    return events.findIndex((e) => e?.signature?.canonicalHash === h);
+  }
+  return -1;
+}
+
 export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   if (!anchorEvent || typeof anchorEvent !== "object") return false;
   const trusted =
@@ -554,6 +566,10 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
     opts.trustedRunAttestors instanceof Set
       ? opts.trustedRunAttestors
       : new Set(Array.isArray(opts.trustedRunAttestors) ? opts.trustedRunAttestors : []);
+  const trustedPolicy =
+    opts.trustedPolicy instanceof Set
+      ? opts.trustedPolicy
+      : new Set(Array.isArray(opts.trustedPolicy) ? opts.trustedPolicy : trusted);
   const loadNode = typeof opts.loadNode === "function" ? opts.loadNode : () => null;
   const verifySignature =
     typeof opts.verifySignature === "function"
@@ -585,6 +601,42 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
     anchorSelfTime !== null
       ? { time: anchorSelfTime, provable: false, source: "self" }
       : { time: null, provable: false, source: "none" };
+  const events = Array.isArray(opts.events) ? opts.events : null;
+  const anchorIdx = events ? findAnchorEventIndex(events, anchorEvent) : -1;
+  const priorEvents = events && anchorIdx >= 0 ? events.slice(0, anchorIdx) : [];
+
+  const deriveOpts = events
+    ? {
+        verifySignature(ev) {
+          const sigKeyId = ev?.signature?.keyId;
+          if (typeof sigKeyId !== "string" || sigKeyId === "") {
+            return { ok: false, signerKeyId: null, signerNodeRepo: null };
+          }
+          const candidateRepos = [ev?.repo, ...trustedPolicy];
+          for (const repoId of candidateRepos) {
+            if (!repoId) continue;
+            const n = loadNode(repoId);
+            const m = (n?.maintainers || []).find((x) => x.keyId === sigKeyId);
+            const pem = String(m?.publicKey || "").trim();
+            if (!pem.includes("BEGIN PUBLIC KEY")) continue;
+            if (verifySignature(pem, ev)) {
+              return { ok: true, signerKeyId: sigKeyId, signerNodeRepo: repoId };
+            }
+          }
+          return { ok: false, signerKeyId: null, signerNodeRepo: null };
+        },
+        getMaintainer(kId, nodeRepo) {
+          const n = loadNode(nodeRepo);
+          return (n?.maintainers || []).find((x) => x.keyId === kId) ?? null;
+        },
+        timeOf(ev) {
+          const t = selfTime(ev);
+          return t !== null ? { time: t, provable: false, source: "self" } : { time: null, provable: false, source: "none" };
+        },
+        trustedPolicy,
+      }
+    : null;
+
   for (const id of trusted) {
     if (runAttestors.has(id)) continue;
     const node = loadNode(id);
@@ -593,7 +645,30 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
     if (!m?.publicKey) continue;
     const pem = String(m.publicKey).trim();
     if (!pem.includes("BEGIN PUBLIC KEY")) continue;
-    if (!isKeyValidForSignature(m, anchorTrustedTime).valid) continue;
+    let eff = m;
+    if (events) {
+      if (anchorIdx === -1) continue;
+      const priorConstraints = deriveKeyWindowConstraints(priorEvents, id, deriveOpts);
+      if (priorConstraints.has(keyId)) {
+        const priorC = priorConstraints.get(keyId);
+        if (priorC.revokedAt !== null || priorC.validUntil !== null || priorC.invalidAfter !== null || priorC.revocationReason !== null) {
+          continue;
+        }
+      }
+      const allConstraints = deriveKeyWindowConstraints(events, id, deriveOpts);
+      const w = keyWindow(m);
+      const hasRotationInNode =
+        (w.revocationReason === "rotation" || w.revocationReason === "retirement") ||
+        (w.validUntil !== null && w.revocationReason === null && w.revokedAt === null && w.invalidAfter === null);
+      if (hasRotationInNode) {
+        const c = allConstraints.get(keyId);
+        if (!c || (c.validUntil === null && c.revokedAt === null)) {
+          continue;
+        }
+      }
+      eff = mergeStricterWindow(m, priorConstraints.get(keyId));
+    }
+    if (!isKeyValidForSignature(eff, anchorTrustedTime).valid) continue;
     if (verifySignature(pem, anchorEvent)) {
       return true;
     }

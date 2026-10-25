@@ -364,12 +364,14 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
     const missingKp = crypto.generateKeyPairSync("ed25519");
     const revCompKp = crypto.generateKeyPairSync("ed25519");
     const rotKp = crypto.generateKeyPairSync("ed25519");
+    const rotNewKp = crypto.generateKeyPairSync("ed25519");
     const unparseableKp = crypto.generateKeyPairSync("ed25519");
     const regPem = regKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const cogPem = cogKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const gov2Pem = gov2Kp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const revCompPem = revCompKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const rotPem = rotKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const rotNewPem = rotNewKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const unparseablePem = unparseableKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
 
     function fullManifest(id, kind, maintainers) {
@@ -421,6 +423,13 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
             validUntil: "2026-06-18T00:00:00.000Z",
             revokedAt: "2026-06-18T00:00:00.000Z",
             revocationReason: "rotation",
+          },
+          {
+            name: "Rotated Anchor New",
+            keyId: "anchor-rotated-new",
+            publicKey: rotNewPem,
+            contact: "rot-new@example.com",
+            validFrom: "2026-06-18T00:00:00.000Z",
           },
           {
             name: "Broken Boundary Anchor",
@@ -503,11 +512,27 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
           fs.copyFileSync(path.join(REPO_ROOT, "verifiers", "lib", "key-window.mjs"), path.join(vrLib, "key-window.mjs"));
           fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(vrRoot, "verifier.policy.json"));
 
+          const rotEv = {
+            type: "KeyRotation",
+            repo: ANCHOR_REPO,
+            timestamp: "2026-06-17T23:00:00.000Z",
+            key: {
+              action: "rotate",
+              retiringKeyId: "anchor-rotated",
+              newKeyId: "anchor-rotated-new",
+              newPublicKey: rotNewPem,
+              effectiveAt: "2026-06-18T00:00:00.000Z",
+            },
+            signature: { alg: "ed25519", keyId: "anchor-rotated", value: "", canonicalHash: "" },
+          };
+          rotEv.signature.canonicalHash = canonicalHashOf(rotEv);
+          rotEv.signature.value = crypto.sign(null, Buffer.from(rotEv.signature.canonicalHash, "hex"), rotKp.privateKey).toString("base64");
+
           function evalOnAllThreePaths(ev) {
             const basePath = path.join(sbDir, "base.jsonl");
             const headPath = path.join(sbDir, "head.jsonl");
-            fs.writeFileSync(basePath, JSON.stringify(ev) + "\n", "utf8");
-            fs.writeFileSync(headPath, [ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+            fs.writeFileSync(basePath, [ev, rotEv].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+            fs.writeFileSync(headPath, [ev, rotEv, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
 
             const vlRes = spawnSync(process.execPath, [VALIDATOR], {
               env: {
@@ -521,14 +546,14 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
             });
             const vl = vlRes.status === 0;
 
-            fs.writeFileSync(path.join(vrEvents, "events.jsonl"), [ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+            fs.writeFileSync(path.join(vrEvents, "events.jsonl"), [ev, rotEv, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
             const vrRes = spawnSync(process.execPath, [path.join(vrScripts, "verify-release.mjs"), "--repo", REPO, "--version", "1.0.0"], {
               env: { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vrRoot, "verifier.policy.json") },
               encoding: "utf8",
             });
             const lvr = vrRes.status === 0;
 
-            const ctx = buildAttestorTimeCtx([ev, rel]);
+            const ctx = buildAttestorTimeCtx([ev, rotEv, rel]);
             const attRes = checkSignatureChain(rel, ctx);
             const ar = ctx.isBundledTrustedAnchor(ev) && attRes.result === "pass";
 
@@ -554,15 +579,18 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
                 return false;
               }
             };
+            const ledger = [ev, rotEv];
             const vl = isBundledTrustedAnchorEvent(ev, {
               trustedAttestors: trusted,
               trustedRunAttestors: runAtt,
+              events: ledger,
               loadNode,
               verifySignature: verifyRaw32,
             });
             const lvr = isBundledTrustedAnchorEvent(ev, {
               trustedAttestors: trusted,
               trustedRunAttestors: runAtt,
+              events: ledger,
               loadNode,
               verifySignature: (pem, e) => {
                 try {
@@ -572,7 +600,7 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
                 }
               },
             });
-            const ar = buildAttestorTimeCtx([ev]).isBundledTrustedAnchor(ev);
+            const ar = buildAttestorTimeCtx(ledger).isBundledTrustedAnchor(ev);
             return { vl, lvr, ar };
           }
 

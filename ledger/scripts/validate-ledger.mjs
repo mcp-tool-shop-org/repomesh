@@ -481,6 +481,8 @@ function buildOfflineTrustCtx(events, trustedAttestorsSet) {
     return isBundledTrustedAnchorEvent(anchorEvent, {
       trustedAttestors: trustedAttestorsSet,
       trustedRunAttestors: new Set(verifierPolicy?.trustedRunAttestors || []),
+      trustedPolicy,
+      events,
       loadNode,
       verifySignature: (pem, ev) =>
         verifyEd25519(pem, ev.signature?.canonicalHash, ev.signature?.value),

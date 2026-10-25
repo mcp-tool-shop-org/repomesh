@@ -110,6 +110,8 @@ function buildOfflineTrustCtx(events) {
     return isBundledTrustedAnchorEvent(anchorEvent, {
       trustedAttestors,
       trustedRunAttestors,
+      trustedPolicy,
+      events,
       loadNode,
       verifySignature: (pem, ev) => {
         try {
