@@ -20,7 +20,7 @@ The guard's functions (`KNOWN_TESTNET_WS_URLS`, `normalizeWsUrl`, `assertPosting
 
 ## 2.5.0: a required test gate
 
-`ledger-ci.yml` runs all 9 `node --test` suites on every pull request and on pushes to `main` that touch code. It measures coverage (`--experimental-test-coverage`) against a line floor of 57%, then runs `npm audit --audit-level=high --omit=dev` for the root, `anchor/xrpl` and `ledger`. Its `validate-ledger` and `test` jobs are required checks on `main`.
+`ledger-ci.yml` runs all 9 `node --test` suites on every pull request and on pushes to `main` that touch code. It measures coverage (`--experimental-test-coverage`) against a line floor of 57%, then runs `npm audit --audit-level=high --omit=dev` for the root, `anchor/xrpl` and `ledger`. Its `validate-ledger` and `test` jobs are required checks on `main`, and `registry-ci.yml` follows `ledger-ci` via `workflow_run` only after a green push on `main`.
 
 ## 2.4.0: run attestations from Cognate
 
@@ -34,7 +34,7 @@ Cognate, the AI governance product, records experiment runs here. `AttestationPu
 
 The ledger validator checks across events: every `run.outcome` must reference a `runId` that already has a `run.preregistered` on the ledger, and a linked pre-registration hash must match it.
 
-Only a `governance` node on the `trustedRunAttestors` list may sign these, and that kind may sign nothing else: not `ReleasePublished`, and not release attestations. Today the list holds one node, `mcp-tool-shop-org/cognate`.
+Only a `governance` node on both `trustedAttestors` and `trustedRunAttestors` may sign these, and that kind may sign nothing else: not `ReleasePublished`, and not release attestations. Today the list holds one node, `mcp-tool-shop-org/cognate`.
 
 ## 2.4.0: the signing contract is checked
 

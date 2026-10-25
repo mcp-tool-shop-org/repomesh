@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **CI test and coverage gate (`ledger-ci.yml`)**: runs all 9 repository `node --test` suites with `--experimental-test-coverage` (`--test-coverage-lines=57`) and production `npm audit --audit-level=high` on every pull request and paths-gated push to `main`.
+- **CI test and coverage gate (`ledger-ci.yml`, `registry-ci.yml`)**: `ledger-ci.yml` runs all 9 repository `node --test` suites with `--experimental-test-coverage` (`--test-coverage-lines=57`) and production `npm audit --audit-level=high` on every pull request and paths-gated push to `main`; `registry-ci.yml` now runs as a `workflow_run` follower only after `ledger-ci` succeeds on a same-repo `main` push and diffs registry paths against the prior successful run.
 - **Fail-closed XRPL testnet guard (`anchor/xrpl/scripts/post-anchor.mjs`)**: exports `KNOWN_TESTNET_WS_URLS`, `normalizeWsUrl`, `assertPostingEndpoint`, and `connectValidatedClient`, with offline unit and subprocess tests in `anchor/xrpl/tests/testnet-guard.test.mjs`.
 
 ### Security

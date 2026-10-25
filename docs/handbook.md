@@ -90,7 +90,7 @@ A GitHub repo that participates in the network. Every node has a `node.json` man
   "kind": "compute",
   "provides": ["your-capability.v1"],
   "maintainers": [
-    { "name": "your-org", "keyId": "ci-repo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n..." }
+    { "name": "your-org", "contact": "https://github.com/your-org", "keyId": "ci-repo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n..." }
   ]
 }
 ```
@@ -868,7 +868,7 @@ The image is pushed on the same release that publishes the npm package, tagged w
 
 `anchor/xrpl/config.json` is still testnet. `seedAlgorithm` is `ed25519`, which is what xrpl.js 4 derived for the current seed. xrpl.js 5 would otherwise treat a classic `s…` seed as secp256k1 and sign as a different account. `postingAccount` must equal the address that seed derives, and that address must be in the shipped allowlist (`packages/repomesh-cli/src/trusted-anchor-accounts.mjs`). A fetched config cannot add an account.
 
-Moving the post to mainnet is an operator step after that address is in a published CLI: fund the account above the base reserve `server_info` reports, replace the `XRPL_SEED` Actions secret, then set `network` and `rippledUrl` in config. One organization still operates the log, the attestors, the policy check, and the anchor.
+Moving the post to mainnet is an operator step after that address is in a published CLI: fund the account above the base reserve `server_info` reports, replace the `XRPL_SEED` Actions secret, then set `"network": "mainnet"`, `"rippledUrl"`, `"allowMainnetPosting": true`, and `"mainnetAllowedEndpoints"` containing that `wss://` URL in `anchor/xrpl/config.json`. One organization still operates the log, the attestors, the policy check, and the anchor.
 
 ### 8.5 Performance and scaling
 

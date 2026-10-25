@@ -32,8 +32,8 @@ Attestia, Cognate, and RepoMesh are three products.
 **Version 2.5.0.**
 
 - **2.5.0: anchor posting fails closed.** `post-anchor.mjs` refuses to post, and opens no connection, unless the config says `testnet` and the WebSocket URL is a known testnet endpoint. An environment variable alone can't switch posting to mainnet. See [XRPL Anchoring (Testnet Guard)](#xrpl-anchoring-testnet-guard).
-- **2.5.0: a required test gate.** Every pull request runs all 9 `node --test` suites with a line-coverage floor and a production `npm audit` at `high`. `validate-ledger` and `test` are required checks on `main`.
-- **2.4.0: run attestations from Cognate.** The ledger accepts three new attestation types, `run.preregistered`, `run.outcome` and `cognate.root.anchored`, each with a `sha256` digest and a `urn:cognate:...` URI. Only a `governance` node on the `trustedRunAttestors` list (today, `mcp-tool-shop-org/cognate`) may sign them, and it may sign nothing else. Every `run.outcome` must reference a `run.preregistered` event already on the ledger.
+- **2.5.0: a required test gate.** Every pull request runs all 9 `node --test` suites with a line-coverage floor and a production `npm audit` at `high`. `validate-ledger` and `test` are required checks on `main`, and `registry-ci.yml` now runs only after `ledger-ci` succeeds on `main`.
+- **2.4.0: run attestations from Cognate.** The ledger accepts three new attestation types, `run.preregistered`, `run.outcome` and `cognate.root.anchored`, each with a `sha256` digest and a `urn:cognate:...` URI. Only a `governance` node on both `trustedAttestors` and `trustedRunAttestors` (today, `mcp-tool-shop-org/cognate`) may sign them, and it may sign nothing else. Every `run.outcome` must reference a `run.preregistered` event already on the ledger.
 - **2.4.0: the signing contract is checked.** An Ed25519 signature must be over the 32 raw bytes of `canonicalHash`. The validator names and refuses a signature made over the canonical JSON text or over the 64-character hex string.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list.
@@ -176,7 +176,7 @@ Add `node.json` to your repo root:
     "changelog": true
   },
   "maintainers": [
-    { "name": "your-name", "keyId": "ci-yourrepo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
+    { "name": "your-name", "contact": "https://github.com/your-org", "keyId": "ci-yourrepo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
   ]
 }
 ```

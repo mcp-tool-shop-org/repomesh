@@ -82,14 +82,14 @@ Each attestation entry includes a `uri` indicating the result (pass/fail) and so
 
 ## Node kinds
 
-Nodes declare their kind in `node.json`. For third-party-signed events, the kind decides what a node may sign: the map lives in `verifier.policy.json` (`nodeKinds`), and the signer must also be on the matching trusted list. A `ReleasePublished` event, and a `KeyRotation` or `KeyRevocation` for a node's own keys, are signed by that node's own registered key whatever its kind.
+Nodes declare their kind in `node.json`. For third-party-signed events, the kind decides what a node may sign: the map lives in `verifier.policy.json` (`nodeKinds`), and the signer must also be on the matching trusted list. A `ReleasePublished` event is signed by that node's own registered key for any non-`governance` kind (`governance` nodes may never sign releases). A `KeyRotation` is signed by the retiring key, a surviving key of that node, or a `trustedPolicy` node; a `KeyRevocation` must be signed by a surviving key of that node or a `trustedPolicy` node (never the revoked key itself).
 
 | Kind | Role | May sign (from `nodeKinds`) |
 |---|---|---|
 | `attestor` | Runs verifiers and publishes attestations | `AttestationPublished` (signer on `trustedAttestors`) |
-| `registry` | Aggregates node metadata and trust scores | `AttestationPublished`, `PolicyViolation` |
+| `registry` | Aggregates node metadata and trust scores | `AttestationPublished` (signer on `trustedAttestors`), `PolicyViolation` (signer on `trustedPolicy`) |
 | `policy` | Defines and enforces cross-repo rules | `PolicyViolation` (signer on `trustedPolicy`) |
-| `governance` | Network-level decisions | `run.preregistered`, `run.outcome`, `cognate.root.anchored` attestations only (signer on `trustedRunAttestors`), since 2.4.0 |
+| `governance` | Network-level decisions | `run.preregistered`, `run.outcome`, `cognate.root.anchored` attestations only (signer on `trustedAttestors` and `trustedRunAttestors`), since 2.4.0 |
 | `compute` | A regular repository that produces releases | Its own `ReleasePublished` events |
 | `oracle` | Monitors external signals (CVEs, uptime, health) | Nothing in the map yet |
 | `settlement` | Finalizes state | Nothing in the map yet; today's anchor node is registered as an `attestor` |
