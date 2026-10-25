@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.5.0] - 2026-10-24
+## [2.5.0] - 2026-10-25
+
+### Docs
+
+- **Release docs.** The README and handbook say what is new in 2.4 and 2.5, list Cognate's run attestations, note that `check-policy.mjs` can build a `PolicyViolation` though none is on the ledger yet, and describe the CI test gate. The handbook's node-kind table now follows `verifier.policy.json`, and a new page covers 2.4 and 2.5. The README tagline and the landing page match the repository description.
 
 ### Added
 
-- **CI test and coverage gate (`ledger-ci.yml`)**: runs all 9 repository `node --test` suites with `--experimental-test-coverage` (`--test-coverage-lines=57`) and production `npm audit --audit-level=high` on every pull request and paths-gated push to `main`.
+- **CI test and coverage gate (`ledger-ci.yml`, `registry-ci.yml`)**: `ledger-ci.yml` runs all 9 repository `node --test` suites with `--experimental-test-coverage` (`--test-coverage-lines=57`) and production `npm audit --audit-level=high` on every pull request and paths-gated push to `main`; `registry-ci.yml` now runs as a `workflow_run` follower only after `ledger-ci` succeeds on a same-repo `main` push and diffs registry paths against the prior successful run.
 - **Fail-closed XRPL testnet guard (`anchor/xrpl/scripts/post-anchor.mjs`)**: exports `KNOWN_TESTNET_WS_URLS`, `normalizeWsUrl`, `assertPostingEndpoint`, and `connectValidatedClient`, with offline unit and subprocess tests in `anchor/xrpl/tests/testnet-guard.test.mjs`.
 
 ### Security
@@ -19,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Fail-closed XRPL anchor posting**: `post-anchor.mjs` refuses to post and opens no `xrpl.Client` connection unless `config.network === "testnet"` and the resolved WebSocket URL (`XRPL_WS_URL` or `config.rippledUrl`) is on `KNOWN_TESTNET_WS_URLS`. Mainnet posting cannot be triggered by an environment variable alone and requires both `allowMainnetPosting: true` and `mainnetAllowedEndpoints` in committed `anchor/xrpl/config.json`.
 
 ## [2.4.0] - 2026-10-24
+
+Not published separately; these changes ship in 2.5.0.
 
 ### Added
 

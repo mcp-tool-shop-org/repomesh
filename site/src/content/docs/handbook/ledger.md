@@ -58,7 +58,7 @@ Every event shares a common envelope:
 }
 ```
 
-The `canonicalHash` is computed by sorting all keys deterministically (via canonical JSON serialization), then taking the SHA-256 hash of the result (excluding the `signature` field). The `value` is the Ed25519 signature over the `canonicalHash` bytes. This design ensures that identical events always produce the same hash and that signatures can be independently verified.
+The `canonicalHash` is computed by sorting all keys deterministically (via canonical JSON serialization), then taking the SHA-256 hash of the result (excluding the `signature` field). The `value` is the Ed25519 signature over the 32 raw bytes of `canonicalHash` (`Buffer.from(canonicalHash, "hex")`). Since 2.4.0 the validator refuses, by name, a signature made over the canonical JSON text or over the 64-character hex string. This design ensures that identical events always produce the same hash and that signatures can be independently verified.
 
 ## Attestation types
 
@@ -74,23 +74,28 @@ The `canonicalHash` is computed by sorting all keys deterministically (via canon
 | `repro.build` | Reproducibility build verified |
 | `policy.check` | Policy check completed |
 | `ledger.anchor` | Ledger partition anchored to XRPL |
+| `run.preregistered` | Cognate pre-registered a run (`urn:cognate:run:prereg:<runId>`, plus its `sha256`) |
+| `run.outcome` | Cognate recorded a run's outcome; it must reference a prior `run.preregistered` |
+| `cognate.root.anchored` | Cognate anchored a Merkle root (`urn:cognate:root:anchored:<partitionId>`) |
 
 Each attestation entry includes a `uri` indicating the result (pass/fail) and source.
 
 ## Node kinds
 
-Nodes declare their kind in `node.json`. The kind determines what event types a node is authorized to emit.
+Nodes declare their kind in `node.json`. For third-party-signed events, the kind decides what a node may sign: the map lives in `verifier.policy.json` (`nodeKinds`), and the signer must also be on the matching trusted list. A `ReleasePublished` event is signed by that node's own registered key for any non-`governance` kind (`governance` nodes may never sign releases). A `KeyRotation` is signed by the retiring key, a surviving key of that node, or a `trustedPolicy` node; a `KeyRevocation` must be signed by a surviving key of that node or a `trustedPolicy` node (never the revoked key itself).
 
-| Kind | Role | Authorized events |
+| Kind | Role | May sign (from `nodeKinds`) |
 |---|---|---|
-| `registry` | Aggregates node metadata and trust scores | Internal bookkeeping (no ledger events) |
-| `attestor` | Runs verifiers and publishes attestations | `AttestationPublished` |
-| `policy` | Defines and enforces cross-repo rules | `BreakingChangeDetected`, `PolicyViolation` |
-| `oracle` | Monitors external signals (CVEs, uptime, health) | `HealthCheckFailed`, `DependencyVulnFound` |
-| `compute` | A regular repository that produces releases | `ReleasePublished`, `InterfaceUpdated` |
-| `settlement` | Posts Merkle roots to XRPL | Internal (anchor records, not ledger events) |
-| `governance` | Manages network-level decisions (upgrades, disputes) | Governance proposals (future) |
-| `identity` | Manages key rotation and node identity | Key rotation records (future) |
+| `attestor` | Runs verifiers and publishes attestations | `AttestationPublished` (signer on `trustedAttestors`) |
+| `registry` | Aggregates node metadata and trust scores | `AttestationPublished` (signer on `trustedAttestors`), `PolicyViolation` (signer on `trustedPolicy`) |
+| `policy` | Defines and enforces cross-repo rules | `PolicyViolation` (signer on `trustedPolicy`) |
+| `governance` | Network-level decisions | `run.preregistered`, `run.outcome`, `cognate.root.anchored` attestations only (signer on `trustedAttestors` and `trustedRunAttestors`), since 2.4.0 |
+| `compute` | A regular repository that produces releases | Its own `ReleasePublished` events |
+| `oracle` | Monitors external signals (CVEs, uptime, health) | Nothing in the map yet |
+| `settlement` | Finalizes state | Nothing in the map yet; today's anchor node is registered as an `attestor` |
+| `identity` | Issues and verifies credentials | Nothing in the map yet |
+
+Seven nodes are registered today: `repomesh` (registry), four attestors (the license, security and reproducibility verifiers, and the XRPL anchor), `cognate` (governance) and `shipcheck` (compute).
 
 ## Ledger storage
 
