@@ -22,6 +22,14 @@
 #   |                       |  — use <prev>"` (npm forbids unpublish after 72h  | deprecated; consumers pin to  |       |
 #   |                       |  / for depended-on pkgs); then publish <v+1>.     | <prev>; ship fixed <v+1>.     |       |
 #   | GitHub Release create | `gh release delete <tag> --cleanup-tag`           | release + tag removed         | Mike  |
+#   | GHCR image push       | `gh api -X DELETE orgs/mcp-tool-shop-org/packages/ | :<v> and :sha-<sha> removed;  | Mike  |
+#   |                       |  container/repomesh/versions/<id>`                | image job runs after publish  |       |
+#
+# Both irreversible steps above happen only on a release event or a dispatch
+# on a v* tag. A dispatch on main or any branch skips the publish job, and the
+# image job (needs: publish) is skipped with it. Every run that publishes
+# checks the tag against package.json first: the release's tag_name on a
+# release event, the ref name on a tag dispatch.
 
 name: Release
 
@@ -37,6 +45,9 @@ concurrency:
 jobs:
   publish:
     name: Publish to npm (OIDC trusted publisher)
+    # A dispatch from a branch must not publish: only a release event or a
+    # dispatch on a v* tag gets past this.
+    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -73,11 +84,12 @@ jobs:
         run: npm ci
 
       - name: Verify release tag matches package.json version
-        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          echo "Tag: ${GITHUB_REF_NAME} -> ${TAG_VERSION} | Package: ${PKG_VERSION}"
+          TAG_VERSION="${RELEASE_TAG#v}"
+          echo "Tag: ${RELEASE_TAG} -> ${TAG_VERSION} | Package: ${PKG_VERSION}"
           if [ "${PKG_VERSION}" != "${TAG_VERSION}" ]; then
             echo "::error::Release tag ${TAG_VERSION} does not match package.json version ${PKG_VERSION}"
             exit 1
@@ -104,6 +116,10 @@ jobs:
 
   image:
     name: Publish container image
+    # Only after the publish job's build, tests, pack check and audit passed
+    # and the npm publish succeeded, so a broken build never pushes an image.
+    # It also inherits the publish job's gate: when publish is skipped, so is this.
+    needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -116,15 +132,13 @@ jobs:
         id: tags
         working-directory: packages/repomesh-cli
         env:
-          WF_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if [ "${WF_EVENT_NAME}" = "release" ]; then
-            TAG_VERSION="${GITHUB_REF_NAME#v}"
-            if [ "$VERSION" != "$TAG_VERSION" ]; then
-              echo "::error::Release tag ${TAG_VERSION} does not match package.json version ${VERSION}"
-              exit 1
-            fi
+          TAG_VERSION="${RELEASE_TAG#v}"
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Release tag ${TAG_VERSION} does not match package.json version ${VERSION}"
+            exit 1
           fi
           IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
