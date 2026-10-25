@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.5.0] - 2026-10-24
+## [2.5.0] - 2026-10-25
+
+### Docs
+
+- **Release docs.** The README and handbook say what is new in 2.4 and 2.5, list Cognate's run attestations, move `PolicyViolation` to the emitted types (`check-policy.mjs` emits it), and describe the CI test gate. The handbook's node-kind table now follows `verifier.policy.json`, and a new page covers 2.4 and 2.5. The README tagline and the landing page match the repository description.
 
 ### Added
 
@@ -19,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Fail-closed XRPL anchor posting**: `post-anchor.mjs` refuses to post and opens no `xrpl.Client` connection unless `config.network === "testnet"` and the resolved WebSocket URL (`XRPL_WS_URL` or `config.rippledUrl`) is on `KNOWN_TESTNET_WS_URLS`. Mainnet posting cannot be triggered by an environment variable alone and requires both `allowMainnetPosting: true` and `mainnetAllowedEndpoints` in committed `anchor/xrpl/config.json`.
 
 ## [2.4.0] - 2026-10-24
+
+Not published separately; these changes ship in 2.5.0.
 
 ### Added
 

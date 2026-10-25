@@ -3,7 +3,7 @@ import stats from './stats.json';
 
 export const config: SiteConfig = {
   title: 'RepoMesh',
-  description: 'Syntropic repo network — append-only ledger, signed events, multi-dimensional trust scoring, and XRPL anchoring for distributed repo coordination.',
+  description: 'Release ledger and XRPL-anchored trust clock for a repo network: signed events, node manifests, and verification. Separate from Attestia\'s event store.',
   logoBadge: 'RM',
   brandName: 'RepoMesh',
   repoUrl: 'https://github.com/mcp-tool-shop-org/repomesh',

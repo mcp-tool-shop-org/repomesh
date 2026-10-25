@@ -6,7 +6,7 @@
 
 RepoMesh is trust infrastructure for repo networks. Repos publish signed release facts. Verifiers publish signed attestations about those releases. Anchors post cryptographic checkpoints to a public ledger. A registry computes trust scores from all of it. No runtime dependency, no blockchain token, no ceremony — just verifiable facts about software.
 
-Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Seven registered nodes do not make seven operators. An independent witness would be a party this organization does not operate.
 
 ### 0.2 Who this is for
 
