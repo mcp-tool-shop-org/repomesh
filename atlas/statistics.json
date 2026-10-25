@@ -36,7 +36,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "anchor",
-      "qualifyingSourceCommits": 2,
+      "qualifyingSourceCommits": 3,
       "rebaseline": null
     },
     {
@@ -68,7 +68,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "attestor",
-      "qualifyingSourceCommits": 1,
+      "qualifyingSourceCommits": 3,
       "rebaseline": null
     },
     {
@@ -89,22 +89,23 @@
     },
     {
       "breakage": {
-        "coChangesOnly": [],
+        "coChangesOnly": [
+          "repomesh-cli"
+        ],
         "collapsed": false,
         "confidence": "low",
         "importsAndCoChanges": [
-          "registry"
-        ],
-        "importsOnly": [
+          "registry",
           "tools"
-        ]
+        ],
+        "importsOnly": []
       },
       "cohesion": 0,
       "cohesionDropped": false,
       "confidence": "low",
       "highWater": null,
       "name": "ledger",
-      "qualifyingSourceCommits": 7,
+      "qualifyingSourceCommits": 8,
       "rebaseline": null
     },
     {
@@ -164,39 +165,42 @@
         "collapsed": false,
         "confidence": "low",
         "importsAndCoChanges": [
-          "ledger"
-        ],
-        "importsOnly": [
+          "ledger",
           "repomesh-cli",
           "tools"
-        ]
+        ],
+        "importsOnly": []
       },
       "cohesion": 0,
       "cohesionDropped": false,
       "confidence": "low",
       "highWater": null,
       "name": "registry",
-      "qualifyingSourceCommits": 6,
+      "qualifyingSourceCommits": 9,
       "rebaseline": null
     },
     {
       "breakage": {
-        "coChangesOnly": [],
+        "coChangesOnly": [
+          "registry",
+          "verifiers"
+        ],
         "collapsed": false,
         "confidence": "low",
-        "importsAndCoChanges": [],
-        "importsOnly": [
-          "anchor",
+        "importsAndCoChanges": [
           "ledger",
           "tools"
+        ],
+        "importsOnly": [
+          "anchor"
         ]
       },
-      "cohesion": null,
+      "cohesion": 0.200316,
       "cohesionDropped": false,
       "confidence": "low",
       "highWater": null,
       "name": "repomesh-cli",
-      "qualifyingSourceCommits": 7,
+      "qualifyingSourceCommits": 12,
       "rebaseline": null
     },
     {
@@ -260,7 +264,7 @@
       "confidence": "low",
       "highWater": null,
       "name": "site",
-      "qualifyingSourceCommits": 2,
+      "qualifyingSourceCommits": 3,
       "rebaseline": null
     },
     {
@@ -281,20 +285,23 @@
     },
     {
       "breakage": {
-        "coChangesOnly": [],
+        "coChangesOnly": [
+          "ledger",
+          "registry"
+        ],
         "collapsed": false,
         "confidence": "low",
-        "importsAndCoChanges": [],
-        "importsOnly": [
+        "importsAndCoChanges": [
           "repomesh-cli"
-        ]
+        ],
+        "importsOnly": []
       },
-      "cohesion": null,
+      "cohesion": 0,
       "cohesionDropped": false,
       "confidence": "low",
       "highWater": null,
       "name": "tools",
-      "qualifyingSourceCommits": 6,
+      "qualifyingSourceCommits": 11,
       "rebaseline": null
     },
     {
@@ -302,22 +309,23 @@
         "coChangesOnly": [],
         "collapsed": false,
         "confidence": "low",
-        "importsAndCoChanges": [],
+        "importsAndCoChanges": [
+          "repomesh-cli"
+        ],
         "importsOnly": [
           "anchor",
           "attestor",
           "ledger",
           "registry",
-          "repomesh-cli",
           "tools"
         ]
       },
-      "cohesion": null,
+      "cohesion": 0,
       "cohesionDropped": false,
       "confidence": "low",
       "highWater": null,
       "name": "verifiers",
-      "qualifyingSourceCommits": 6,
+      "qualifyingSourceCommits": 9,
       "rebaseline": null
     }
   ],
@@ -350,8 +358,8 @@
         "path": ".github/workflows/attestor-ci.yml"
       },
       {
-        "commits": 17,
-        "lines": 173,
+        "commits": 18,
+        "lines": 239,
         "path": ".github/workflows/ledger-ci.yml"
       },
       {
@@ -360,18 +368,18 @@
         "path": ".github/workflows/pages-ci.yml"
       },
       {
-        "commits": 6,
-        "lines": 76,
+        "commits": 7,
+        "lines": 177,
         "path": ".github/workflows/registry-ci.yml"
       },
       {
-        "commits": 4,
-        "lines": 149,
+        "commits": 6,
+        "lines": 187,
         "path": ".github/workflows/release.yml"
       },
       {
-        "commits": 7,
-        "lines": 69,
+        "commits": 8,
+        "lines": 71,
         "path": ".github/workflows/repomesh-broadcast.yml"
       },
       {
@@ -380,8 +388,8 @@
         "path": ".github/workflows/xrpl-watch.yml"
       },
       {
-        "commits": 12,
-        "lines": 274,
+        "commits": 16,
+        "lines": 297,
         "path": "CHANGELOG.md"
       },
       {
@@ -390,43 +398,48 @@
         "path": "Dockerfile"
       },
       {
-        "commits": 9,
-        "lines": 962,
+        "commits": 1,
+        "lines": 2,
+        "path": "LICENSE"
+      },
+      {
+        "commits": 10,
+        "lines": 1159,
         "path": "README.es.md"
       },
       {
-        "commits": 9,
-        "lines": 1152,
+        "commits": 10,
+        "lines": 1393,
         "path": "README.fr.md"
       },
       {
-        "commits": 9,
-        "lines": 647,
+        "commits": 10,
+        "lines": 866,
         "path": "README.hi.md"
       },
       {
-        "commits": 9,
-        "lines": 876,
+        "commits": 10,
+        "lines": 1077,
         "path": "README.it.md"
       },
       {
-        "commits": 9,
-        "lines": 1310,
+        "commits": 10,
+        "lines": 1566,
         "path": "README.ja.md"
       },
       {
-        "commits": 11,
-        "lines": 288,
+        "commits": 13,
+        "lines": 327,
         "path": "README.md"
       },
       {
-        "commits": 9,
-        "lines": 800,
+        "commits": 10,
+        "lines": 1018,
         "path": "README.pt-BR.md"
       },
       {
-        "commits": 9,
-        "lines": 895,
+        "commits": 10,
+        "lines": 1104,
         "path": "README.zh.md"
       },
       {
@@ -505,8 +518,8 @@
         "path": "anchor/xrpl/scripts/merkle.mjs"
       },
       {
-        "commits": 4,
-        "lines": 301,
+        "commits": 5,
+        "lines": 446,
         "path": "anchor/xrpl/scripts/post-anchor.mjs"
       },
       {
@@ -556,6 +569,11 @@
       },
       {
         "commits": 1,
+        "lines": 243,
+        "path": "anchor/xrpl/tests/testnet-guard.test.mjs"
+      },
+      {
+        "commits": 1,
         "lines": 91,
         "path": "anchor/xrpl/tests/verify-anchor-humanize.test.mjs"
       },
@@ -575,8 +593,8 @@
         "path": "anchor/xrpl/watch-baseline.json"
       },
       {
-        "commits": 10,
-        "lines": 692,
+        "commits": 11,
+        "lines": 716,
         "path": "atlas/README.md"
       },
       {
@@ -585,18 +603,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 10,
-        "lines": 3813,
+        "commits": 11,
+        "lines": 3939,
         "path": "atlas/page.json"
       },
       {
-        "commits": 10,
-        "lines": 5009,
+        "commits": 11,
+        "lines": 5337,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 10,
-        "lines": 37586,
+        "commits": 11,
+        "lines": 38075,
         "path": "atlas/structure.json"
       },
       {
@@ -605,8 +623,8 @@
         "path": "attestor/package.json"
       },
       {
-        "commits": 3,
-        "lines": 645,
+        "commits": 5,
+        "lines": 688,
         "path": "attestor/scripts/attest-release.mjs"
       },
       {
@@ -625,18 +643,23 @@
         "path": "attestor/tests/sec-005-presence-gating.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 456,
+        "commits": 1,
+        "lines": 205,
+        "path": "attestor/tests/sec-anchor-ledger-order.test.mjs"
+      },
+      {
+        "commits": 3,
+        "lines": 476,
         "path": "attestor/tests/sec-b2-nodejson-strip.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 408,
+        "commits": 3,
+        "lines": 428,
         "path": "attestor/tests/sec-b3-order-aware-auth.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 618,
+        "commits": 4,
+        "lines": 1338,
         "path": "attestor/tests/sec-keywindow-sigchain.test.mjs"
       },
       {
@@ -650,8 +673,8 @@
         "path": "docs/contracts/key-lifecycle-contract.md"
       },
       {
-        "commits": 2,
-        "lines": 217,
+        "commits": 3,
+        "lines": 223,
         "path": "docs/handbook.md"
       },
       {
@@ -720,18 +743,18 @@
         "path": "ledger/nodes/mcp-tool-shop-org/repomesh-xrpl-anchor/node.json"
       },
       {
-        "commits": 3,
-        "lines": 18,
+        "commits": 4,
+        "lines": 24,
         "path": "ledger/package-lock.json"
       },
       {
         "commits": 12,
-        "lines": 1375,
+        "lines": 1389,
         "path": "ledger/scripts/validate-ledger.mjs"
       },
       {
-        "commits": 2,
-        "lines": 444,
+        "commits": 4,
+        "lines": 489,
         "path": "ledger/scripts/verify-release.mjs"
       },
       {
@@ -740,13 +763,13 @@
         "path": "ledger/tests/immutability-coverage.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 1500,
+        "commits": 3,
+        "lines": 1547,
         "path": "ledger/tests/key-lifecycle.test.mjs"
       },
       {
-        "commits": 1,
-        "lines": 548,
+        "commits": 2,
+        "lines": 624,
         "path": "ledger/tests/run-events-and-governance.test.mjs"
       },
       {
@@ -755,19 +778,24 @@
         "path": "ledger/tests/validate-ledger-amend.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 722,
+        "commits": 3,
+        "lines": 747,
         "path": "ledger/tests/verifier-policy-contract.test.mjs"
       },
       {
-        "commits": 5,
-        "lines": 202,
+        "commits": 6,
+        "lines": 210,
         "path": "package-lock.json"
       },
       {
-        "commits": 11,
-        "lines": 189,
+        "commits": 13,
+        "lines": 204,
         "path": "packages/repomesh-cli/CHANGELOG.md"
+      },
+      {
+        "commits": 1,
+        "lines": 2,
+        "path": "packages/repomesh-cli/LICENSE"
       },
       {
         "commits": 2,
@@ -775,8 +803,8 @@
         "path": "packages/repomesh-cli/README.md"
       },
       {
-        "commits": 12,
-        "lines": 46,
+        "commits": 13,
+        "lines": 48,
         "path": "packages/repomesh-cli/package.json"
       },
       {
@@ -825,8 +853,8 @@
         "path": "packages/repomesh-cli/src/key/rotate-revoke.mjs"
       },
       {
-        "commits": 5,
-        "lines": 150,
+        "commits": 8,
+        "lines": 562,
         "path": "packages/repomesh-cli/src/remote-defaults.mjs"
       },
       {
@@ -845,8 +873,8 @@
         "path": "packages/repomesh-cli/src/verify/format.mjs"
       },
       {
-        "commits": 5,
-        "lines": 1161,
+        "commits": 8,
+        "lines": 1369,
         "path": "packages/repomesh-cli/src/verify/key-window.mjs"
       },
       {
@@ -870,8 +898,8 @@
         "path": "packages/repomesh-cli/src/verify/verify-anchor.mjs"
       },
       {
-        "commits": 8,
-        "lines": 1845,
+        "commits": 13,
+        "lines": 2198,
         "path": "packages/repomesh-cli/src/verify/verify-release.mjs"
       },
       {
@@ -945,8 +973,8 @@
         "path": "packages/repomesh-cli/tests/key-window-b3-ordering.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 106,
+        "commits": 4,
+        "lines": 116,
         "path": "packages/repomesh-cli/tests/key-window-drift.test.mjs"
       },
       {
@@ -955,8 +983,8 @@
         "path": "packages/repomesh-cli/tests/key-window-verify-release.test.mjs"
       },
       {
-        "commits": 3,
-        "lines": 1653,
+        "commits": 4,
+        "lines": 1725,
         "path": "packages/repomesh-cli/tests/key-window.test.mjs"
       },
       {
@@ -1001,6 +1029,11 @@
       },
       {
         "commits": 1,
+        "lines": 556,
+        "path": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs"
+      },
+      {
+        "commits": 1,
         "lines": 49,
         "path": "packages/repomesh-cli/tests/trusted-anchor-accounts.test.mjs"
       },
@@ -1030,8 +1063,8 @@
         "path": "packages/repomesh-cli/tests/verify-anchor-gate.test.mjs"
       },
       {
-        "commits": 1,
-        "lines": 248,
+        "commits": 5,
+        "lines": 710,
         "path": "packages/repomesh-cli/tests/verify-gate.test.mjs"
       },
       {
@@ -1165,8 +1198,8 @@
         "path": "registry/scripts/build-snippets.mjs"
       },
       {
-        "commits": 10,
-        "lines": 1940,
+        "commits": 12,
+        "lines": 2012,
         "path": "registry/scripts/build-trust.mjs"
       },
       {
@@ -1195,9 +1228,14 @@
         "path": "registry/tests/registry-amend-wave2.test.mjs"
       },
       {
-        "commits": 1,
-        "lines": 283,
+        "commits": 2,
+        "lines": 327,
         "path": "registry/tests/registry-amend.test.mjs"
+      },
+      {
+        "commits": 1,
+        "lines": 241,
+        "path": "registry/tests/registry-ci-follower.test.mjs"
       },
       {
         "commits": 1,
@@ -1205,8 +1243,8 @@
         "path": "registry/tests/registry-disputes.test.mjs"
       },
       {
-        "commits": 1,
-        "lines": 268,
+        "commits": 2,
+        "lines": 272,
         "path": "registry/tests/registry-humanize.test.mjs"
       },
       {
@@ -1225,8 +1263,8 @@
         "path": "registry/tests/registry-policy-contract-regression.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 884,
+        "commits": 4,
+        "lines": 1177,
         "path": "registry/tests/registry-scoring-amend.test.mjs"
       },
       {
@@ -1280,13 +1318,13 @@
         "path": "site/astro.config.mjs"
       },
       {
-        "commits": 6,
-        "lines": 7226,
+        "commits": 7,
+        "lines": 7346,
         "path": "site/package-lock.json"
       },
       {
-        "commits": 3,
-        "lines": 11,
+        "commits": 4,
+        "lines": 14,
         "path": "site/package.json"
       },
       {
@@ -1300,8 +1338,8 @@
         "path": "site/src/content/docs/handbook/getting-started.md"
       },
       {
-        "commits": 2,
-        "lines": 6,
+        "commits": 3,
+        "lines": 9,
         "path": "site/src/content/docs/handbook/index.md"
       },
       {
@@ -1311,12 +1349,27 @@
       },
       {
         "commits": 1,
-        "lines": 274,
-        "path": "tools/init-node.mjs"
+        "lines": 27,
+        "path": "site/src/content/docs/handbook/ledger.md"
+      },
+      {
+        "commits": 1,
+        "lines": 41,
+        "path": "site/src/content/docs/handbook/whats-new.md"
       },
       {
         "commits": 1,
         "lines": 2,
+        "path": "site/src/site-config.ts"
+      },
+      {
+        "commits": 2,
+        "lines": 278,
+        "path": "tools/init-node.mjs"
+      },
+      {
+        "commits": 2,
+        "lines": 28,
         "path": "tools/keygen.mjs"
       },
       {
@@ -1330,8 +1383,8 @@
         "path": "tools/repomesh.mjs"
       },
       {
-        "commits": 2,
-        "lines": 306,
+        "commits": 3,
+        "lines": 307,
         "path": "tools/tests/att-a-001-nonrequired-hardfail.test.mjs"
       },
       {
@@ -1360,18 +1413,18 @@
         "path": "tools/tests/key-window-verify-release.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 422,
+        "commits": 3,
+        "lines": 423,
         "path": "tools/tests/ledger-a-005-immutability.test.mjs"
       },
       {
-        "commits": 1,
-        "lines": 134,
+        "commits": 5,
+        "lines": 539,
         "path": "tools/tests/satisfied-alignment.test.mjs"
       },
       {
-        "commits": 3,
-        "lines": 1255,
+        "commits": 4,
+        "lines": 1256,
         "path": "tools/tests/sec-b2-composed-cross-layer-probe.test.mjs"
       },
       {
@@ -1380,8 +1433,8 @@
         "path": "tools/tests/sec-b3-end-to-end-exploit-probe.test.mjs"
       },
       {
-        "commits": 2,
-        "lines": 1157,
+        "commits": 3,
+        "lines": 1198,
         "path": "tools/tests/tools.test.mjs"
       },
       {
@@ -1390,8 +1443,8 @@
         "path": "tools/tests/verify-action.test.mjs"
       },
       {
-        "commits": 9,
-        "lines": 1333,
+        "commits": 13,
+        "lines": 1537,
         "path": "tools/verify-release.mjs"
       },
       {
@@ -1415,8 +1468,8 @@
         "path": "verifiers/lib/fetch-sbom.mjs"
       },
       {
-        "commits": 5,
-        "lines": 1161,
+        "commits": 8,
+        "lines": 1369,
         "path": "verifiers/lib/key-window.mjs"
       },
       {
@@ -1475,8 +1528,8 @@
         "path": "verifiers/tests/anchor-notes-parser.test.mjs"
       },
       {
-        "commits": 3,
-        "lines": 1653,
+        "commits": 4,
+        "lines": 1725,
         "path": "verifiers/tests/key-window.test.mjs"
       },
       {
@@ -1575,339 +1628,241 @@
     "level": "low",
     "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-10-24T16:19:31.202Z",
+  "generatedAt": "2026-10-25T10:45:43.888Z",
   "generatedFrom": {
-    "commit": "571606420e6858c90856a8cc564a1a1f26e91fb2"
+    "commit": "2081a4bc25f52d1ea7f8c6df4ac8f3b24667c022"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
-      "b": "README.es.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.fr.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.hi.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.it.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.ja.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
       "b": "README.md",
-      "either": 8,
-      "shared": 5,
-      "strength": 0.625
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.pt-BR.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "CHANGELOG.md",
-      "b": "README.zh.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
+      "either": 12,
+      "shared": 7,
+      "strength": 0.583333
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 7,
-      "shared": 7,
-      "strength": 1
+      "either": 11,
+      "shared": 9,
+      "strength": 0.818182
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/repomesh-cli/package.json",
-      "either": 8,
-      "shared": 7,
-      "strength": 0.875
+      "either": 12,
+      "shared": 8,
+      "strength": 0.666667
     },
     {
       "a": "README.es.md",
       "b": "README.fr.md",
-      "either": 5,
-      "shared": 5,
+      "either": 6,
+      "shared": 6,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.hi.md",
-      "either": 5,
-      "shared": 5,
+      "either": 6,
+      "shared": 6,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.it.md",
-      "either": 5,
-      "shared": 5,
+      "either": 6,
+      "shared": 6,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.ja.md",
-      "either": 5,
-      "shared": 5,
+      "either": 6,
+      "shared": 6,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.es.md",
-      "b": "README.pt-BR.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.es.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.es.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.hi.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.it.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.ja.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.pt-BR.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.fr.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "README.hi.md",
-      "b": "README.it.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.hi.md",
-      "b": "README.ja.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.hi.md",
-      "b": "README.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.hi.md",
-      "b": "README.pt-BR.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.hi.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.hi.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "README.it.md",
-      "b": "README.ja.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.it.md",
-      "b": "README.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.it.md",
-      "b": "README.pt-BR.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.it.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.it.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "README.ja.md",
-      "b": "README.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.ja.md",
-      "b": "README.pt-BR.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.ja.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
-      "strength": 1
-    },
-    {
-      "a": "README.ja.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
-    },
-    {
-      "a": "README.md",
-      "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.md",
-      "b": "README.zh.md",
-      "either": 6,
-      "shared": 5,
-      "strength": 0.833333
-    },
-    {
-      "a": "README.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 5,
-      "strength": 0.625
-    },
-    {
-      "a": "README.md",
-      "b": "packages/repomesh-cli/package.json",
       "either": 9,
       "shared": 5,
       "strength": 0.555556
     },
     {
-      "a": "README.pt-BR.md",
-      "b": "README.zh.md",
-      "either": 5,
-      "shared": 5,
+      "a": "README.es.md",
+      "b": "README.pt-BR.md",
+      "either": 6,
+      "shared": 6,
       "strength": 1
     },
     {
-      "a": "README.pt-BR.md",
-      "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
+      "a": "README.es.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
     },
     {
-      "a": "README.zh.md",
+      "a": "README.fr.md",
+      "b": "README.hi.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.fr.md",
+      "b": "README.it.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.fr.md",
+      "b": "README.ja.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.fr.md",
+      "b": "README.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.fr.md",
+      "b": "README.pt-BR.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.fr.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.hi.md",
+      "b": "README.it.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.hi.md",
+      "b": "README.ja.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.hi.md",
+      "b": "README.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.hi.md",
+      "b": "README.pt-BR.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.hi.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.it.md",
+      "b": "README.ja.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.it.md",
+      "b": "README.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.it.md",
+      "b": "README.pt-BR.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.it.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.ja.md",
+      "b": "README.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.ja.md",
+      "b": "README.pt-BR.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.ja.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
+    },
+    {
+      "a": "README.md",
+      "b": "README.pt-BR.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.md",
+      "b": "README.zh.md",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "README.md",
       "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 8,
-      "shared": 4,
-      "strength": 0.5
+      "either": 10,
+      "shared": 7,
+      "strength": 0.7
+    },
+    {
+      "a": "README.md",
+      "b": "packages/repomesh-cli/package.json",
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
+    },
+    {
+      "a": "README.pt-BR.md",
+      "b": "README.zh.md",
+      "either": 6,
+      "shared": 6,
+      "strength": 1
     },
     {
       "a": "anchor/xrpl/manifests/all.json",
@@ -1919,58 +1874,121 @@
     {
       "a": "atlas/README.md",
       "b": "atlas/page.json",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "atlas/README.md",
       "b": "atlas/statistics.json",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "atlas/README.md",
       "b": "atlas/structure.json",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "atlas/page.json",
       "b": "atlas/statistics.json",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "atlas/page.json",
       "b": "atlas/structure.json",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "atlas/statistics.json",
       "b": "atlas/structure.json",
+      "either": 7,
+      "shared": 7,
+      "strength": 1
+    },
+    {
+      "a": "ledger/scripts/validate-ledger.mjs",
+      "b": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "either": 10,
+      "shared": 6,
+      "strength": 0.6
+    },
+    {
+      "a": "ledger/scripts/validate-ledger.mjs",
+      "b": "registry/scripts/build-trust.mjs",
+      "either": 8,
+      "shared": 6,
+      "strength": 0.75
+    },
+    {
+      "a": "ledger/scripts/validate-ledger.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 10,
+      "shared": 5,
+      "strength": 0.5
+    },
+    {
+      "a": "packages/repomesh-cli/CHANGELOG.md",
+      "b": "packages/repomesh-cli/package.json",
+      "either": 10,
+      "shared": 8,
+      "strength": 0.8
+    },
+    {
+      "a": "packages/repomesh-cli/src/remote-defaults.mjs",
+      "b": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "either": 9,
+      "shared": 5,
+      "strength": 0.555556
+    },
+    {
+      "a": "packages/repomesh-cli/src/remote-defaults.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 8,
+      "shared": 5,
+      "strength": 0.625
+    },
+    {
+      "a": "packages/repomesh-cli/src/verify/key-window.mjs",
+      "b": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "either": 10,
+      "shared": 5,
+      "strength": 0.5
+    },
+    {
+      "a": "packages/repomesh-cli/src/verify/key-window.mjs",
+      "b": "verifiers/lib/key-window.mjs",
       "either": 6,
       "shared": 6,
       "strength": 1
     },
     {
-      "a": "ledger/scripts/validate-ledger.mjs",
+      "a": "packages/repomesh-cli/src/verify/verify-release.mjs",
       "b": "registry/scripts/build-trust.mjs",
-      "either": 7,
-      "shared": 5,
-      "strength": 0.714286
+      "either": 10,
+      "shared": 6,
+      "strength": 0.6
     },
     {
-      "a": "packages/repomesh-cli/CHANGELOG.md",
-      "b": "packages/repomesh-cli/package.json",
-      "either": 8,
-      "shared": 7,
-      "strength": 0.875
+      "a": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 9,
+      "shared": 8,
+      "strength": 0.888889
+    },
+    {
+      "a": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "b": "verifiers/lib/key-window.mjs",
+      "either": 10,
+      "shared": 5,
+      "strength": 0.5
     },
     {
       "a": "registry/anchors.json",
@@ -1985,6 +2003,13 @@
       "either": 10,
       "shared": 7,
       "strength": 0.7
+    },
+    {
+      "a": "registry/scripts/build-trust.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 9,
+      "shared": 6,
+      "strength": 0.666667
     },
     {
       "a": "registry/snippets/mcp-tool-shop-org/repomesh.md",
@@ -2011,16 +2036,16 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-10-24T12:18:46-04:00",
-    "inScopeFiles": 307,
+    "headDate": "2026-10-25T06:45:26-04:00",
+    "inScopeFiles": 312,
     "pinnedStart": null,
     "priorFloor": "fallen",
-    "qualifyingCommits": 72,
+    "qualifyingCommits": 80,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-27T16:18:46.000Z",
+    "since": "2026-04-28T10:45:26.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

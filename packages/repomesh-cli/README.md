@@ -139,7 +139,7 @@ Dev mode is auto-detected when `ledger/events/events.jsonl`, `registry/`, and `s
 When `verify-release --anchored` passes, you know:
 
 1. The release event exists in the ledger and its Ed25519 signature is valid
-2. All attestations (SBOM, provenance, license, security) are signed and present
+2. All attestations (SBOM, provenance, license, security) are signed and present (per `(check, signer)`, the event at the greater ledger index wins; the signer's timestamp is data only)
 3. The release is included in a Merkle partition whose root is posted to the XRPL testnet
 4. The partition's manifest hash matches the on-chain memo
 

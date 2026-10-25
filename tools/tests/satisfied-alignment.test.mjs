@@ -100,7 +100,7 @@ function runToolsCopy(root) {
 }
 
 async function runPackagesCopy(root) {
-  const { verifyRelease } = await import(toURL(path.resolve(pkgSrc, "verify", "verify-release.mjs")) + `?t=${Date.now()}`);
+  const { verifyRelease } = await import(toURL(path.resolve(pkgSrc, "verify", "verify-release.mjs")));
   const origExit = process.exit, origCwd = process.cwd, origLog = console.log, origErr = console.error;
   let out = "";
   process.exit = () => { throw new Error("__EXIT__"); };
@@ -218,7 +218,8 @@ describe("D19: the two verify-release copies report the same satisfied array", (
     const mkAtt = (type, result, keyPem, keyId, ts = "2026-01-02T00:00:00Z") => signEvent({
       type: "AttestationPublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
       timestamp: ts, artifacts: [{ name: "att", sha256: "b".repeat(64), uri: "x" }],
-      attestations: [{ type, uri: "x" }], notes: `${type}: ${result}`,
+      attestations: [{ type, uri: `repomesh:attestor:${type}:${result}` }],
+      notes: `${type}: ${result} — ok`,
     }, keyPem, keyId);
 
     const events = [
@@ -343,5 +344,214 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       fs.rmSync(rootS6a, { recursive: true, force: true });
       fs.rmSync(rootS6b, { recursive: true, force: true });
     }
+  });
+
+  async function runAllThree(extraEventsFn) {
+    const { buildTrust } = await import(toURL(path.resolve(REPO_ROOT, "registry", "scripts", "build-trust.mjs")));
+    const root = buildPolicyScopedRoot(extraEventsFn);
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = () => {};
+    console.log = () => {};
+    let btEntry;
+    try {
+      const trust = buildTrust({
+        ledgerPath: path.join(root, "ledger", "events", "events.jsonl"),
+        nodesDir: path.join(root, "ledger", "nodes"),
+        profilesDir: path.join(root, "profiles"),
+        registryDir: path.join(root, "registry"),
+        policyPath: path.join(root, "verifier.policy.json"),
+        write: false,
+      });
+      btEntry = trust.find((r) => r.repo === "org/app" && r.version === "1.0.0");
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    let toolsResult;
+    try {
+      toolsResult = runToolsCopy(root);
+    } catch (e) {
+      const blobs = String(e.stdout || "").match(/\{[\s\S]*\}/g);
+      toolsResult = JSON.parse(blobs[blobs.length - 1]);
+    }
+    const pkgResult = await runPackagesCopy(root);
+    fs.rmSync(root, { recursive: true, force: true });
+    return { btEntry, toolsResult, pkgResult };
+  }
+
+  it("S7a parity across build-trust, CLI, and tools: pass then a later fail from the same trusted signer -> fail", async () => {
+    const s7a = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(s7a.btEntry.assuranceBreakdown["security.scan"].result, "fail", "S7a: build-trust must say fail");
+    assert.equal(s7a.btEntry.assuranceConsensus["security.scan"].consensus, "fail", "S7a: build-trust consensus must say fail");
+    assert.equal(s7a.pkgResult.ok, false, "S7a: CLI must fail");
+    assert.equal((s7a.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "S7a: CLI selected verdict must be fail");
+    assert.equal(s7a.toolsResult.ok, false, "S7a: tools must fail");
+    assert.equal((s7a.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "S7a: tools selected verdict must be fail");
+  });
+
+  it("S7a mirror parity across build-trust, CLI, and tools: fail then a later pass from the same trusted signer -> pass", async () => {
+    const mirror = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(mirror.btEntry.assuranceBreakdown["security.scan"].result, "pass", "mirror: build-trust must say pass");
+    assert.equal(mirror.btEntry.assuranceConsensus["security.scan"].consensus, "pass", "mirror: build-trust consensus must say pass");
+    assert.equal(mirror.pkgResult.ok, true, "mirror: CLI must pass");
+    assert.equal((mirror.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "mirror: CLI selected verdict must be pass");
+    assert.equal(mirror.toolsResult.ok, true, "mirror: tools must pass");
+    assert.equal((mirror.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "mirror: tools selected verdict must be pass");
+  });
+
+  it("timestamp tie parity across build-trust, CLI, and tools: ties go to the later ledger position", async () => {
+    const tieFailSecond = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    assert.equal(tieFailSecond.btEntry.assuranceBreakdown["security.scan"].result, "fail", "tie: build-trust must pick later fail");
+    assert.equal(tieFailSecond.pkgResult.ok, false, "tie: CLI must pick later fail");
+    assert.equal(tieFailSecond.toolsResult.ok, false, "tie: tools must pick later fail");
+
+    const tiePassSecond = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    assert.equal(tiePassSecond.btEntry.assuranceBreakdown["security.scan"].result, "pass", "tie: build-trust must pick later pass");
+    assert.equal(tiePassSecond.pkgResult.ok, true, "tie: CLI must pick later pass");
+    assert.equal(tiePassSecond.toolsResult.ok, true, "tie: tools must pick later pass");
+  });
+
+  it("invalid-signature later event parity across build-trust, CLI, and tools: never competes or wins", async () => {
+    const forgedLater = await runAllThree(({ mkAtt, sec, lic }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", lic.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(forgedLater.btEntry.assuranceBreakdown["security.scan"].result, "pass", "invalid-sig: build-trust must keep pass");
+    assert.equal(forgedLater.pkgResult.ok, true, "invalid-sig: CLI must keep pass and not fail gate");
+    assert.equal(
+      (forgedLater.pkgResult.attestations || []).filter((a) => a.type === "security.scan").length,
+      1,
+      "invalid-sig: CLI must not include invalid-signature event in selected attestations",
+    );
+    assert.equal(forgedLater.toolsResult.ok, true, "invalid-sig: tools must keep pass");
+    assert.equal(
+      (forgedLater.toolsResult.attestations || []).filter((a) => a.type === "security.scan").length,
+      1,
+      "invalid-sig: tools must not include invalid-signature event in selected attestations",
+    );
+  });
+
+  for (const [label, rawPolicy] of [
+    ["empty object {}", "{}"],
+    ["{\"checks\":null}", "{\"checks\":null}"],
+    ["checks as an array", JSON.stringify({ trustedAttestors: [], checks: [] })],
+    ["malformed check entry", JSON.stringify({ trustedAttestors: [], checks: { "security.scan": "x" } })],
+  ]) {
+    it(`tools wrong-shape policy (${label}): raises structured policyError and fails closed`, () => {
+      const { spawnSync } = require("node:child_process");
+      const root = buildPolicyScopedRoot(({ mkAtt, sec }) => [
+        mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      ]);
+      try {
+        fs.writeFileSync(path.join(root, "verifier.policy.json"), rawPolicy, "utf8");
+        const r = spawnSync(
+          process.execPath,
+          [path.join(REPO_ROOT, "tools", "verify-release.mjs"), "--repo", "org/app", "--version", "1.0.0", "--json"],
+          { cwd: REPO_ROOT, env: { ...process.env, REPOMESH_ROOT: root }, encoding: "utf8" },
+        );
+        const blobs = String(r.stdout || "").match(/\{[\s\S]*\}/g);
+        const out = blobs ? JSON.parse(blobs[blobs.length - 1]) : null;
+        assert.notEqual(r.status, 0, `${label}: must exit non-zero`);
+        assert.equal(out?.ok, false, `${label}: out.ok must be false`);
+        assert.equal(out?.gate?.verdict, "FAIL", `${label}: gate.verdict must be FAIL`);
+        assert.deepEqual(
+          out?.gate?.satisfied,
+          ["signature.chain", "repro.build"],
+          `${label}: trusted-set checks must fail closed when policy shape is malformed`,
+        );
+        assert.ok(out?.gate?.policyError?.code, `${label}: gate.policyError.code must be present`);
+        assert.ok(out?.gate?.policyError?.reason, `${label}: gate.policyError.reason must be present`);
+        assert.ok(out?.gate?.policyError?.hint, `${label}: gate.policyError.hint must be present`);
+        assert.ok(out?.policyError?.code, `${label}: top-level policyError.code must be present`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  for (const unbundledType of ["custom.unbundled", "Repro.Build"]) {
+    it(`tools unbundled check type (${unbundledType}): resolves closed for independence even if policy declares it open`, () => {
+      const { spawnSync } = require("node:child_process");
+      const root = buildPolicyScopedRoot(({ mkAtt, lic }) => [
+        mkAtt(unbundledType, "pass", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:01:00Z"),
+      ]);
+      try {
+        // Switch org/app to baseline profile so no required attestation checks are missing;
+        // only the independence gate stands between UNVERIFIED and PASS.
+        const appProfilePath = path.join(root, "ledger", "nodes", "org", "app", "repomesh.profile.json");
+        fs.writeFileSync(appProfilePath, JSON.stringify({ profileId: "baseline", profileVersion: "v1" }), "utf8");
+
+        // Keep only the ReleasePublished event + the crafted unbundled attestation event
+        const ledgerPath = path.join(root, "ledger", "events", "events.jsonl");
+        const lines = fs.readFileSync(ledgerPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+        const filtered = lines.filter(
+          (ev) => ev.type === "ReleasePublished" || (ev.attestations || []).some((a) => a.type === unbundledType),
+        );
+        fs.writeFileSync(ledgerPath, filtered.map((ev) => JSON.stringify(ev)).join("\n") + "\n", "utf8");
+
+        // Even if verifier.policy.json declares the unbundled check as mode: "open", it must stay closed
+        const policyPath = path.join(root, "verifier.policy.json");
+        const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+        policy.checks = {
+          ...policy.checks,
+          [unbundledType]: { mode: "open" },
+        };
+        fs.writeFileSync(policyPath, JSON.stringify(policy, null, 2), "utf8");
+
+        const r = spawnSync(
+          process.execPath,
+          [path.join(REPO_ROOT, "tools", "verify-release.mjs"), "--repo", "org/app", "--version", "1.0.0", "--json"],
+          { cwd: REPO_ROOT, env: { ...process.env, REPOMESH_ROOT: root }, encoding: "utf8" },
+        );
+        const blobs = String(r.stdout || "").match(/\{[\s\S]*\}/g);
+        const out = blobs ? JSON.parse(blobs[blobs.length - 1]) : null;
+        assert.notEqual(r.status, 0, `${unbundledType}: must not exit 0`);
+        assert.equal(out?.ok, false, `${unbundledType}: out.ok must be false`);
+        assert.equal(out?.gate?.independentAttestor, false, `${unbundledType}: gate.independentAttestor must be false`);
+        assert.equal(out?.gate?.verdict, "UNVERIFIED", `${unbundledType}: gate.verdict must be UNVERIFIED`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("event-54 shape parity across build-trust, CLI, and tools: later ledger index with earlier timestamp (later fail beats earlier pass)", async () => {
+    const ev54 = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-06-21T01:13:55Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-04-12T03:18:12Z"),
+    ]);
+    assert.equal(ev54.btEntry.assuranceBreakdown["security.scan"].result, "fail", "event-54 shape: build-trust must say fail");
+    assert.equal(ev54.btEntry.assuranceConsensus["security.scan"].consensus, "fail", "event-54 shape: build-trust consensus must say fail");
+    assert.equal(ev54.pkgResult.ok, false, "event-54 shape: CLI must fail");
+    assert.equal((ev54.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "event-54 shape: CLI selected verdict must be fail");
+    assert.equal(ev54.toolsResult.ok, false, "event-54 shape: tools must fail");
+    assert.equal((ev54.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "event-54 shape: tools selected verdict must be fail");
+  });
+
+  it("event-54 mirror parity across build-trust, CLI, and tools: earlier ledger index with later timestamp loses", async () => {
+    const ev54Mirror = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-06-21T01:13:55Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-04-12T03:18:12Z"),
+    ]);
+    assert.equal(ev54Mirror.btEntry.assuranceBreakdown["security.scan"].result, "pass", "event-54 mirror: build-trust must say pass");
+    assert.equal(ev54Mirror.btEntry.assuranceConsensus["security.scan"].consensus, "pass", "event-54 mirror: build-trust consensus must say pass");
+    assert.equal(ev54Mirror.pkgResult.ok, true, "event-54 mirror: CLI must pass");
+    assert.equal((ev54Mirror.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "event-54 mirror: CLI selected verdict must be pass");
+    assert.equal(ev54Mirror.toolsResult.ok, true, "event-54 mirror: tools must pass");
+    assert.equal((ev54Mirror.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "event-54 mirror: tools selected verdict must be pass");
   });
 });

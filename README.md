@@ -315,7 +315,7 @@ npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --ve
 
 This checks:
 1. The `ReleasePublished` event exists and is signed (Ed25519) by a key registered to **that repo's own** `node.json` — a key registered to a different repo cannot validate it.
-2. The repo's trust profile is satisfied: every profile-required attestation (SBOM, provenance, license, security) is present, signed by a trusted attestor, and its latest result is `pass`, with at least one **independent** attestor. A release with only a self-signature and no independent attestations reports `UNVERIFIED`, never `PASS`.
+2. The repo's trust profile is satisfied: every profile-required attestation (SBOM, provenance, license, security) is present, signed by a trusted attestor, and its latest result by ledger position is `pass` (per `(check, signer)`, the event at the greater ledger index wins; the signer's timestamp is data only), with at least one **independent** attestor. A release with only a self-signature and no independent attestations reports `UNVERIFIED`, never `PASS`.
 3. With `--anchored`: the partition's Merkle root is recomputed and matched to the manifest, and — when the network is reachable — the on-chain XRPL transaction is fetched and asserted (`validated` + `tesSUCCESS`, the signing account is in the trusted-anchor allowlist, and the on-chain memo binds to the local root/manifest-hash/count). Offline, it reports `XRPL NOT verified` rather than a fake transaction; strict `--anchored` then fails (use `--anchored-or-local` to accept a locally-verified manifest without the on-chain proof).
 
 For CI gates, choose an output format with `--format <text|json|sarif|markdown>` (`--json` is an alias

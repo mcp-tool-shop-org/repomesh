@@ -436,7 +436,7 @@ The ledger enforces uniqueness. For `AttestationPublished` events, the key is `(
 - A *different* verifier can also publish `license.audit` for `repo@1.0.0`
 - But the *same* verifier can't publish it twice
 
-When multiple verifiers attest the same check, the registry resolves consensus using the verifier policy (fail-wins, majority, or quorum-pass).
+When the same verifier publishes a later event for the same check, the event with the greater ledger index wins (the signer's timestamp is data only). When multiple verifiers attest the same check, the registry resolves consensus using the verifier policy (fail-wins, majority, or quorum-pass).
 
 ### 5.4 Failure modes
 
@@ -893,7 +893,7 @@ Moving the post to mainnet is an operator step after that address is in a publis
 
 **Unsigned or forged events.** Ledger CI verifies every event's signature against the registered public key before accepting it. No valid signature, no merge.
 
-**Silent drift in evidence.** Attestations are signed and timestamped. If a verifier's opinion changes, it has to publish a new event — the old one stays in the ledger.
+**Silent drift in evidence.** Attestations are signed and ordered by ledger position (the signer's timestamp is data only). If a verifier's opinion changes, it publishes a new event — the old one stays in the ledger, and the event at the greater ledger index wins per `(check, signer)`.
 
 **History rewriting.** XRPL anchors create public, immutable checkpoints. Even if someone force-pushed the ledger repo, the Merkle root on XRPL wouldn't match the rewritten history.
 

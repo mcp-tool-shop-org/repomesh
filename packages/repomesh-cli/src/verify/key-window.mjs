@@ -556,6 +556,30 @@ function findAnchorEventIndex(events, anchorEvent) {
   return -1;
 }
 
+function canonicalizeEventForHash(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalizeEventForHash).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value)
+      .filter((k) => value[k] !== undefined)
+      .sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalizeEventForHash(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hasMatchingCanonicalHash(ev) {
+  const claimed = ev?.signature?.canonicalHash;
+  if (typeof claimed !== "string" || !/^[0-9a-f]{64}$/i.test(claimed)) return false;
+  try {
+    const copy = JSON.parse(JSON.stringify(ev));
+    delete copy.signature;
+    const computed = crypto.createHash("sha256").update(canonicalizeEventForHash(copy), "utf8").digest("hex");
+    return computed.toLowerCase() === claimed.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   if (!anchorEvent || typeof anchorEvent !== "object") return false;
   const trusted =
@@ -596,6 +620,7 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
 
   const keyId = anchorEvent?.signature?.keyId;
   if (!keyId) return false;
+  if (!hasMatchingCanonicalHash(anchorEvent)) return false;
   const anchorSelfTime = selfTime(anchorEvent);
   const anchorTrustedTime =
     anchorSelfTime !== null
@@ -610,6 +635,9 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
         verifySignature(ev) {
           const sigKeyId = ev?.signature?.keyId;
           if (typeof sigKeyId !== "string" || sigKeyId === "") {
+            return { ok: false, signerKeyId: null, signerNodeRepo: null };
+          }
+          if (!hasMatchingCanonicalHash(ev)) {
             return { ok: false, signerKeyId: null, signerNodeRepo: null };
           }
           const candidateRepos = [ev?.repo, ...trustedPolicy];
@@ -690,5 +718,46 @@ export function isSignerTrustedForCheck(signerNode, checkPolicy) {
     );
   }
   return true;
+}
+
+// selectLatestVerdictPerSigner(byKind, kind, signerNode, candidate, ledgerIndex) -> boolean
+// Shared ledger-order rule across registry/scripts/build-trust.mjs,
+// packages/repomesh-cli/src/verify/verify-release.mjs, and tools/verify-release.mjs.
+// Per (kind, signerNode), the event with the greater ledger index (its position in the
+// loaded events array) wins; the signer's timestamp is data only and never used for
+// ordering. Events with an invalid signature or without a valid integer ledger index
+// never compete (fail closed).
+export function selectLatestVerdictPerSigner(
+  byKind,
+  kind,
+  signerNode,
+  candidate,
+  ledgerIndex = candidate?.ledgerIndex,
+) {
+  if (!(byKind instanceof Map)) return false;
+  if (typeof kind !== "string" || !kind) return false;
+  if (typeof signerNode !== "string" || !signerNode) return false;
+  if (!candidate || typeof candidate !== "object" || candidate.signatureValid === false) {
+    return false;
+  }
+  if (!Number.isInteger(ledgerIndex) || ledgerIndex < 0) {
+    return false;
+  }
+  let perSigner = byKind.get(kind);
+  if (!(perSigner instanceof Map)) {
+    perSigner = new Map();
+    byKind.set(kind, perSigner);
+  }
+  const entry = candidate.ledgerIndex === ledgerIndex ? candidate : { ...candidate, ledgerIndex };
+  const prev = perSigner.get(signerNode);
+  if (!prev) {
+    perSigner.set(signerNode, entry);
+    return true;
+  }
+  if (!Number.isInteger(prev.ledgerIndex) || ledgerIndex > prev.ledgerIndex) {
+    perSigner.set(signerNode, entry);
+    return true;
+  }
+  return false;
 }
 

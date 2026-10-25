@@ -40,6 +40,7 @@ import {
   deriveKeyWindowConstraints,
   mergeStricterWindow,
   isSignerTrustedForCheck,
+  selectLatestVerdictPerSigner,
 } from "../../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex). The anchor-event-type + range guards stay local to parseAnchorMeta below.
@@ -479,6 +480,14 @@ function loadVerifierPolicy(policyPath) {
   try { return JSON.parse(fs.readFileSync(policyPath, "utf8")); } catch { return null; }
 }
 
+export function isAuthorizedUriVerdict({ att, kind, evAttTypes, verifierPolicy, signerNode, signerKind }) {
+  const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
+  if (att.type !== kind || !evAttTypes.has(kind) || !auth.ok) {
+    return { ok: false, auth };
+  }
+  return { ok: true, auth };
+}
+
 // Resolve consensus from multiple attestations for a single check kind.
 function resolveConsensus(sources, checkPolicy) {
   if (sources.length === 0) return { consensus: "missing", sources };
@@ -681,15 +690,17 @@ export function buildTrust(opts = {}) {
   // REG-004: verify EVERY event's signature up front; keep only those that pass. A forged or
   // unauthorized event never contributes to any score. (keyId collisions throw and halt the build.)
   const verifiedEvents = [];
-  for (const ev of events) {
+  for (let ledgerIndex = 0; ledgerIndex < events.length; ledgerIndex++) {
+    const ev = events[ledgerIndex];
     const v = verifyEventSignature(ev, ctx);
     if (v.ok) {
-      verifiedEvents.push({ ev, signerNode: v.signerNode });
+      verifiedEvents.push({ ev, signerNode: v.signerNode, ledgerIndex });
     } else {
       console.warn(`Warning: dropping ${ev.type} ${ev.repo}@${ev.version} — signature not verified (${v.reason}).`);
     }
   }
   const signerByEvent = new Map(verifiedEvents.map(({ ev, signerNode }) => [ev, signerNode]));
+  const ledgerIndexByEvent = new Map(verifiedEvents.map(({ ev, ledgerIndex }) => [ev, ledgerIndex]));
   const okEvents = verifiedEvents.map(({ ev }) => ev);
 
   // Index releases (verified only)
@@ -718,6 +729,7 @@ export function buildTrust(opts = {}) {
   }
 
   // Collect ALL attestation sources per (release, check kind) — from verified AttestationPublished.
+  // Per (kind, signerNode), the event with the greater ledger index wins (timestamp is data only).
   const manifestByNode = new Map(nodeManifests.map(({ id, manifest }) => [id, manifest]));
   const rawSources = {};
   for (const ev of okEvents) {
@@ -725,9 +737,11 @@ export function buildTrust(opts = {}) {
     const key = `${ev.repo}@${ev.version}`;
     if (!releases[key]) continue;
     const signerNode = signerByEvent.get(ev) || "unknown";
+    const ledgerIndex = ledgerIndexByEvent.get(ev);
     const signerKind = manifestByNode.get(signerNode)?.kind || null;
     const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
     const evAttTypes = new Set(evAttestations.map((a) => a?.type).filter(Boolean));
+    const seenKindsInEvent = new Set();
 
     try {
       const noteLines = (ev.notes || "").split("\n").filter(Boolean);
@@ -745,11 +759,17 @@ export function buildTrust(opts = {}) {
             );
             continue;
           }
-          (rawSources[key] ||= {});
-          (rawSources[key][kind] ||= []);
-          if (!rawSources[key][kind].some((s) => s.node === signerNode)) {
-            rawSources[key][kind].push({ result: match[2], reason: match[3].trim(), node: signerNode, timestamp: ev.timestamp });
-          }
+          if (seenKindsInEvent.has(kind)) continue;
+          seenKindsInEvent.add(kind);
+          const kindMap = (rawSources[key] ||= new Map());
+          selectLatestVerdictPerSigner(kindMap, kind, signerNode, {
+            result: match[2],
+            reason: match[3].trim(),
+            node: signerNode,
+            timestamp: ev.timestamp,
+            signatureValid: true,
+            ledgerIndex,
+          });
         } else if (ATTESTATION_NEARMISS_RE.test(line)) {
           // ANC-B10: looks like an attestation result line but the full pattern didn't match (bad
           // separator / missing reason). Warn so format drift is caught instead of silently dropped.
@@ -770,21 +790,27 @@ export function buildTrust(opts = {}) {
         if (uriMatch) {
           const kind = uriMatch[1];
           const result = uriMatch[2];
-          const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
-          if (att.type !== kind || !evAttTypes.has(kind) || !auth.ok) {
+          const uriAuth = isAuthorizedUriVerdict({ att, kind, evAttTypes, verifierPolicy, signerNode, signerKind });
+          if (!uriAuth.ok) {
             console.warn(
               `Warning: dropping URI verdict for ${ev.type} ${key} from signer ${signerNode} on kind ${kind} — ` +
               (att.type !== kind || !evAttTypes.has(kind)
                 ? `kind "${kind}" does not match attestation entry type "${att.type || ""}"`
-                : auth.reason)
+                : uriAuth.auth.reason)
             );
             continue;
           }
-          (rawSources[key] ||= {});
-          (rawSources[key][kind] ||= []);
-          if (!rawSources[key][kind].some((s) => s.node === signerNode)) {
-            rawSources[key][kind].push({ result, reason: "", node: signerNode, timestamp: ev.timestamp });
-          }
+          if (seenKindsInEvent.has(kind)) continue;
+          seenKindsInEvent.add(kind);
+          const kindMap = (rawSources[key] ||= new Map());
+          selectLatestVerdictPerSigner(kindMap, kind, signerNode, {
+            result,
+            reason: "",
+            node: signerNode,
+            timestamp: ev.timestamp,
+            signatureValid: true,
+            ledgerIndex,
+          });
         }
       }
     } catch (uriErr) {
@@ -827,7 +853,13 @@ export function buildTrust(opts = {}) {
   for (const [key, kindMap] of Object.entries(rawSources)) {
     if (!releases[key]) continue;
     releases[key].attestationSources = {};
-    for (const [kind, sources] of Object.entries(kindMap)) {
+    for (const [kind, perSigner] of kindMap.entries()) {
+      const sources = [...perSigner.values()].map(({ result, reason, node, timestamp }) => ({
+        result,
+        reason,
+        node,
+        timestamp,
+      }));
       const checkPolicy = verifierPolicy?.checks?.[kind] || null;
       const resolved = resolveConsensus(sources, checkPolicy);
       const entry = { consensus: resolved.consensus, sources: resolved.sources };

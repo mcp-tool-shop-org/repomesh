@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-signer latest verdict selection**: `registry/scripts/build-trust.mjs`, `packages/repomesh-cli/src/verify/verify-release.mjs`, and `tools/verify-release.mjs` share `selectLatestVerdictPerSigner` in `verifiers/lib/key-window.mjs` (and its CLI mirror) so that per `(check, signer)` all three consumers select the same latest verdict and events with an invalid signature never compete.
+- **Ledger-position ordering for per-signer verdicts**: `selectLatestVerdictPerSigner` orders duplicate verdicts per `(check, signer)` by greater ledger index (position in `events.jsonl`) rather than the signer's self-asserted `timestamp` (which is retained as data only), and fails closed when a candidate lacks a valid non-negative integer ledger index.
+- **Policy shape validation**: `packages/repomesh-cli` (for both `--local` and fetched `verifier.policy.json` in remote mode) and `tools/verify-release.mjs` validate `verifier.policy.json` with `validateVerifierPolicyShape` in `packages/repomesh-cli/src/remote-defaults.mjs`, failing closed for `trusted-set` checks and surfacing a structured `policyError` when the file is missing, unreadable, or does not match the policy schema.
+- **Unbundled check types closed**: `resolveCheckPolicy` in `packages/repomesh-cli/src/remote-defaults.mjs` and the independence counters in `packages/repomesh-cli/src/verify/verify-release.mjs` and `tools/verify-release.mjs` resolve any check type outside `BUNDLED_CHECK_POLICIES` as closed across remote, `--local`, and `tools` modes.
+- **Anchor canonical hash verification**: `isBundledTrustedAnchorEvent` in `verifiers/lib/key-window.mjs` (and its CLI mirror) recomputes the canonical SHA-256 hash of the anchor event and prior key-lifecycle events before signature verification so every caller enforces payload integrity.
+
 ## [2.5.0] - 2026-10-25
 
 ### Docs

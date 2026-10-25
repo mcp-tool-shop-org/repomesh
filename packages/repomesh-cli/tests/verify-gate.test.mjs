@@ -484,16 +484,238 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
         },
       },
     });
-    assert.equal(customTrusted.mode, "trusted-set");
-    assert.deepEqual(customTrusted.trustedNodes, ["mcp-tool-shop-org/repomesh"]);
+    assert.deepEqual(customTrusted, { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", customTrusted), false);
 
     const customOpen = remoteDefaults.resolveCheckPolicy("custom.open", {
       checks: { "custom.open": { mode: "open" } },
     });
-    assert.equal(customOpen.mode, "open");
-    assert.deepEqual(customOpen.trustedNodes, []);
+    assert.deepEqual(customOpen, { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", customOpen), false);
 
-    assert.equal(remoteDefaults.resolveCheckPolicy("", null), null);
-    assert.equal(remoteDefaults.resolveCheckPolicy("unknown.check", null), null);
+    assert.deepEqual(remoteDefaults.resolveCheckPolicy("", null), { mode: "trusted-set", trustedNodes: [] });
+    assert.deepEqual(remoteDefaults.resolveCheckPolicy("unknown.check", null), { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", remoteDefaults.resolveCheckPolicy("unknown.check", null)), false);
+  });
+
+  it("CLI-003 mirror: fail then a later pass from the same trusted signer resolves to PASS", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-09T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "the later PASS must win over the earlier FAIL");
+    assert.equal(result?.gate?.status, "PASS");
+    assert.equal(exitCode, 0);
+  });
+
+  it("timestamp tie: ties go to the later ledger position in the CLI", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const base = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      base.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    const tiedTs = "2026-01-02T00:05:00Z";
+    const passEv = attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: tiedTs, keyId: "ci-attestor-2026", key: attestor.privateKey });
+    const failEv = attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: tiedTs, keyId: "ci-attestor-2026", key: attestor.privateKey });
+
+    writeEvents([...base, passEv, failEv]);
+    const r1 = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(r1.result?.ok, false, "tie: later fail in ledger order must win over earlier pass");
+    assert.equal((r1.result?.attestations || []).find((a) => a.type === "security.scan")?.result, "fail");
+
+    writeEvents([...base, failEv, passEv]);
+    const r2 = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(r2.result?.ok, true, "tie: later pass in ledger order must win over earlier fail");
+    assert.equal((r2.result?.attestations || []).find((a) => a.type === "security.scan")?.result, "pass");
+  });
+
+  it("invalid-signature later event never competes or overrides an earlier valid pass in the CLI", async () => {
+    const { rel, attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    // Later event claiming the same keyId ("ci-attestor-2026") but signed with the wrong key (invalid signature)
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-09T00:00:00Z", keyId: "ci-attestor-2026", key: rel.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "invalid-signature later fail must never compete or fail the gate");
+    assert.equal(result?.gate?.status, "PASS");
+    const scanAtts = (result?.attestations || []).filter((a) => a.type === "security.scan");
+    assert.equal(scanAtts.length, 1);
+    assert.equal(scanAtts[0].result, "pass");
+    assert.equal(exitCode, 0);
+  });
+
+  for (const [label, rawPolicy] of [
+    ["empty object {}", "{}"],
+    ["{\"checks\":null}", "{\"checks\":null}"],
+    ["checks as an array", JSON.stringify({ trustedAttestors: [], checks: [] })],
+    ["malformed check entry", JSON.stringify({ trustedAttestors: [], checks: { "security.scan": "x" } })],
+  ]) {
+    it(`CLI local wrong-shape verifier.policy.json (${label}): raises structured policyError and fails closed`, async () => {
+      const { release, baseAtts, sec } = setupPolicyScopedRelease();
+      writeEvents([
+        release,
+        ...baseAtts,
+        attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      ]);
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), rawPolicy, "utf8");
+
+      const localRes = await runVerify({ repo: "org/app", version: "1.0.0", local: true, localDir: tmpRoot });
+      assert.equal(localRes.result?.ok, false, `local ${label}: result.ok must be false`);
+      assert.equal(localRes.result?.gate?.status, "FAIL", `local ${label}: gate.status must be FAIL`);
+      assert.equal(localRes.exitCode, 1, `local ${label}: exitCode must be 1`);
+      assert.ok(localRes.result?.policyError?.code, `local ${label}: result.policyError.code must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.code, `local ${label}: gate.policyError.code must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.reason, `local ${label}: gate.policyError.reason must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.hint, `local ${label}: gate.policyError.hint must be present`);
+    });
+
+    it(`CLI fetched wrong-shape verifier.policy.json (${label}): raises structured policyError and fails closed`, async () => {
+      const { release, baseAtts, sec } = setupPolicyScopedRelease();
+      writeEvents([
+        release,
+        ...baseAtts,
+        attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      ]);
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), rawPolicy, "utf8");
+
+      const remoteRes = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+      assert.equal(remoteRes.result?.ok, false, `fetched ${label}: result.ok must be false`);
+      assert.equal(remoteRes.result?.gate?.status, "FAIL", `fetched ${label}: gate.status must be FAIL`);
+      assert.equal(remoteRes.exitCode, 1, `fetched ${label}: exitCode must be 1`);
+      assert.ok(remoteRes.result?.policyError?.code, `fetched ${label}: result.policyError.code must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.code, `fetched ${label}: gate.policyError.code must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.reason, `fetched ${label}: gate.policyError.reason must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.hint, `fetched ${label}: gate.policyError.hint must be present`);
+    });
+  }
+
+  it("validateVerifierPolicyShape and policy loader helpers reject every malformed field shape", async () => {
+    const {
+      validateVerifierPolicyShape,
+      deriveRemotePolicyUrl,
+      readVerifierPolicyStateSync,
+      preloadVerifierPolicy,
+      checkPolicyForCli,
+    } = await importFromSrc("remote-defaults.mjs");
+    const valid = JSON.parse(
+      fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"),
+    );
+    assert.equal(validateVerifierPolicyShape(valid).ok, true);
+    const badCases = [
+      null,
+      { ...valid, trustedAttestors: ["bad"] },
+      { ...valid, trustedRunAttestors: ["bad"] },
+      { ...valid, trustedPolicy: ["bad"] },
+      { ...valid, v: 0 },
+      { ...valid, description: 123 },
+      { ...valid, nodeKinds: [] },
+      { ...valid, scoreableResults: [""] },
+      { ...valid, conflictPolicies: [] },
+      { ...valid, profileOverrides: [] },
+      { ...valid, checks: { "a": null } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], category: "bad" } } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], weights: [] } } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], attestorGated: "no" } } },
+    ];
+    for (const c of badCases) {
+      assert.equal(validateVerifierPolicyShape(c).ok, false);
+    }
+    assert.equal(deriveRemotePolicyUrl({ ledgerUrl: "http://x/ledger/events/events.jsonl" }).url, "http://x/verifier.policy.json");
+    assert.equal(deriveRemotePolicyUrl({ ledgerUrl: "http://x/custom.jsonl" }).url, null);
+    assert.equal(deriveRemotePolicyUrl({}).explicit, false);
+    assert.equal(readVerifierPolicyStateSync(null).ok, true);
+    assert.equal((await preloadVerifierPolicy(null)).ok, true);
+    assert.equal((await preloadVerifierPolicy({ ledgerUrl: "http://x/custom.jsonl" })).ok, true);
+    assert.equal((await preloadVerifierPolicy({ policyUrl: "http://127.0.0.1:1/nope.json" }, { retries: 0, timeoutMs: 50 })).ok, false);
+    assert.deepEqual(checkPolicyForCli("repro.build", { ok: false }), { mode: "open", trustedNodes: [] });
+    assert.deepEqual(checkPolicyForCli("sbom.present", { ok: false }), { mode: "trusted-set", trustedNodes: [] });
+  });
+
+  for (const unbundledType of ["custom.unbundled", "Repro.Build"]) {
+    it(`unbundled check type (${unbundledType}) resolves closed for independence in remote mode and CLI --local mode`, async () => {
+      const rel = makeKeypair();
+      const lic = makeKeypair();
+      writeNode("org/app", "compute", "ci-app-2026", rel.publicPem, "baseline");
+      writeNode("mcp-tool-shop-org/repomesh-license-verifier", "attestor", "ci-license-2026", lic.publicPem);
+      const release = signEvent({
+        type: "ReleasePublished", repo: "org/app", version: "1.0.0",
+        commit: "abcdef0", timestamp: "2026-01-01T00:00:00Z",
+        artifacts: [{ name: "a", sha256: "a".repeat(64), uri: "x" }], attestations: [],
+      }, "ci-app-2026", rel.privateKey);
+      // Crafted event bypassing schema ingest with an unbundled check type
+      const crafted = attestation({
+        type: unbundledType,
+        result: "pass",
+        repo: "org/app",
+        ts: "2026-01-02T00:01:00Z",
+        keyId: "ci-license-2026",
+        key: lic.privateKey,
+      });
+      writeEvents([release, crafted]);
+
+      // 1. Remote mode (no fetched policy or with default policy)
+      const remoteRes = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+      assert.equal(remoteRes.result?.ok, false, `remote (${unbundledType}): unbundled type must not count toward independence`);
+      assert.deepEqual(remoteRes.result?.gate?.independentAttestors, [], `remote (${unbundledType}): independentAttestors must be empty`);
+      assert.equal(remoteRes.result?.gate?.status, "UNVERIFIED", `remote (${unbundledType}): gate.status must be UNVERIFIED`);
+      assert.equal(remoteRes.exitCode, 3, `remote (${unbundledType}): exitCode must be 3`);
+
+      // 2. CLI --local mode even when local policy declares the unbundled check as mode: "open"
+      const repoPolicy = JSON.parse(
+        fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"),
+      );
+      repoPolicy.checks = {
+        ...repoPolicy.checks,
+        [unbundledType]: { mode: "open" },
+      };
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), JSON.stringify(repoPolicy), "utf8");
+
+      const localRes = await runVerify({ repo: "org/app", version: "1.0.0", local: true, localDir: tmpRoot });
+      assert.equal(localRes.result?.ok, false, `local (${unbundledType}): unbundled type must not count toward independence`);
+      assert.deepEqual(localRes.result?.gate?.independentAttestors, [], `local (${unbundledType}): independentAttestors must be empty`);
+      assert.equal(localRes.result?.gate?.status, "UNVERIFIED", `local (${unbundledType}): gate.status must be UNVERIFIED`);
+      assert.equal(localRes.exitCode, 3, `local (${unbundledType}): exitCode must be 3`);
+    });
+  }
+
+  it("event-54 shape in CLI: a later ledger index with an earlier timestamp (later fail beats earlier pass)", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-06-21T01:13:55Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-04-12T03:18:12Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, false, "later ledger index fail must beat earlier pass despite earlier timestamp");
+    assert.equal(result?.gate?.status, "FAIL");
+    assert.equal((result?.attestations || []).find((a) => a.type === "security.scan")?.result, "fail");
+    assert.equal(exitCode, 1);
+  });
+
+  it("event-54 mirror in CLI: an earlier ledger index with a later timestamp loses to a later pass", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-06-21T01:13:55Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-04-12T03:18:12Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "earlier ledger index with later timestamp must lose to later pass");
+    assert.equal(result?.gate?.status, "PASS");
+    assert.equal((result?.attestations || []).find((a) => a.type === "security.scan")?.result, "pass");
+    assert.equal(exitCode, 0);
   });
 });

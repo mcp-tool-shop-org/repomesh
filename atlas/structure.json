@@ -25,7 +25,7 @@
           "path": ".github/workflows/attestor-ci.yml"
         },
         {
-          "hash": "9a710ad81c175e23f461d07841f2ffc1b15ebafec281f79d6e814e808bdf9fa0",
+          "hash": "b00f6682f7c5d79e91c7e00e911ff698358c71f362089ab7f437a626ab48363a",
           "path": ".github/workflows/ledger-ci.yml"
         },
         {
@@ -33,15 +33,15 @@
           "path": ".github/workflows/pages-ci.yml"
         },
         {
-          "hash": "ab071a062ca93c04452e2019d1150bbaae62b56224174d0b11670f50816f7bc7",
+          "hash": "bc519ddc254e5401fb1b2770e661ea981e02cddd25047629fa91acc9142785d5",
           "path": ".github/workflows/registry-ci.yml"
         },
         {
-          "hash": "942bb2ef16d6823eee975915d6407a836275ad6c3115e652b7fc8ecbb76202f0",
+          "hash": "37b4aa16e5942ad2c2185270dce0f714da8541f55cd5f1949bbd964b0c5aa468",
           "path": ".github/workflows/release.yml"
         },
         {
-          "hash": "cd486db0045f022ebbb9d7e4e9bf8f96d2d42da816b2c683dd7a81969d926b3e",
+          "hash": "663976ae28907a8cafe23d03a10363fb9ba9cc38f5e89d65fa64d9a5b08f5696",
           "path": ".github/workflows/repomesh-broadcast.yml"
         },
         {
@@ -246,9 +246,12 @@
         {
           "exports": [
             "assertPostingAccount",
+            "assertPostingEndpoint",
             "buildAnchorMemo",
+            "connectValidatedClient",
             "extractCloseTime",
             "extractLedgerIndex",
+            "normalizeWsUrl",
             "resolveSeedAlgorithm",
             "validateSeedShape"
           ],
@@ -256,35 +259,35 @@
             {
               "in": "buildAnchorMemo",
               "kind": "throw",
-              "line": 135
+              "line": 250
             },
             {
               "in": "main",
               "kind": "catch",
-              "line": 146
+              "line": 263
             },
             {
               "in": "main",
               "kind": "catch",
-              "line": 158
+              "line": 280
             },
             {
               "in": "main",
               "kind": "catch",
-              "line": 168
+              "line": 290
             },
             {
               "in": "main",
               "kind": "catch",
-              "line": 175
+              "line": 304
             },
             {
               "in": "fileURLToPathSafe",
               "kind": "catch",
-              "line": 244
+              "line": 373
             }
           ],
-          "hash": "c7ccc877a3475486d0b6dd9c2360b56361749da34969dc9a6331dfc2c8f392fa",
+          "hash": "ca9f27cef72a3880b46b52bbf5e7533e47efaf612c32ef2f3604f82f5600ccd2",
           "importsFiles": [
             "packages/repomesh-cli/src/trusted-anchor-accounts.mjs"
           ],
@@ -472,6 +475,17 @@
           "testFramework": "node --test"
         },
         {
+          "hash": "d1c23407cbddda364add19126471de69271b5c1fc1b4e453485715c6083fcb0a",
+          "importsFiles": [
+            "anchor/xrpl/scripts/post-anchor.mjs"
+          ],
+          "path": "anchor/xrpl/tests/testnet-guard.test.mjs",
+          "spawns": [
+            "anchor/xrpl/scripts/post-anchor.mjs"
+          ],
+          "testFramework": "node --test"
+        },
+        {
           "hash": "199ecc4c6fa2720868255834e06b0696f1101c0d9392f3fac1d38f1f4073132a",
           "importsFiles": [
             "anchor/xrpl/scripts/verify-anchor.mjs"
@@ -514,11 +528,21 @@
       "importConfidence": "full",
       "name": "anchor",
       "origin": "mixed",
+      "outsidePlaces": [
+        {
+          "reads": 1,
+          "where": [
+            "caller"
+          ],
+          "writes": 0
+        }
+      ],
+      "outsideReads": 1,
       "role": "code",
       "testRunners": [
         "node --test"
       ],
-      "testedBy": 17,
+      "testedBy": 18,
       "unresolvedSites": 0
     },
     {
@@ -546,8 +570,8 @@
     },
     {
       "dynamicReads": 0,
-      "dynamicSpawns": 0,
-      "dynamicSpawnsInTests": 0,
+      "dynamicSpawns": 2,
+      "dynamicSpawnsInTests": 2,
       "dynamicWrites": 0,
       "entryPoints": [],
       "externals": 0,
@@ -571,45 +595,55 @@
             {
               "in": "readEvents",
               "kind": "catch",
-              "line": 43
+              "line": 44
             },
             {
               "in": "readEvents",
               "kind": "catch",
-              "line": 53
+              "line": 54
             },
             {
               "in": "findNodeManifest",
               "kind": "catch",
-              "line": 71
+              "line": 72
             },
             {
               "in": "loadTrustedAttestors",
               "kind": "catch",
-              "line": 93
+              "line": 95
+            },
+            {
+              "in": "loadTrustedRunAttestors",
+              "kind": "catch",
+              "line": 105
+            },
+            {
+              "in": "findNodeManifestForAnchor",
+              "kind": "catch",
+              "line": 118
             },
             {
               "in": "loadTrustedPolicy",
               "kind": "catch",
-              "line": 108
+              "line": 134
             },
             {
               "in": "verifyEventSig",
               "kind": "catch",
-              "line": 128
+              "line": 154
             },
             {
               "in": "anchorPartitionRange",
               "kind": "catch",
-              "line": 190
+              "line": 216
             },
             {
               "in": "checkSignatureChain",
               "kind": "catch",
-              "line": 402
+              "line": 437
             }
           ],
-          "hash": "d9f4a2d0a9ef561883a30ca50ae6a92035d8243bf81a8d07a617116cfc26ca7b",
+          "hash": "515970846d1e079ae82ee2a2d9cc5e8d4674e1d6075bda67af43025b5a29e4d3",
           "importsFiles": [
             "verifiers/lib/key-window.mjs"
           ],
@@ -618,28 +652,28 @@
             {
               "calls": [
                 {
-                  "line": 354,
+                  "line": 389,
                   "name": "deriveKeyWindowConstraints",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
                   }
                 },
                 {
-                  "line": 359,
+                  "line": 394,
                   "name": "mergeStricterWindow",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
                   }
                 },
                 {
-                  "line": 360,
+                  "line": 395,
                   "name": "resolveTrustedSignatureTimeSync",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
                   }
                 },
                 {
-                  "line": 361,
+                  "line": 396,
                   "name": "isKeyValidForSignature",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -654,7 +688,7 @@
             {
               "calls": [
                 {
-                  "line": 354,
+                  "line": 389,
                   "name": "deriveKeyWindowConstraints",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -662,7 +696,7 @@
                   "via": "checkSignatureChain"
                 },
                 {
-                  "line": 359,
+                  "line": 394,
                   "name": "mergeStricterWindow",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -670,7 +704,7 @@
                   "via": "checkSignatureChain"
                 },
                 {
-                  "line": 360,
+                  "line": 395,
                   "name": "resolveTrustedSignatureTimeSync",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -678,7 +712,7 @@
                   "via": "checkSignatureChain"
                 },
                 {
-                  "line": 361,
+                  "line": 396,
                   "name": "isKeyValidForSignature",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -694,7 +728,7 @@
             {
               "calls": [
                 {
-                  "line": 354,
+                  "line": 389,
                   "name": "deriveKeyWindowConstraints",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -702,7 +736,7 @@
                   "via": "checkSignatureChain"
                 },
                 {
-                  "line": 359,
+                  "line": 394,
                   "name": "mergeStricterWindow",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -712,19 +746,19 @@
                 {
                   "inner": [
                     {
-                      "line": 156,
+                      "line": 158,
                       "name": "findEarliestAnchorForLeaf",
                       "target": null,
                       "via": "trustedAnchorForEv"
                     },
                     {
-                      "line": 161,
+                      "line": 163,
                       "name": "isBundledTrustedAnchor",
                       "target": null,
                       "via": "trustedAnchorForEv"
                     }
                   ],
-                  "line": 360,
+                  "line": 395,
                   "name": "resolveTrustedSignatureTimeSync",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -732,7 +766,7 @@
                   "via": "checkSignatureChain"
                 },
                 {
-                  "line": 361,
+                  "line": 396,
                   "name": "isKeyValidForSignature",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -853,7 +887,23 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "aec476a5fbca430c4681ffd82a583f5cc78932e9b2950303f74cb425afd00506",
+          "hash": "8c4d8232c7db127c552509c23a96b1564b694c137543ab6ade2f343a81a83aa3",
+          "importsFiles": [
+            "attestor/scripts/attest-release.mjs",
+            "verifiers/lib/key-window.mjs"
+          ],
+          "names": [
+            "ledger/scripts/canonicalize.mjs",
+            "ledger/scripts/verify-release.mjs"
+          ],
+          "path": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "spawns": [
+            "ledger/scripts/validate-ledger.mjs"
+          ],
+          "testFramework": "node --test"
+        },
+        {
+          "hash": "a6942a2c43d6b0d8e81e4149d1e1973b72deeb078dbf90c27fc617210e22b84d",
           "importsFiles": [
             "attestor/scripts/attest-release.mjs"
           ],
@@ -861,7 +911,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "4462361892a3dda34d80e7d29ad372871ca8950f360e879080683a25129aac19",
+          "hash": "e6fb645ba398bc1d5c3f735aaa06745318138b81e2e893bc5d6e12b19948694e",
           "importsFiles": [
             "attestor/scripts/attest-release.mjs"
           ],
@@ -869,11 +919,18 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "2a4abe01de23ec0f70b4e55ce1d9f9dfff3e03cbab1c4252157eea1aef32fec7",
+          "hash": "6d216a18c8ee89c5382d1b6bb9d62fcf13f1d4e44e560703c6cc12c3736bbb6d",
           "importsFiles": [
-            "attestor/scripts/attest-release.mjs"
+            "attestor/scripts/attest-release.mjs",
+            "verifiers/lib/key-window.mjs"
+          ],
+          "names": [
+            "ledger/scripts/verify-release.mjs"
           ],
           "path": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "spawns": [
+            "ledger/scripts/validate-ledger.mjs"
+          ],
           "testFramework": "node --test"
         },
         {
@@ -893,7 +950,7 @@
       "origin": "authored",
       "outsidePlaces": [
         {
-          "reads": 7,
+          "reads": 12,
           "where": [
             "caller"
           ],
@@ -908,10 +965,13 @@
           "writes": 1
         }
       ],
-      "outsideReads": 12,
+      "outsideReads": 17,
       "outsideWrites": 4,
       "role": "code",
-      "testedBy": 8,
+      "testRunners": [
+        "node --test"
+      ],
+      "testedBy": 9,
       "unresolvedNamed": [
         {
           "path": "attestor/tests/emit-key-event.test.mjs",
@@ -939,7 +999,7 @@
           "path": "docs/contracts/key-lifecycle-contract.md"
         },
         {
-          "hash": "a70be95b9705409cbe4ea23c8903bc8758bec7ac7f761458c089b6a89275813b",
+          "hash": "772cd918705c1c1be5f5f89168e271bf28097089cddd22ec883d8d9b96532808",
           "path": "docs/handbook.md"
         },
         {
@@ -1030,7 +1090,7 @@
           "path": "ledger/nodes/mcp-tool-shop-org/shipcheck/repomesh.profile.json"
         },
         {
-          "hash": "9c755c7dd98bb89c88b4917b6ef6108e9e71ef5aac4c02d0e825d66d45352c4c",
+          "hash": "d3282ab0cdda22446c8b9c8348e33188467f4827ce03aefe83b68f5dd900a0c9",
           "path": "ledger/package-lock.json"
         },
         {
@@ -1057,61 +1117,61 @@
             {
               "in": "listNodeManifests",
               "kind": "catch",
-              "line": 308
+              "line": 309
             },
             {
               "in": "verifyEd25519",
               "kind": "catch",
-              "line": 396
+              "line": 397
             },
             {
               "in": "diagnoseEd25519Failure",
               "kind": "catch",
-              "line": 421
+              "line": 422
             },
             {
               "in": "loadNode",
               "kind": "catch",
-              "line": 460
+              "line": 461
             },
             {
               "in": "findNodeManifestSafe",
               "kind": "catch",
-              "line": 505
+              "line": 501
             },
             {
               "in": "merkleRootForManifestAlgo",
               "kind": "throw",
-              "line": 557
+              "line": 553
             },
             {
               "in": "loadManifests",
               "kind": "catch",
-              "line": 568
+              "line": 564
             },
             {
               "in": "verifyAnchorManifests",
               "kind": "catch",
-              "line": 612
+              "line": 608
             },
             {
               "kind": "catch",
-              "line": 647
+              "line": 643
             },
             {
               "kind": "catch",
-              "line": 705
+              "line": 701
             },
             {
               "kind": "catch",
-              "line": 728
+              "line": 724
             },
             {
               "kind": "catch",
-              "line": 921
+              "line": 917
             }
           ],
-          "hash": "9e7a170c07b132d17a39ea4b9fdebe9280da54af8c125010853afcb1a7158810",
+          "hash": "08ab226d0ee54a87c5833d2b94cc2e0633927bd6b0921b4bb71c1c12ed30f811",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "verifiers/lib/anchor-notes.mjs",
@@ -1123,7 +1183,7 @@
             {
               "calls": [
                 {
-                  "line": 109,
+                  "line": 110,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -1138,7 +1198,7 @@
             {
               "calls": [
                 {
-                  "line": 342,
+                  "line": 343,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -1153,7 +1213,7 @@
             {
               "calls": [
                 {
-                  "line": 405,
+                  "line": 406,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -1168,7 +1228,7 @@
             {
               "calls": [
                 {
-                  "line": 450,
+                  "line": 451,
                   "name": "parseAnchorPartitionMeta",
                   "target": {
                     "file": "verifiers/lib/anchor-notes.mjs"
@@ -1187,47 +1247,47 @@
             {
               "in": "buildOfflineTrustCtx",
               "kind": "catch",
-              "line": 50
+              "line": 53
             },
             {
               "in": "buildOfflineTrustCtx",
               "kind": "catch",
-              "line": 73
+              "line": 76
             },
             {
               "in": "loadNode",
               "kind": "catch",
-              "line": 86
-            },
-            {
-              "in": "isBundledTrustedAnchor",
-              "kind": "catch",
-              "line": 125
-            },
-            {
-              "kind": "catch",
-              "line": 166
-            },
-            {
-              "kind": "catch",
-              "line": 230
+              "line": 89
             },
             {
               "in": "verifySignature",
               "kind": "catch",
-              "line": 288
+              "line": 124
+            },
+            {
+              "kind": "catch",
+              "line": 165
+            },
+            {
+              "kind": "catch",
+              "line": 229
             },
             {
               "in": "verifySignature",
               "kind": "catch",
-              "line": 294
+              "line": 287
+            },
+            {
+              "in": "verifySignature",
+              "kind": "catch",
+              "line": 293
             },
             {
               "kind": "catch",
-              "line": 333
+              "line": 332
             }
           ],
-          "hash": "94530f240b124af0c123ccb060d2191787d8e4d1150cd113571412f529e09e05",
+          "hash": "7b385d0abd06673d97ed7aa9e6ec9ea22b815dd4cf3d984e04006688d466b9d1",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "verifiers/lib/key-window.mjs"
@@ -1246,9 +1306,12 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "b1996d4a107433f614278a35617eb36b54c7565132a6fe10265670c948bdd67f",
+          "hash": "86d3201f0e0d85e4cf84ad6a1af771cfb911bd73b567727d9b3b9db6148a7ef4",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs"
+          ],
+          "names": [
+            "ledger/scripts/verify-release.mjs"
           ],
           "path": "ledger/tests/key-lifecycle.test.mjs",
           "spawns": [
@@ -1257,19 +1320,21 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "094df83df2af0fd1523c3b1070a2847ebde046a2692f001592b8b95439fdcf88",
+          "hash": "541e2e3d8b090c19dd0cbfe49757be305749419d2d5cd1d7999dd26c0ab64297",
           "importOrder": [
             "ledger/scripts/canonicalize.mjs",
             "packages/repomesh-cli/src/remote-defaults.mjs",
             "verifiers/lib/policy.mjs",
             "ledger/scripts/validate-ledger.mjs",
-            "registry/scripts/build-trust.mjs"
+            "registry/scripts/build-trust.mjs",
+            "verifiers/lib/key-window.mjs"
           ],
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "ledger/scripts/validate-ledger.mjs",
             "packages/repomesh-cli/src/remote-defaults.mjs",
             "registry/scripts/build-trust.mjs",
+            "verifiers/lib/key-window.mjs",
             "verifiers/lib/policy.mjs"
           ],
           "names": [
@@ -1301,7 +1366,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "c9a2c6191505ac1886a9f37aaa59dec4516ad0a41b1db3adf7ed4e29552fc170",
+          "hash": "f7ff1fb9ce439a892381357c23dcd16955ef7f077e4a2cbc63efe9e6e6fff6c1",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "verifiers/lib/policy.mjs"
@@ -1321,16 +1386,19 @@
       "origin": "mixed",
       "outsidePlaces": [
         {
-          "reads": 14,
+          "reads": 16,
           "where": [
             "caller"
           ],
           "writes": 0
         }
       ],
-      "outsideReads": 14,
+      "outsideReads": 16,
       "role": "code",
-      "testedBy": 19,
+      "testRunners": [
+        "node --test"
+      ],
+      "testedBy": 22,
       "unresolvedSites": 0
     },
     {
@@ -1539,6 +1607,9 @@
       "name": "pages",
       "origin": "authored",
       "role": "code",
+      "testRunners": [
+        "node --test"
+      ],
       "testedBy": 5,
       "unresolvedSites": 0
     },
@@ -1615,6 +1686,9 @@
       "outsideReads": 4,
       "outsideWrites": 2,
       "role": "code",
+      "testRunners": [
+        "node --test"
+      ],
       "testedBy": 3,
       "unresolvedNamed": [
         {
@@ -1667,8 +1741,8 @@
     },
     {
       "dynamicReads": 0,
-      "dynamicSpawns": 4,
-      "dynamicSpawnsInTests": 4,
+      "dynamicSpawns": 5,
+      "dynamicSpawnsInTests": 5,
       "dynamicWrites": 0,
       "entryPoints": [],
       "externals": 0,
@@ -1843,80 +1917,81 @@
           "exports": [
             "bandColor",
             "buildTrust",
-            "integrityVerdict"
+            "integrityVerdict",
+            "isAuthorizedUriVerdict"
           ],
           "failurePaths": [
             {
               "kind": "catch",
-              "line": 72
+              "line": 74
             },
             {
               "in": "listNodeManifests",
               "kind": "catch",
-              "line": 188
+              "line": 190
             },
             {
               "in": "resolveRepoBoundKey",
               "kind": "catch",
-              "line": 214
+              "line": 216
             },
             {
               "in": "resolveTrustedKey",
               "kind": "throw",
-              "line": 249
+              "line": 251
             },
             {
               "in": "verifyEd25519",
               "kind": "catch",
-              "line": 260
+              "line": 262
             },
             {
               "in": "verifyKeyEventSignature",
               "kind": "catch",
-              "line": 356
+              "line": 358
             },
             {
               "in": "getMaintainerFor",
               "kind": "catch",
-              "line": 375
+              "line": 377
             },
             {
               "in": "buildTimeCtx",
               "kind": "catch",
-              "line": 427
+              "line": 429
             },
             {
               "in": "loadRepoProfile",
               "kind": "catch",
-              "line": 458
+              "line": 460
             },
             {
               "in": "loadProfileDef",
               "kind": "catch",
-              "line": 463
+              "line": 465
             },
             {
               "in": "loadRepoOverrides",
               "kind": "catch",
-              "line": 473
+              "line": 475
             },
             {
               "in": "loadVerifierPolicy",
               "kind": "catch",
-              "line": 478
+              "line": 480
             },
             {
               "in": "buildTrust",
               "kind": "catch",
-              "line": 750
+              "line": 778
             },
             {
               "in": "buildTrust",
               "kind": "catch",
-              "line": 769
+              "line": 811
             }
           ],
-          "hash": "2cfc1d15a507b8547009f6c06b57d4c6b334b5b50e83097fae34c308f397b9ec",
+          "hash": "793be19793a6b12e563694b18dfa426e82a402d7023d2984fa23c7a4b7355e07",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "verifiers/lib/anchor-notes.mjs",
@@ -1929,7 +2004,7 @@
             {
               "calls": [
                 {
-                  "line": 171,
+                  "line": 173,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -1944,7 +2019,7 @@
             {
               "calls": [
                 {
-                  "line": 236,
+                  "line": 238,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -1959,7 +2034,7 @@
             {
               "calls": [
                 {
-                  "line": 171,
+                  "line": 173,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -1967,12 +2042,12 @@
                   "via": "computeCanonicalHash"
                 },
                 {
-                  "line": 281,
+                  "line": 283,
                   "name": "nodeKindsForEvent",
                   "target": null
                 },
                 {
-                  "line": 236,
+                  "line": 238,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -1980,26 +2055,26 @@
                   "via": "resolveTrustedKey"
                 },
                 {
-                  "line": 305,
+                  "line": 307,
                   "name": "resolveTrustedSignatureTimeSync",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
                   }
                 },
                 {
-                  "line": 307,
+                  "line": 309,
                   "name": "deriveConstraintsForRepo",
                   "target": null
                 },
                 {
-                  "line": 309,
+                  "line": 311,
                   "name": "mergeStricterWindow",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
                   }
                 },
                 {
-                  "line": 310,
+                  "line": 312,
                   "name": "isKeyValidForSignature",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2014,7 +2089,7 @@
             {
               "calls": [
                 {
-                  "line": 171,
+                  "line": 173,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -2022,12 +2097,12 @@
                   "via": "computeCanonicalHash"
                 },
                 {
-                  "line": 354,
+                  "line": 356,
                   "name": "nodeKindsForEvent",
                   "target": null
                 },
                 {
-                  "line": 236,
+                  "line": 238,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -2043,7 +2118,7 @@
             {
               "calls": [
                 {
-                  "line": 400,
+                  "line": 402,
                   "name": "parseAnchorPartitionMeta",
                   "target": {
                     "file": "verifiers/lib/anchor-notes.mjs"
@@ -2058,7 +2133,7 @@
             {
               "calls": [
                 {
-                  "line": 400,
+                  "line": 402,
                   "name": "parseAnchorPartitionMeta",
                   "target": {
                     "file": "verifiers/lib/anchor-notes.mjs"
@@ -2066,7 +2141,7 @@
                   "via": "parseAnchorMeta"
                 },
                 {
-                  "line": 171,
+                  "line": 173,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -2074,12 +2149,12 @@
                   "via": "computeCanonicalHash"
                 },
                 {
-                  "line": 425,
+                  "line": 427,
                   "name": "nodeKindsForEvent",
                   "target": null
                 },
                 {
-                  "line": 236,
+                  "line": 238,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -2095,35 +2170,65 @@
             {
               "calls": [
                 {
-                  "line": 629,
+                  "line": 484,
+                  "name": "canNodeSignAttestations",
+                  "target": {
+                    "file": "verifiers/lib/policy.mjs"
+                  }
+                }
+              ],
+              "exported": true,
+              "invokedAtTopLevel": false,
+              "isDefaultExport": false,
+              "name": "isAuthorizedUriVerdict"
+            },
+            {
+              "calls": [
+                {
+                  "line": 494,
+                  "name": "isSignerTrustedForCheck",
+                  "target": {
+                    "file": "verifiers/lib/key-window.mjs"
+                  }
+                }
+              ],
+              "exported": false,
+              "invokedAtTopLevel": false,
+              "isDefaultExport": false,
+              "name": "resolveConsensus"
+            },
+            {
+              "calls": [
+                {
+                  "line": 636,
                   "name": "integrityCheckWeights",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 631,
+                  "line": 638,
                   "name": "assuranceWeights",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 632,
+                  "line": 639,
                   "name": "attestorGatedIntegrity",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 633,
+                  "line": 640,
                   "name": "scoreableResults",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 400,
+                  "line": 402,
                   "name": "parseAnchorPartitionMeta",
                   "target": {
                     "file": "verifiers/lib/anchor-notes.mjs"
@@ -2131,7 +2236,7 @@
                   "via": "parseAnchorMeta"
                 },
                 {
-                  "line": 171,
+                  "line": 173,
                   "name": "canonicalizeForHash",
                   "target": {
                     "file": "ledger/scripts/canonicalize.mjs"
@@ -2139,13 +2244,13 @@
                   "via": "computeCanonicalHash"
                 },
                 {
-                  "line": 425,
+                  "line": 427,
                   "name": "nodeKindsForEvent",
                   "target": null,
                   "via": "buildTimeCtx"
                 },
                 {
-                  "line": 236,
+                  "line": 238,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
@@ -2153,7 +2258,7 @@
                   "via": "resolveTrustedKey"
                 },
                 {
-                  "line": 281,
+                  "line": 283,
                   "name": "nodeKindsForEvent",
                   "target": null,
                   "via": "verifyEventSignature"
@@ -2161,19 +2266,19 @@
                 {
                   "inner": [
                     {
-                      "line": 156,
+                      "line": 158,
                       "name": "findEarliestAnchorForLeaf",
                       "target": null,
                       "via": "trustedAnchorForEv"
                     },
                     {
-                      "line": 161,
+                      "line": 163,
                       "name": "isBundledTrustedAnchor",
                       "target": null,
                       "via": "trustedAnchorForEv"
                     }
                   ],
-                  "line": 305,
+                  "line": 307,
                   "name": "resolveTrustedSignatureTimeSync",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2181,13 +2286,13 @@
                   "via": "verifyEventSignature"
                 },
                 {
-                  "line": 307,
+                  "line": 309,
                   "name": "deriveConstraintsForRepo",
                   "target": null,
                   "via": "verifyEventSignature"
                 },
                 {
-                  "line": 309,
+                  "line": 311,
                   "name": "mergeStricterWindow",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2195,7 +2300,7 @@
                   "via": "verifyEventSignature"
                 },
                 {
-                  "line": 310,
+                  "line": 312,
                   "name": "isKeyValidForSignature",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2203,14 +2308,51 @@
                   "via": "verifyEventSignature"
                 },
                 {
-                  "line": 820,
+                  "line": 749,
+                  "name": "canNodeSignAttestations",
+                  "target": {
+                    "file": "verifiers/lib/policy.mjs"
+                  }
+                },
+                {
+                  "line": 762,
+                  "name": "selectLatestVerdictPerSigner",
+                  "target": {
+                    "file": "verifiers/lib/key-window.mjs"
+                  }
+                },
+                {
+                  "line": 484,
+                  "name": "canNodeSignAttestations",
+                  "target": {
+                    "file": "verifiers/lib/policy.mjs"
+                  },
+                  "via": "isAuthorizedUriVerdict"
+                },
+                {
+                  "line": 802,
+                  "name": "selectLatestVerdictPerSigner",
+                  "target": {
+                    "file": "verifiers/lib/key-window.mjs"
+                  }
+                },
+                {
+                  "line": 494,
+                  "name": "isSignerTrustedForCheck",
+                  "target": {
+                    "file": "verifiers/lib/key-window.mjs"
+                  },
+                  "via": "resolveConsensus"
+                },
+                {
+                  "line": 868,
                   "name": "isRegisteredCheck",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 1094,
+                  "line": 1142,
                   "name": "writeJsonAtomic",
                   "target": {
                     "file": "verifiers/lib/common.mjs"
@@ -2284,18 +2426,25 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "1ba5fb52bb9b074b3de4b0d96cc862cec7cd353b9e0efa1d77d50b587dac9ca1",
+          "hash": "feb703bdee2740b55f26aca989d616d1e397b7848be9cc6ca0d3c0821d4b047f",
           "importOrder": [
             "ledger/scripts/canonicalize.mjs",
+            "verifiers/lib/anchor-notes.mjs",
             "registry/scripts/build-trust.mjs",
             "registry/scripts/build-badges.mjs"
           ],
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "registry/scripts/build-badges.mjs",
-            "registry/scripts/build-trust.mjs"
+            "registry/scripts/build-trust.mjs",
+            "verifiers/lib/anchor-notes.mjs"
           ],
           "path": "registry/tests/registry-amend.test.mjs",
+          "testFramework": "node --test"
+        },
+        {
+          "hash": "7b0f12513e3ceaf4e1859e41c0ebda5b01aaea702af721748c764308dceefeb4",
+          "path": "registry/tests/registry-ci-follower.test.mjs",
           "testFramework": "node --test"
         },
         {
@@ -2308,7 +2457,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "cc066f69da3e133735b4f2e80f317086105ad002443e2fdb2ad52073dc5cd84b",
+          "hash": "08be5f827ff5693bdc07f84f90ef7e0a6e7b4d361f167c476adabe7545b6105e",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "registry/scripts/build-trust.mjs"
@@ -2343,7 +2492,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "af7034373413508235334d73061e18d0b548eb7d08443b697f313f324abdeb5c",
+          "hash": "8fbc539cd7e94a16c5e4a8a7226fda814f0e3ca1335614868284d240192e628d",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "registry/scripts/build-trust.mjs"
@@ -2413,6 +2562,9 @@
       ],
       "outsideReads": 22,
       "role": "code",
+      "testRunners": [
+        "node --test"
+      ],
       "testedBy": 16,
       "unresolvedNamed": [
         {
@@ -2425,18 +2577,18 @@
     },
     {
       "dynamicReads": 0,
-      "dynamicSpawns": 0,
-      "dynamicSpawnsInTests": 0,
+      "dynamicSpawns": 1,
+      "dynamicSpawnsInTests": 1,
       "dynamicWrites": 0,
       "entryPoints": [],
       "externals": 0,
       "files": [
         {
-          "hash": "5b70db9798c70cdc58ab8773349337fd7246f41fe92f001deaa18d9edef23077",
+          "hash": "84df4d0429f0d33aa6dac12498f077864b75122a828ea7d45c93fbff1b5747c0",
           "path": "packages/repomesh-cli/CHANGELOG.md"
         },
         {
-          "hash": "eb4d87e8ad095f9c0cfc1c8bd13910b695bd39bd5e5972064f8b5027df6a3bdc",
+          "hash": "367e5141e4f5884e5791c4021f33a9faa958840a5decf44e1b273a87aad1c459",
           "path": "packages/repomesh-cli/LICENSE"
         },
         {
@@ -2444,7 +2596,7 @@
           "path": "packages/repomesh-cli/README.md"
         },
         {
-          "hash": "091aa7e5a83e9abcaf2bc35a004abfdd441b167e6b3bc74b5e8bc847657bd468",
+          "hash": "1e44b20f03de60d91e54b0afb7322264432edadd7683c1497cb9fcb3bc78f2bc",
           "path": "packages/repomesh-cli/package.json"
         },
         {
@@ -2847,11 +2999,54 @@
         },
         {
           "exports": [
-            "deriveRemoteRevocationWarning"
+            "checkPolicyForCli",
+            "deriveRemotePolicyUrl",
+            "deriveRemoteRevocationWarning",
+            "preloadVerifierPolicy",
+            "readVerifierPolicy",
+            "readVerifierPolicyStateSync",
+            "resolveCheckPolicy",
+            "validateVerifierPolicyShape"
           ],
-          "hash": "f441075c8020be31d93d5bc58ea1569f4d357eae9d759bb74034ce97e11bc284",
-          "importsFiles": [
+          "failurePaths": [
+            {
+              "in": "readVerifierPolicyStateSync",
+              "kind": "throw",
+              "line": 350
+            },
+            {
+              "in": "readVerifierPolicyStateSync",
+              "kind": "catch",
+              "line": 354
+            },
+            {
+              "in": "preloadVerifierPolicy",
+              "kind": "catch",
+              "line": 379
+            },
+            {
+              "in": "preloadVerifierPolicy",
+              "kind": "throw",
+              "line": 398
+            },
+            {
+              "in": "preloadVerifierPolicy",
+              "kind": "catch",
+              "line": 402
+            }
+          ],
+          "hash": "e8df018d7f13863fd241422942f8b88896b772bfc88e6798991b14a06c84f739",
+          "importOrder": [
+            "packages/repomesh-cli/src/http.mjs",
+            "packages/repomesh-cli/src/log.mjs",
+            "packages/repomesh-cli/src/verify/safe-json.mjs",
             "packages/repomesh-cli/src/trusted-anchor-accounts.mjs"
+          ],
+          "importsFiles": [
+            "packages/repomesh-cli/src/http.mjs",
+            "packages/repomesh-cli/src/log.mjs",
+            "packages/repomesh-cli/src/trusted-anchor-accounts.mjs",
+            "packages/repomesh-cli/src/verify/safe-json.mjs"
           ],
           "path": "packages/repomesh-cli/src/remote-defaults.mjs"
         },
@@ -2902,20 +3097,33 @@
           "exports": [
             "__deriveLegacyForTests",
             "deriveKeyWindowConstraints",
+            "isBundledTrustedAnchorEvent",
             "isKeyValidForSignature",
+            "isSignerTrustedForCheck",
             "keyWindow",
             "mergeStricterWindow",
             "resolveTrustedSignatureTime",
-            "resolveTrustedSignatureTimeSync"
+            "resolveTrustedSignatureTimeSync",
+            "selectLatestVerdictPerSigner"
           ],
           "failurePaths": [
             {
               "in": "resolveTrustedSignatureTime",
               "kind": "catch",
-              "line": 212
+              "line": 214
+            },
+            {
+              "in": "hasMatchingCanonicalHash",
+              "kind": "catch",
+              "line": 578
+            },
+            {
+              "in": "isBundledTrustedAnchorEvent",
+              "kind": "catch",
+              "line": 609
             }
           ],
-          "hash": "c6a0a47dd867b4db674ca13764f21e20521ddceb8e7703a9a3539cea1d90ad94",
+          "hash": "2eb0f2b1a8bedf0e506985bdcff795ac77bbc88c83820b9346b05521c5266ea8",
           "path": "packages/repomesh-cli/src/verify/key-window.mjs"
         },
         {
@@ -3130,110 +3338,95 @@
             {
               "in": "parseJsonlLines",
               "kind": "catch",
-              "line": 94
+              "line": 98
             },
             {
               "in": "readNodeFromDir",
               "kind": "catch",
-              "line": 119
+              "line": 123
             },
             {
-              "in": "effectiveTrustedAttestors",
+              "in": "preloadNodeForOpts",
               "kind": "catch",
-              "line": 154
-            },
-            {
-              "in": "buildKeyWindowCtx",
-              "kind": "catch",
-              "line": 193
+              "line": 211
             },
             {
               "in": "buildKeyWindowCtx",
               "kind": "catch",
-              "line": 203
+              "line": 288
+            },
+            {
+              "in": "buildKeyWindowCtx",
+              "kind": "catch",
+              "line": 299
             },
             {
               "in": "ctx.anchorCloseTime",
               "kind": "catch",
-              "line": 223
-            },
-            {
-              "in": "readTrustedPolicyNodes",
-              "kind": "catch",
-              "line": 254
+              "line": 319
             },
             {
               "in": "verifyKeyEventSig",
               "kind": "catch",
-              "line": 300
-            },
-            {
-              "in": "findPublicKey",
-              "kind": "catch",
-              "line": 413
-            },
-            {
-              "in": "findPublicKey",
-              "kind": "catch",
-              "line": 440
+              "line": 388
             },
             {
               "in": "verifySignature",
               "kind": "catch",
-              "line": 456
+              "line": 537
             },
             {
               "in": "verifySignature",
               "kind": "catch",
-              "line": 488
+              "line": 572
             },
             {
               "in": "loadManifest",
               "kind": "catch",
-              "line": 528
+              "line": 612
             },
             {
               "in": "loadManifest",
               "kind": "catch",
-              "line": 535
+              "line": 619
             },
             {
               "in": "checkLedgerImmutability",
-              "kind": "catch",
-              "line": 628
-            },
-            {
-              "in": "checkLedgerImmutability",
-              "kind": "catch",
-              "line": 640
-            },
-            {
-              "in": "checkLedgerImmutability",
-              "kind": "catch",
-              "line": 676
-            },
-            {
-              "in": "loadProfileDef",
               "kind": "catch",
               "line": 712
             },
             {
-              "in": "computeVerifyResult",
+              "in": "checkLedgerImmutability",
+              "kind": "catch",
+              "line": 724
+            },
+            {
+              "in": "checkLedgerImmutability",
               "kind": "catch",
               "line": 760
             },
             {
-              "in": "computeVerifyResult",
+              "in": "loadProfileDef",
               "kind": "catch",
-              "line": 1139
+              "line": 796
             },
             {
               "in": "computeVerifyResult",
               "kind": "catch",
-              "line": 1173
+              "line": 844
+            },
+            {
+              "in": "computeVerifyResult",
+              "kind": "catch",
+              "line": 1251
+            },
+            {
+              "in": "computeVerifyResult",
+              "kind": "catch",
+              "line": 1285
             }
           ],
-          "hash": "27539a3f4e36c024556488cce91a00062a8817bed71c3323b39ba47906f8cfee",
+          "hash": "eb32392988b1d052291abcae8ba9317d320d890150e6787458fdb5b51d8bdceb",
           "importOrder": [
             "packages/repomesh-cli/src/log.mjs",
             "packages/repomesh-cli/src/mode.mjs",
@@ -3417,7 +3610,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "24b2eff69c173cb65cd4f9b3ddd1b2d43a21a85e3b8b393ac36a6b03c8cefc04",
+          "hash": "858bd57083f7a5233b81c3082cf5cfc3ee7a37765dd41ca80e92332b7abfab2e",
           "names": [
             "packages/repomesh-cli/src/verify/key-window.mjs",
             "verifiers/lib/key-window.mjs"
@@ -3431,7 +3624,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "8af7a8f171a1cab2b1a0bd187173af7f5eab3943eeb3b84abaf175074585d70a",
+          "hash": "9466a2b97412b2785c46748fdf8e806e2385adb4307e95f57f7cec2de1fcc272",
           "importsFiles": [
             "packages/repomesh-cli/src/verify/key-window.mjs"
           ],
@@ -3495,6 +3688,24 @@
           "testFramework": "node --test"
         },
         {
+          "hash": "cad842b18d5d62f2b965dad62febf0d3507c92e452ebe692cf76fe427f02b08e",
+          "importsFiles": [
+            "packages/repomesh-cli/src/verify/key-window.mjs",
+            "packages/repomesh-cli/src/verify/verify-release.mjs"
+          ],
+          "names": [
+            "attestor/scripts/attest-release.mjs",
+            "ledger/scripts/canonicalize.mjs",
+            "ledger/scripts/verify-release.mjs",
+            "verifiers/lib/key-window.mjs"
+          ],
+          "path": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "spawns": [
+            "ledger/scripts/validate-ledger.mjs"
+          ],
+          "testFramework": "node --test"
+        },
+        {
           "hash": "e6a1beb9910bcaa2cfe8718225c7112795919ed1ae8559cb4b5d7b01afe0bb7d",
           "importsFiles": [
             "packages/repomesh-cli/src/trusted-anchor-accounts.mjs"
@@ -3528,7 +3739,10 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "47801c5d2ba0414fd06ac54b33cc03c9d3e95abd483202db5ab9a95d06c27cad",
+          "hash": "75ccd1e6109e3467cabeef594995213975fdf077e13b5dcd5df8d69de4a558f3",
+          "names": [
+            "packages/repomesh-cli/src/remote-defaults.mjs"
+          ],
           "path": "packages/repomesh-cli/tests/verify-gate.test.mjs",
           "testFramework": "node --test"
         },
@@ -3554,7 +3768,7 @@
       "origin": "authored",
       "outsidePlaces": [
         {
-          "reads": 44,
+          "reads": 46,
           "where": [
             "caller"
           ],
@@ -3584,13 +3798,13 @@
           "writes": 0
         }
       ],
-      "outsideReads": 51,
+      "outsideReads": 53,
       "outsideWrites": 17,
       "role": "code",
       "testRunners": [
         "node --test"
       ],
-      "testedBy": 29,
+      "testedBy": 31,
       "unresolvedNamed": [
         {
           "path": "packages/repomesh-cli/tests/anchor-leaf-window.test.mjs",
@@ -3627,7 +3841,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "5afde272aaaf826900a3bfb4b72c516fb9af327284bcef2b1aa49a33ddcf8d99",
+          "hash": "893554bdb584c9a5011a9d1696166e214ed9d3611d34a62c73fc625f1737eccf",
           "path": "CHANGELOG.md"
         },
         {
@@ -3635,39 +3849,39 @@
           "path": "Dockerfile"
         },
         {
-          "hash": "eb4d87e8ad095f9c0cfc1c8bd13910b695bd39bd5e5972064f8b5027df6a3bdc",
+          "hash": "367e5141e4f5884e5791c4021f33a9faa958840a5decf44e1b273a87aad1c459",
           "path": "LICENSE"
         },
         {
-          "hash": "134b475263a2b2303fb3c5cd548732ec06cd220918421627d10d2c4e4ebc0d2e",
+          "hash": "5758ab8331f430b2a0fa1af2c0260b90018adf7287cf5a6cbcaf8b49d7931bbb",
           "path": "README.es.md"
         },
         {
-          "hash": "03838ea1a7477b5b7510348d67b57f8678c19c7688f3698a96ca37572703243c",
+          "hash": "6d3ea97eca31ffc9b303e3eb4866b899d6a2ff653990b2e48e8c44af8cd07ee3",
           "path": "README.fr.md"
         },
         {
-          "hash": "c361bc44af04e50c7f2e790b9fabe821f34d16d937b64c4061205b4a9a17cfd1",
+          "hash": "3a6a7d01aaf636b7c5b15cd7948a446652e816e826872ad6e76f5916fff37a5f",
           "path": "README.hi.md"
         },
         {
-          "hash": "e4d8651b98ec042b5c6b945073c5e65d27272f264d6554ce15f6ce145d80fa54",
+          "hash": "9cb518706f7da04ba675c2c1088129369faf3f8afcecdf122becd1199e8bdbc2",
           "path": "README.it.md"
         },
         {
-          "hash": "f1d42817ead63960c7566a131f9b97c0022c35504708998d51702d9629fe23e8",
+          "hash": "b0f60f19b3411b9ff719240080432e0e2889b1723750b8a39faa6bd5b7631266",
           "path": "README.ja.md"
         },
         {
-          "hash": "b75bad2fb5c1762eabe1e166facbb8389516cb204581fbf28e607b3a465e31f2",
+          "hash": "0d76807edb32b959320b6acc8fd74c5b379e0caa34df87631503aa591cd6aabf",
           "path": "README.md"
         },
         {
-          "hash": "b62da774689e716b8d15d11b32be4b1c18647785d4adefd34bbaa7e2d4d942c4",
+          "hash": "05cb4e584014c840531c0ea23ad474f9318071ecb266de68f73a803a6047897a",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "055267edbf39d0930aa6fd2ecf5c0e8aac70bc405221702b4b0b3db7eef281a9",
+          "hash": "822f901f86e928724eeab2edf861f98a33bac43463257c60f63ca98392512675",
           "path": "README.zh.md"
         },
         {
@@ -3687,7 +3901,7 @@
           "path": "node.json"
         },
         {
-          "hash": "5496ac7dbdf0a3fe7be5a8c9bd0057d1a74de4be246c49eda58aecfdd06db8fd",
+          "hash": "40e6a83629938f6c09a927e3f97499d3e04b12c3580df5e4f35599870bba18fe",
           "path": "package-lock.json"
         },
         {
@@ -3784,11 +3998,11 @@
           "path": "site/astro.config.mjs"
         },
         {
-          "hash": "8e47fded691d48332579e9c1ec05c6bcbd9c56b48e1c5310875a7197174be51c",
+          "hash": "68c0f3d49735d397f56ec40b09ba4ff91c3de6231dc2cfa9d7c06e282d34ae07",
           "path": "site/package-lock.json"
         },
         {
-          "hash": "8624db4a3fbf5f3aa0c73f70cd2c8807506009900356bb3b418b883ce3b34035",
+          "hash": "0ddad0120cd76bef1b88c0f80f62f3b9fb3ae836c2a60a80bcc4072ff869dc24",
           "path": "site/package.json"
         },
         {
@@ -3809,7 +4023,7 @@
           "path": "site/src/content/docs/handbook/getting-started.md"
         },
         {
-          "hash": "c1ef28749055174263dbddc974a2a60dc50dd57b80eabf76c924738940f0d470",
+          "hash": "1d84db7dbabf5aba7d551057b2c8c6933a0513f255b5db271ff9e5e9a885db78",
           "path": "site/src/content/docs/handbook/index.md"
         },
         {
@@ -3817,12 +4031,16 @@
           "path": "site/src/content/docs/handbook/key-lifecycle.md"
         },
         {
-          "hash": "645cb2b9a63daf3d863152feedb6b117b5339d61bf01247ab21566c7d60986e4",
+          "hash": "0fa6eaf3d32cbcabb9acd849dfde14c176dbf9438b8bba471dd34c333608a990",
           "path": "site/src/content/docs/handbook/ledger.md"
         },
         {
           "hash": "5a36e5411d4f523574a422cedde4a2fbae856162295bbf547aca9090be67dde9",
           "path": "site/src/content/docs/handbook/verification.md"
+        },
+        {
+          "hash": "4af3a05d3cac9be925f82604f1b8bee01cd04f223fc1ded20e1d1f19e381297a",
+          "path": "site/src/content/docs/handbook/whats-new.md"
         },
         {
           "hash": "391533713539035d3c92282579d43de0f137067867fdb502d7eaea3c74601d2a",
@@ -3838,7 +4056,7 @@
         },
         {
           "constantOnly": true,
-          "hash": "2eb5158316842d9357ef3b5c476e38b90736f3b1f9e86f936f5efe6f92664c32",
+          "hash": "62cc3a48e5553dee483eb7a297a492e4c6abfb1c36d6258310bd29ede1cd39e6",
           "path": "site/src/site-config.ts"
         },
         {
@@ -3920,19 +4138,15 @@
             {
               "in": "validateNodeJson",
               "kind": "catch",
-              "line": 59
-            },
-            {
-              "kind": "catch",
-              "line": 74
+              "line": 58
             },
             {
               "in": "initNode",
               "kind": "catch",
-              "line": 179
+              "line": 175
             }
           ],
-          "hash": "9c3c20ce4235519508e90a4506bb08409567601cae9cc6ffdbab40832830f245",
+          "hash": "abf82b020686d51ea7627add5f3d45643c75fa325d2edaf84684d26117b66db2",
           "importsFiles": [
             "tools/keygen.mjs",
             "tools/register-node.mjs"
@@ -3973,7 +4187,7 @@
             {
               "in": "generateKeypair",
               "kind": "catch",
-              "line": 20
+              "line": 33
             },
             {
               "in": "generateKeypair",
@@ -3996,7 +4210,7 @@
               "line": 55
             }
           ],
-          "hash": "53415fe633ef83a0efb317f83187e48ce0a0005bb648215f7d262eeac27cd1ab",
+          "hash": "418a0f3d5645ac7145f4ea9a1de9834a5d897b79a4422e2f1cc53036d7f72192",
           "path": "tools/keygen.mjs"
         },
         {
@@ -4107,7 +4321,7 @@
           "path": "tools/repomesh.mjs"
         },
         {
-          "hash": "6e8943cd8102a1d7f3dca3d5db8cfffb5bafcae2c61e60e8b42f10daa9cd1cb3",
+          "hash": "16054e893a8d4c7ff4baa7681a20d785ec2e020b143bec5075e8d742df65d2dd",
           "path": "tools/tests/att-a-001-nonrequired-hardfail.test.mjs",
           "spawns": [
             "tools/verify-release.mjs"
@@ -4168,7 +4382,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "db1d19b01f4caca99fbd3e4141222593980c76e46efd244d3d631adad55a5586",
+          "hash": "55a3df56e922fc7e531494d8e0f48ac9907462032209cdf4a96de0e37aa04495",
           "importsFiles": [
             "anchor/xrpl/scripts/merkle.mjs"
           ],
@@ -4179,7 +4393,10 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "ecc8bf03e61bf58cc65d8736db9e993c755c1e2bdd8b1d9d2392625af30d596e",
+          "hash": "7f78dffcec81d7a8b9e60470253c315c7de3a34a0fe9548ef5dc122b1c4caf32",
+          "names": [
+            "registry/scripts/build-trust.mjs"
+          ],
           "path": "tools/tests/satisfied-alignment.test.mjs",
           "spawns": [
             "tools/verify-release.mjs"
@@ -4187,7 +4404,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "d3fcbfbb3904c6b2b015e42849b16848ba4f06610af72d67d15c209fe2547a23",
+          "hash": "83de46c27473c86901f112dff2e4acbf3e7b5d0f902b57112af8e573858e9452",
           "importOrder": [
             "registry/scripts/build-trust.mjs",
             "verifiers/lib/common.mjs",
@@ -4227,7 +4444,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "35be7f97cc7975d685170974b6397cb0ae4679d1f21e3856a1d36b0e514fc8be",
+          "hash": "658c97f468247d4a4cbc205b714fcab9481d507a4210475aa164b37f1e322234",
           "importOrder": [
             "tools/keygen.mjs",
             "anchor/xrpl/scripts/merkle.mjs",
@@ -4267,106 +4484,118 @@
           "failurePaths": [
             {
               "in": "effectiveTrustedAttestors",
+              "kind": "throw",
+              "line": 101
+            },
+            {
+              "in": "effectiveTrustedAttestors",
               "kind": "catch",
-              "line": 94
+              "line": 104
             },
             {
               "in": "readEvents",
               "kind": "catch",
-              "line": 147
+              "line": 183
             },
             {
               "in": "findPublicKeyInRepo",
               "kind": "catch",
-              "line": 168
+              "line": 204
             },
             {
               "in": "findPublicKeyAcrossNodes",
               "kind": "catch",
-              "line": 192
+              "line": 228
+            },
+            {
+              "in": "readTrustedPolicyNodes",
+              "kind": "throw",
+              "line": 259
             },
             {
               "in": "readTrustedPolicyNodes",
               "kind": "catch",
-              "line": 224
+              "line": 262
             },
             {
               "in": "findMaintainerInNode",
               "kind": "catch",
-              "line": 238
+              "line": 276
             },
             {
               "in": "verifyKeyEventSig",
               "kind": "catch",
-              "line": 253
+              "line": 291
             },
             {
               "in": "verifySignature",
               "kind": "catch",
-              "line": 402
+              "line": 440
             },
             {
               "in": "findAnchorForHash",
               "kind": "catch",
-              "line": 426
+              "line": 464
             },
             {
               "in": "findAnchorForHash",
               "kind": "catch",
-              "line": 435
+              "line": 473
             },
             {
               "in": "loadProfileForRepo",
               "kind": "catch",
-              "line": 491
+              "line": 529
             },
             {
               "in": "loadProfileForRepo",
               "kind": "catch",
-              "line": 503
+              "line": 541
             },
             {
               "in": "checkLedgerImmutability",
               "kind": "catch",
-              "line": 537
+              "line": 575
             },
             {
               "in": "checkLedgerImmutability",
               "kind": "catch",
-              "line": 547
+              "line": 585
             },
             {
               "in": "checkLedgerImmutability",
               "kind": "catch",
-              "line": 579
+              "line": 617
             },
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 877
+              "line": 947
             },
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 919
+              "line": 989
             },
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 934
+              "line": 1004
             }
           ],
-          "hash": "ec601acbe0264abc360327def9efb07320985beec47d63cf5abd735e41bbdba8",
+          "hash": "489ec5aad94eca1585f41e05e025776e9250de8e74a4d1989987f5c91bac2e68",
           "importOrder": [
             "anchor/xrpl/scripts/merkle.mjs",
             "anchor/xrpl/scripts/verify-anchor.mjs",
             "packages/repomesh-cli/src/trusted-anchor-accounts.mjs",
+            "packages/repomesh-cli/src/remote-defaults.mjs",
             "verifiers/lib/key-window.mjs",
             "verifiers/lib/anchor-notes.mjs"
           ],
           "importsFiles": [
             "anchor/xrpl/scripts/merkle.mjs",
             "anchor/xrpl/scripts/verify-anchor.mjs",
+            "packages/repomesh-cli/src/remote-defaults.mjs",
             "packages/repomesh-cli/src/trusted-anchor-accounts.mjs",
             "verifiers/lib/anchor-notes.mjs",
             "verifiers/lib/key-window.mjs"
@@ -4382,7 +4611,7 @@
       "origin": "authored",
       "outsidePlaces": [
         {
-          "reads": 41,
+          "reads": 42,
           "where": [
             "caller"
           ],
@@ -4413,7 +4642,7 @@
           "writes": 1
         }
       ],
-      "outsideReads": 43,
+      "outsideReads": 44,
       "outsideWrites": 17,
       "role": "code",
       "testRunners": [
@@ -4437,7 +4666,7 @@
           "why": "undeclared"
         }
       ],
-      "unresolvedSites": 10
+      "unresolvedSites": 11
     },
     {
       "dynamicReads": 0,
@@ -4630,31 +4859,44 @@
           "exports": [
             "__deriveLegacyForTests",
             "deriveKeyWindowConstraints",
+            "isBundledTrustedAnchorEvent",
             "isKeyValidForSignature",
+            "isSignerTrustedForCheck",
             "keyWindow",
             "mergeStricterWindow",
             "resolveTrustedSignatureTime",
-            "resolveTrustedSignatureTimeSync"
+            "resolveTrustedSignatureTimeSync",
+            "selectLatestVerdictPerSigner"
           ],
           "failurePaths": [
             {
               "in": "resolveTrustedSignatureTime",
               "kind": "catch",
-              "line": 212
+              "line": 214
+            },
+            {
+              "in": "hasMatchingCanonicalHash",
+              "kind": "catch",
+              "line": 578
+            },
+            {
+              "in": "isBundledTrustedAnchorEvent",
+              "kind": "catch",
+              "line": 609
             }
           ],
-          "hash": "c6a0a47dd867b4db674ca13764f21e20521ddceb8e7703a9a3539cea1d90ad94",
+          "hash": "2eb0f2b1a8bedf0e506985bdcff795ac77bbc88c83820b9346b05521c5266ea8",
           "path": "verifiers/lib/key-window.mjs",
           "sequences": [
             {
               "calls": [
                 {
-                  "line": 156,
+                  "line": 158,
                   "name": "findEarliestAnchorForLeaf",
                   "target": null
                 },
                 {
-                  "line": 161,
+                  "line": 163,
                   "name": "isBundledTrustedAnchor",
                   "target": null
                 }
@@ -4667,13 +4909,13 @@
             {
               "calls": [
                 {
-                  "line": 156,
+                  "line": 158,
                   "name": "findEarliestAnchorForLeaf",
                   "target": null,
                   "via": "trustedAnchorForEv"
                 },
                 {
-                  "line": 161,
+                  "line": 163,
                   "name": "isBundledTrustedAnchor",
                   "target": null,
                   "via": "trustedAnchorForEv"
@@ -4687,29 +4929,29 @@
             {
               "calls": [
                 {
-                  "line": 156,
+                  "line": 158,
                   "name": "findEarliestAnchorForLeaf",
                   "target": null,
                   "via": "trustedAnchorForEv"
                 },
                 {
-                  "line": 161,
+                  "line": 163,
                   "name": "isBundledTrustedAnchor",
                   "target": null,
                   "via": "trustedAnchorForEv"
                 },
                 {
-                  "line": 205,
+                  "line": 207,
                   "name": "anchorTxHash",
                   "target": null
                 },
                 {
-                  "line": 206,
+                  "line": 208,
                   "name": "anchorNetwork",
                   "target": null
                 },
                 {
-                  "line": 208,
+                  "line": 210,
                   "name": "anchorCloseTime",
                   "target": null
                 }
@@ -6802,7 +7044,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "c5072d14cf704a3fd3fe3308b587eb38d87c9edf9e3ad034d191bb87f3caf9f5",
+          "hash": "45f01466e9c0b96cbd2300ddcf11192f9e4044435d9f134dd339ccea983a46d4",
           "importsFiles": [
             "verifiers/lib/key-window.mjs"
           ],
@@ -6981,7 +7223,7 @@
       "origin": "authored",
       "outsidePlaces": [
         {
-          "reads": 9,
+          "reads": 10,
           "where": [
             "caller"
           ],
@@ -7009,13 +7251,13 @@
           "writes": 0
         }
       ],
-      "outsideReads": 21,
+      "outsideReads": 22,
       "outsideWrites": 5,
       "role": "code",
       "testRunners": [
         "node --test"
       ],
-      "testedBy": 55,
+      "testedBy": 57,
       "unresolvedSites": 0
     }
   ],
@@ -7223,7 +7465,7 @@
         {
           "boundary": "repomesh-cli",
           "depth": 0,
-          "files": 58
+          "files": 59
         },
         {
           "boundary": "root",
@@ -7580,6 +7822,20 @@
           "by": "registry/scripts/verify-trust.mjs",
           "call": "readFileSync",
           "confidence": "ast",
+          "target": "ledger/events/events.jsonl"
+        },
+        {
+          "by": "registry/tests/registry-amend.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/events/events.jsonl"
+        },
+        {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true,
           "target": "ledger/events/events.jsonl"
         },
         {
@@ -8316,6 +8572,20 @@
           "target": "ledger/events/events.jsonl"
         },
         {
+          "by": "registry/tests/registry-amend.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/events/events.jsonl"
+        },
+        {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/events/events.jsonl"
+        },
+        {
           "by": "tools/verify-release.mjs",
           "call": "existsSync",
           "confidence": "ast",
@@ -8650,6 +8920,38 @@
             "echo"
           ],
           "step": "Report failure details"
+        },
+        {
+          "dir": "",
+          "job": "test",
+          "programs": [
+            "npm"
+          ],
+          "step": "Install dependencies"
+        },
+        {
+          "dir": "",
+          "job": "test",
+          "programs": [
+            "npm"
+          ],
+          "step": "Build CLI"
+        },
+        {
+          "dir": "",
+          "job": "test",
+          "programs": [
+            "node"
+          ],
+          "step": "Run tests with coverage floor"
+        },
+        {
+          "dir": "",
+          "job": "test",
+          "programs": [
+            "npm"
+          ],
+          "step": "Audit production dependencies"
         }
       ],
       "elsewhere": [],
@@ -8683,9 +8985,42 @@
               "version": "22"
             }
           ]
+        },
+        {
+          "basis": "declared",
+          "name": "test",
+          "runsOn": [
+            {
+              "labels": [
+                "ubuntu-latest"
+              ],
+              "platform": {
+                "cpu": "x64",
+                "libc": "glibc",
+                "os": "linux"
+              }
+            }
+          ],
+          "setup": [
+            {
+              "ranges": [
+                {
+                  "from": "22",
+                  "range": ">=22.0.0 <23.0.0-0"
+                }
+              ],
+              "step": "Setup Node",
+              "uses": "actions/setup-node",
+              "version": "22"
+            }
+          ]
         }
       ],
-      "landings": [],
+      "landings": [
+        "ledger/nodes",
+        "registry/anchors.json",
+        "registry/trust.json"
+      ],
       "mentions": [
         {
           "job": "validate-ledger",
@@ -8703,29 +9038,555 @@
       "pushes": false,
       "reach": [
         {
+          "boundary": "anchor",
+          "depth": 0,
+          "files": 17
+        },
+        {
+          "boundary": "attestor",
+          "depth": 0,
+          "files": 8
+        },
+        {
           "boundary": "ledger",
           "depth": 0,
-          "files": 2
+          "files": 8
+        },
+        {
+          "boundary": "pages",
+          "depth": 0,
+          "files": 8
+        },
+        {
+          "boundary": "policy",
+          "depth": 0,
+          "files": 4
+        },
+        {
+          "boundary": "registry",
+          "depth": 0,
+          "files": 15
+        },
+        {
+          "boundary": "repomesh-cli",
+          "depth": 0,
+          "files": 53
+        },
+        {
+          "boundary": "tools",
+          "depth": 0,
+          "files": 15
         },
         {
           "boundary": "verifiers",
-          "depth": 1,
-          "enters": {
-            "file": "verifiers/lib/key-window.mjs",
-            "from": "ledger/scripts/validate-ledger.mjs"
-          },
-          "files": 3
+          "depth": 0,
+          "files": 33
         }
       ],
-      "readers": [],
+      "readers": [
+        {
+          "by": "attestor/scripts/attest-release.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "attestor/scripts/attest-release.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/scripts/validate-ledger.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/scripts/validate-ledger.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/scripts/validate-ledger.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/scripts/verify-release.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/scripts/verify-release.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "ledger/tests/validate-ledger-amend.test.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "packages/repomesh-cli/tests/anchor-leaf-window.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "policy/scripts/check-policy.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "policy/scripts/check-policy.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-dependencies.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-dependencies.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-dependencies.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-dependencies.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-dependencies.mjs",
+          "call": "statSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-registry.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-registry.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-registry.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-registry.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-registry.mjs",
+          "call": "statSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-trust.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-trust.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-trust.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-trust.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-verifiers.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-verifiers.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/build-verifiers.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/verify-trust.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "registry/scripts/verify-trust.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "tools/join-node.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "tools/tests/tools.test.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "tools/verify-release.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "tools/verify-release.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "ledger/nodes"
+        },
+        {
+          "by": "pages/build-metrics.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-stats.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "pages/build-timeline.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/scripts/build-anchors.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/scripts/build-badges.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/scripts/build-badges.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/scripts/build-snippets.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/scripts/build-snippets.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "registry/tests/registry-amend.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true,
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "verifiers/lib/common.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/anchors.json"
+        },
+        {
+          "by": "packages/repomesh-cli/src/verify/verify-all.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "packages/repomesh-cli/src/verify/verify-all.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-metrics.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-pages.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-stats.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-status.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "pages/build-timeline.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "registry/scripts/build-badges.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "registry/scripts/build-snippets.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "registry/scripts/build-trust.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "registry/scripts/verify-trust.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "registry/scripts/verify-trust.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "scripts/verify.sh",
+          "call": "literal",
+          "confidence": "text",
+          "target": "registry/trust.json"
+        },
+        {
+          "by": "verifiers/lib/common.mjs",
+          "call": "existsSync",
+          "confidence": "ast",
+          "target": "registry/trust.json"
+        }
+      ],
       "runs": [
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "anchor/xrpl/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "attestor/tests/",
+          "runKind": "executes"
+        },
         {
           "job": "validate-ledger",
           "path": "ledger/scripts/validate-ledger.mjs",
           "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "ledger/tests/",
+          "runKind": "executes"
+        },
+        {
+          "job": "test",
+          "path": "packages/repomesh-cli/scripts/build.mjs",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "packages/repomesh-cli/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "pages/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "policy/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "registry/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "tools/tests/",
+          "runKind": "executes"
+        },
+        {
+          "directory": true,
+          "job": "test",
+          "matched": true,
+          "path": "verifiers/tests/",
+          "runKind": "executes"
         }
       ],
-      "runsCount": 1,
+      "runsCount": 11,
       "secrets": [],
       "sends": {
         "deploysPages": false,
@@ -8738,13 +9599,53 @@
         "releases": false
       },
       "stages": [],
+      "tests": [
+        {
+          "coverage": true,
+          "files": 113,
+          "job": "test",
+          "runner": "node --test",
+          "step": "Run tests with coverage floor"
+        }
+      ],
       "triggers": [
         {
           "event": "pull_request"
         },
         {
+          "branches": [
+            "main"
+          ],
+          "event": "push",
+          "paths": [
+            ".github/workflows/ledger-ci.yml",
+            ".github/workflows/registry-ci.yml",
+            "anchor/**",
+            "atlas/**",
+            "attestor/**",
+            "ledger/**",
+            "package-lock.json",
+            "package.json",
+            "packages/**",
+            "pages/**",
+            "policy/**",
+            "profiles/**",
+            "registry/**",
+            "schemas/**",
+            "scripts/**",
+            "tools/**",
+            "verifier.policy.json",
+            "verifiers/**"
+          ]
+        },
+        {
           "event": "workflow_dispatch"
         }
+      ],
+      "untrackedLandings": [
+        "packages/repomesh-cli/dist/",
+        "pages/out/",
+        "pages/out/status.json"
       ],
       "uses": [
         "actions/checkout",
@@ -9257,6 +10158,24 @@
           "dir": "",
           "job": "build-registry",
           "programs": [
+            "echo"
+          ],
+          "step": "Verify workflow_run origin (main of this repository only)"
+        },
+        {
+          "dir": "",
+          "job": "build-registry",
+          "programs": [
+            "echo",
+            "gh",
+            "git"
+          ],
+          "step": "Check registry-relevant path changes"
+        },
+        {
+          "dir": "",
+          "job": "build-registry",
+          "programs": [
             "node"
           ],
           "step": "Validate profile snapshots"
@@ -9307,7 +10226,7 @@
                   "range": ">=22.0.0 <23.0.0-0"
                 }
               ],
-              "step": "1",
+              "step": "3",
               "uses": "actions/setup-node",
               "version": "22"
             }
@@ -9324,9 +10243,15 @@
         "registry/trust.json",
         "registry/verifiers.json"
       ],
-      "mentions": [],
+      "mentions": [
+        {
+          "job": "build-registry",
+          "path": ".github/workflows/registry-ci.yml"
+        }
+      ],
       "name": "registry-ci",
       "permissions": [
+        "contents:read",
         "contents:write"
       ],
       "pushes": false,
@@ -9694,27 +10619,26 @@
       ],
       "triggers": [
         {
+          "event": "workflow_dispatch"
+        },
+        {
           "branches": [
             "main"
           ],
-          "event": "push",
-          "paths": [
-            ".github/workflows/registry-ci.yml",
-            "ledger/events/**",
-            "ledger/nodes/**",
-            "profiles/**",
-            "registry/scripts/**"
+          "event": "workflow_run",
+          "types": [
+            "completed"
+          ],
+          "workflows": [
+            "ledger-ci"
           ]
-        },
-        {
-          "event": "workflow_dispatch"
         }
       ],
       "uses": [
         "actions/checkout",
         "actions/setup-node"
       ],
-      "usesWorkflowToken": false
+      "usesWorkflowToken": true
     },
     {
       "checksCount": 8,
@@ -9815,6 +10739,22 @@
       ],
       "elsewhere": [],
       "file": ".github/workflows/release.yml",
+      "gated": [
+        {
+          "jobs": [
+            "publish"
+          ],
+          "pushes": false,
+          "sends": [
+            "publishesTo:npm",
+            "packages:{\"dir\":\"packages/repomesh-cli\",\"name\":\"@mcptoolshop/repomesh\",\"registry\":\"npm\"}"
+          ],
+          "stages": [],
+          "when": {
+            "event": "release"
+          }
+        }
+      ],
       "jobs": [
         {
           "basis": "declared",
@@ -9885,7 +10825,7 @@
         {
           "boundary": "repomesh-cli",
           "depth": 0,
-          "files": 58
+          "files": 59
         },
         {
           "boundary": "root",
@@ -10007,14 +10947,20 @@
         {
           "job": "publish",
           "path": "packages/repomesh-cli/scripts/build.mjs",
-          "runKind": "executes"
+          "runKind": "executes",
+          "when": {
+            "event": "release"
+          }
         },
         {
           "directory": true,
           "job": "publish",
           "matched": true,
           "path": "packages/repomesh-cli/tests/",
-          "runKind": "executes"
+          "runKind": "executes",
+          "when": {
+            "event": "release"
+          }
         }
       ],
       "runsCount": 10,
@@ -10025,17 +10971,9 @@
         "opensIssues": false,
         "opensIssuesOnFailure": false,
         "opensPullRequests": false,
-        "packages": [
-          {
-            "dir": "packages/repomesh-cli",
-            "name": "@mcptoolshop/repomesh",
-            "registry": "npm"
-          }
-        ],
         "publishes": true,
         "publishesTo": [
-          "container image",
-          "npm"
+          "container image"
         ],
         "releases": false
       },
@@ -10043,7 +10981,7 @@
       "tests": [
         {
           "dir": "packages/repomesh-cli",
-          "files": 36,
+          "files": 37,
           "job": "publish",
           "runner": "node --test",
           "step": "Test"
@@ -10573,8 +11511,8 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "571606420e6858c90856a8cc564a1a1f26e91fb2",
-    "tracked": 302
+    "commit": "2081a4bc25f52d1ea7f8c6df4ac8f3b24667c022",
+    "tracked": 307
   },
   "landings": [
     {
@@ -10593,6 +11531,18 @@
         }
       ],
       "target": ".github/actions/verify/action.yml",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "readdirSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": ".github/workflows",
       "writers": []
     },
     {
@@ -10617,6 +11567,22 @@
         }
       ],
       "target": ".github/workflows/attestor-ci.yml",
+      "writers": []
+    },
+    {
+      "readers": [
+        {
+          "by": ".github/workflows/registry-ci.yml",
+          "confidence": "config"
+        },
+        {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        }
+      ],
+      "target": ".github/workflows/registry-ci.yml",
       "writers": []
     },
     {
@@ -10654,6 +11620,12 @@
     {
       "readers": [
         {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "tools/tests/docs-contract.test.mjs",
           "call": "literal",
           "confidence": "ast",
@@ -10682,7 +11654,10 @@
       "writers": [
         {
           "by": "anchor/xrpl/scripts/post-anchor.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -10707,6 +11682,12 @@
           "by": "anchor/xrpl/scripts/watch.mjs",
           "call": "readFileSync",
           "confidence": "ast"
+        },
+        {
+          "by": "anchor/xrpl/tests/testnet-guard.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
         },
         {
           "by": "anchor/xrpl/tests/verify-anchor.test.mjs",
@@ -10908,6 +11889,12 @@
       "readers": [
         {
           "by": "anchor/xrpl/tests/anchor-writepath-stagec.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "anchor/xrpl/tests/testnet-guard.test.mjs",
           "call": "readFileSync",
           "confidence": "ast",
           "fromTests": true
@@ -11206,6 +12193,18 @@
           "confidence": "ast"
         },
         {
+          "by": "registry/tests/registry-amend.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "registry/tests/registry-ci-follower.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "tools/verify-release.mjs",
           "call": "existsSync",
           "confidence": "ast"
@@ -11257,6 +12256,12 @@
           "confidence": "ast"
         },
         {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "ledger/scripts/validate-ledger.mjs",
           "call": "existsSync",
           "confidence": "ast"
@@ -11283,6 +12288,12 @@
         },
         {
           "by": "packages/repomesh-cli/tests/anchor-leaf-window.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
           "call": "literal",
           "confidence": "ast",
           "fromTests": true
@@ -11459,7 +12470,25 @@
     {
       "readers": [
         {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "ledger/tests/key-lifecycle.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
           "call": "literal",
           "confidence": "ast",
           "fromTests": true
@@ -11470,6 +12499,18 @@
     },
     {
       "readers": [
+        {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
         {
           "by": "ledger/tests/immutability-coverage.test.mjs",
           "call": "literal",
@@ -11501,6 +12542,12 @@
           "fromTests": true
         },
         {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "scripts/verify.sh",
           "call": "literal",
           "confidence": "text"
@@ -11518,7 +12565,25 @@
     {
       "readers": [
         {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "ledger/tests/key-lifecycle.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
           "call": "literal",
           "confidence": "ast",
           "fromTests": true
@@ -12372,12 +13437,6 @@
           "fromTests": true
         },
         {
-          "by": "packages/repomesh-cli/tests/verify-gate.test.mjs",
-          "call": "literal",
-          "confidence": "ast",
-          "fromTests": true
-        },
-        {
           "by": "packages/repomesh-cli/tests/verify-legibility.test.mjs",
           "call": "literal",
           "confidence": "ast",
@@ -12478,7 +13537,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         },
         {
           "by": "pages/build-status.mjs",
@@ -12493,7 +13555,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12504,7 +13569,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12515,7 +13583,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12526,7 +13597,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12537,7 +13611,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12548,7 +13625,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12559,7 +13639,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12570,7 +13653,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12581,7 +13667,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12592,7 +13681,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12603,7 +13695,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12614,7 +13709,10 @@
       "writers": [
         {
           "by": "pages/build-pages.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12817,7 +13915,10 @@
       "writers": [
         {
           "by": "registry/scripts/build-badges.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12869,7 +13970,10 @@
       "writers": [
         {
           "by": "pages/build-metrics.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -12955,6 +14059,12 @@
           "call": "literal",
           "confidence": "ast",
           "fromTests": true
+        },
+        {
+          "by": "tools/tests/satisfied-alignment.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         }
       ],
       "target": "registry/scripts/build-trust.mjs",
@@ -13007,7 +14117,10 @@
       "writers": [
         {
           "by": "registry/scripts/build-snippets.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -13173,6 +14286,18 @@
     {
       "readers": [
         {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "ledger/scripts/validate-ledger.mjs",
           "call": "literal",
           "confidence": "ast"
@@ -13222,6 +14347,12 @@
           "by": "node.json",
           "call": "literal",
           "confidence": "text"
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         },
         {
           "by": "policy/tests/violation-event-schema.test.mjs",
@@ -13439,7 +14570,10 @@
       "writers": [
         {
           "by": "pages/build-stats.mjs",
-          "confidence": "ast"
+          "confidence": "ast",
+          "unless": [
+            "main"
+          ]
         }
       ]
     },
@@ -13508,6 +14642,12 @@
           "fromTests": true
         },
         {
+          "by": "tools/tests/satisfied-alignment.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "tools/tests/sec-b2-composed-cross-layer-probe.test.mjs",
           "call": "literal",
           "confidence": "ast",
@@ -13529,6 +14669,24 @@
           "by": "attestor/scripts/attest-release.mjs",
           "call": "readFileSync",
           "confidence": "ast"
+        },
+        {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
         },
         {
           "by": "ledger/scripts/validate-ledger.mjs",
@@ -13575,6 +14733,24 @@
           "fromTests": true
         },
         {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/verify-gate.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/verify-gate.test.mjs",
+          "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "registry/scripts/build-trust.mjs",
           "call": "existsSync",
           "confidence": "ast"
@@ -13588,6 +14764,24 @@
           "by": "registry/scripts/build-trust.mjs",
           "call": "readFileSync",
           "confidence": "ast"
+        },
+        {
+          "by": "tools/tests/att-a-001-nonrequired-hardfail.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "tools/tests/ledger-a-005-immutability.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "tools/tests/satisfied-alignment.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
         },
         {
           "by": "tools/verify-release.mjs",
@@ -13630,6 +14824,18 @@
     {
       "readers": [
         {
+          "by": "attestor/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "attestor/tests/sec-keywindow-sigchain.test.mjs",
+          "call": "literal",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
           "by": "ledger/tests/key-lifecycle.test.mjs",
           "call": "literal",
           "confidence": "ast",
@@ -13638,6 +14844,12 @@
         {
           "by": "packages/repomesh-cli/tests/key-window-drift.test.mjs",
           "call": "readFileSync",
+          "confidence": "ast",
+          "fromTests": true
+        },
+        {
+          "by": "packages/repomesh-cli/tests/sec-anchor-ledger-order.test.mjs",
+          "call": "literal",
           "confidence": "ast",
           "fromTests": true
         }
@@ -13703,82 +14915,7 @@
   "overlaps": [],
   "submodules": [],
   "symlinks": [],
-  "testFiles": 109,
-  "testsNotRun": [
-    "anchor/xrpl/tests/anchor-writepath-stagec.test.mjs",
-    "anchor/xrpl/tests/docker-image.test.mjs",
-    "anchor/xrpl/tests/idle-epoch.test.mjs",
-    "anchor/xrpl/tests/merkle-v2.test.mjs",
-    "anchor/xrpl/tests/post-anchor-memo-algo.test.mjs",
-    "anchor/xrpl/tests/posting-account.test.mjs",
-    "anchor/xrpl/tests/root-overrides-schema-d14.test.mjs",
-    "anchor/xrpl/tests/verify-anchor-humanize.test.mjs",
-    "anchor/xrpl/tests/verify-anchor.test.mjs",
-    "anchor/xrpl/tests/watch.test.mjs",
-    "attestor/tests/emit-key-event.test.mjs",
-    "attestor/tests/sec-005-presence-gating.test.mjs",
-    "attestor/tests/sec-b2-nodejson-strip.test.mjs",
-    "attestor/tests/sec-b3-order-aware-auth.test.mjs",
-    "attestor/tests/sec-keywindow-sigchain.test.mjs",
-    "attestor/tests/sec-stgb-att-008-sigchain-causes.test.mjs",
-    "ledger/tests/immutability-coverage.test.mjs",
-    "ledger/tests/key-lifecycle.test.mjs",
-    "ledger/tests/run-events-and-governance.test.mjs",
-    "ledger/tests/validate-ledger-amend.test.mjs",
-    "ledger/tests/validate-ledger.test.mjs",
-    "ledger/tests/verifier-policy-contract.test.mjs",
-    "pages/tests/build-pages.test.mjs",
-    "pages/tests/stagec-honesty.test.mjs",
-    "pages/tests/stagec-nan-guard.test.mjs",
-    "pages/tests/status-endpoint.test.mjs",
-    "policy/tests/attestor-empty-commit.test.mjs",
-    "policy/tests/check-policy.test.mjs",
-    "policy/tests/violation-event-schema.test.mjs",
-    "registry/tests/registry-amend-wave2.test.mjs",
-    "registry/tests/registry-amend.test.mjs",
-    "registry/tests/registry-disputes.test.mjs",
-    "registry/tests/registry-humanize.test.mjs",
-    "registry/tests/registry-key-window.test.mjs",
-    "registry/tests/registry-policy-contract-capability.test.mjs",
-    "registry/tests/registry-policy-contract-regression.test.mjs",
-    "registry/tests/registry-scoring-amend.test.mjs",
-    "registry/tests/registry-untrusted-cause.test.mjs",
-    "registry/tests/snippets.test.mjs",
-    "registry/tests/verify-trust-disputes.test.mjs",
-    "tools/tests/att-a-001-nonrequired-hardfail.test.mjs",
-    "tools/tests/docs-contract.test.mjs",
-    "tools/tests/event-schema-conditional.test.mjs",
-    "tools/tests/forged-window-probe.test.mjs",
-    "tools/tests/key-window-b3-ordering.test.mjs",
-    "tools/tests/key-window-verify-release.test.mjs",
-    "tools/tests/ledger-a-005-immutability.test.mjs",
-    "tools/tests/satisfied-alignment.test.mjs",
-    "tools/tests/sec-b2-composed-cross-layer-probe.test.mjs",
-    "tools/tests/sec-b3-end-to-end-exploit-probe.test.mjs",
-    "tools/tests/tools.test.mjs",
-    "tools/tests/verify-action.test.mjs",
-    "verifiers/tests/amend-key-window-failclosed.test.mjs",
-    "verifiers/tests/anchor-notes-parser.test.mjs",
-    "verifiers/tests/key-window.test.mjs",
-    "verifiers/tests/sec-001-osv-severity.test.mjs",
-    "verifiers/tests/sec-002-sbom-digest.test.mjs",
-    "verifiers/tests/sec-003-overrides.test.mjs",
-    "verifiers/tests/sec-004-repro-allowlist.test.mjs",
-    "verifiers/tests/sec-006-spdx.test.mjs",
-    "verifiers/tests/sec-008-readevents.test.mjs",
-    "verifiers/tests/sec-b2-nodejson-strip.test.mjs",
-    "verifiers/tests/sec-b3-order-aware-auth.test.mjs",
-    "verifiers/tests/sec-d13-unbound-unscored.test.mjs",
-    "verifiers/tests/sec-d15-failseverities-union.test.mjs",
-    "verifiers/tests/sec-keywindow-common.test.mjs",
-    "verifiers/tests/sec-stgb-ver-001-osv-unscored.test.mjs",
-    "verifiers/tests/sec-stgb-ver-002-partial-osv.test.mjs",
-    "verifiers/tests/sec-stgb-ver-004-sbom-timeout.test.mjs",
-    "verifiers/tests/sec-stgb-ver-006-repro-distinct.test.mjs",
-    "verifiers/tests/sec-stgb-ver-007-unknown-reason.test.mjs",
-    "verifiers/tests/sec-stgb-ver-011-osv-cache.test.mjs",
-    "verifiers/tests/write-json-atomic.test.mjs"
-  ],
+  "testFiles": 113,
   "unassigned": [],
   "workspaces": [
     "packages/repomesh-cli"

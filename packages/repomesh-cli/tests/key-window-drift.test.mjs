@@ -52,6 +52,7 @@ describe("CLI-A-001 key-window predicate copies are byte-identical (drift guard)
       "deriveKeyWindowConstraints",
       "isBundledTrustedAnchorEvent",
       "isSignerTrustedForCheck",
+      "selectLatestVerdictPerSigner",
     ]) {
       assert.match(a, new RegExp(`export function ${sym}\\b`), `verifiers copy must export ${sym}`);
       assert.match(b, new RegExp(`export function ${sym}\\b`), `cli copy must export ${sym}`);

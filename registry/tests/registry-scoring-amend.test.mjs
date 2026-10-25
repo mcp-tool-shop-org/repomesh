@@ -29,7 +29,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { canonicalizeForHash } from "../../ledger/scripts/canonicalize.mjs";
-import { buildTrust, INTEGRITY_BANDS } from "../scripts/build-trust.mjs";
+import * as buildTrustMod from "../scripts/build-trust.mjs";
+const { buildTrust, INTEGRITY_BANDS } = buildTrustMod;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
@@ -622,5 +623,228 @@ describe("build-trust scores only verdicts the signer is authorised for", () => 
       warnings.some((w) => w.includes(ATTESTOR) && w.includes("repro.build") && w.includes("URI verdict")),
       "warning must name signer and kind for dropped repro.build URI verdict",
     );
+  });
+
+  it("S7a: pass then a later fail from the same trusted signer resolves to fail in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlyPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: pass — initial reproducible build verified",
+    }), "att-key", AK.privateKey);
+    const laterFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: fail — re-scan failed",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlyPass, laterFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "fail", "latest fail from the same signer must win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "fail");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "fail");
+    assert.equal(entry.assuranceScore, 0);
+  });
+
+  it("S7a mirror: fail then a later pass from the same trusted signer resolves to pass in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlyFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: fail — initial failure",
+    }), "att-key", AK.privateKey);
+    const laterPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: pass — later re-run succeeded",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlyFail, laterPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "latest pass from the same signer must win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "pass");
+    assert.equal(entry.assuranceScore, 30);
+  });
+
+  it("timestamp tie: ties go to the later ledger position in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const tiedTs = "2026-03-01T01:00:00.000Z";
+    const firstPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: tiedTs,
+      notes: "repro.build: pass — earlier ledger entry",
+    }), "att-key", AK.privateKey);
+    const secondFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: tiedTs,
+      notes: "repro.build: fail — later ledger entry at same timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry1 = entryFor(
+      sandbox([rel, firstPass, secondFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry1.assuranceBreakdown["repro.build"].result, "fail", "tie must go to later ledger position (fail)");
+    assert.equal(entry1.assuranceConsensus["repro.build"].consensus, "fail");
+
+    const entry2 = entryFor(
+      sandbox([rel, secondFail, firstPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry2.assuranceBreakdown["repro.build"].result, "pass", "tie must go to later ledger position (pass)");
+    assert.equal(entry2.assuranceConsensus["repro.build"].consensus, "pass");
+  });
+
+  it("invalid-signature later event never competes or overrides an earlier valid verdict in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const validPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: pass — valid signature",
+    }), "att-key", AK.privateKey);
+    const forgedLaterFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: fail — forged signature",
+    }), "att-key", RK.privateKey);
+
+    const origWarn = console.warn;
+    console.warn = () => {};
+    let entry;
+    try {
+      entry = entryFor(
+        sandbox([rel, validPass, forgedLaterFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+      );
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "forged later fail must never win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceScore, 30);
+  });
+
+  it("F1-M1a single guard: drops URI verdict when att.type !== kind even though kind is in evAttTypes and signer is authorised", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    // evAttTypes has both "repro.build" (via a non-verdict URI entry) and "license.audit",
+    // and ATTESTOR is authorised for both, so ONLY `att.type !== kind` rejects the second entry's URI verdict.
+    const ev = sign(attestation([
+      { type: "repro.build", uri: "https://example.com/repro-log.json" },
+      { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      notes: "license.audit: pass — ok",
+    }), "att-key", AK.privateKey);
+
+    const origWarn = console.warn;
+    console.warn = () => {};
+    let entry;
+    try {
+      entry = entryFor(
+        sandbox([rel, ev], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+      );
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "missing", "F1-M1a: att.type !== kind alone must reject mismatched URI verdict");
+    assert.equal(entry.assuranceConsensus["repro.build"], undefined);
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    assert.equal(
+      buildTrustMod.isAuthorizedUriVerdict({
+        att: { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+        kind: "repro.build",
+        evAttTypes: new Set(["repro.build", "license.audit"]),
+        verifierPolicy: shippedStylePolicy(),
+        signerNode: ATTESTOR,
+        signerKind: "attestor",
+      }).ok,
+      false,
+      "F1-M1a: isAuthorizedUriVerdict must reject when att.type !== kind alone",
+    );
+  });
+
+  it("F1-M1b single guard: drops URI verdict when !evAttTypes.has(kind) even when att.type === kind and signer is authorised", () => {
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    const res = buildTrustMod.isAuthorizedUriVerdict({
+      att: { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+      kind: "repro.build",
+      evAttTypes: new Set(["license.audit"]),
+      verifierPolicy: shippedStylePolicy(),
+      signerNode: ATTESTOR,
+      signerKind: "attestor",
+    });
+    assert.equal(res.ok, false, "F1-M1b: !evAttTypes.has(kind) alone must reject URI verdict");
+  });
+
+  it("F1-M1c single guard: drops URI verdict when !auth.ok even when att.type === kind and evAttTypes.has(kind)", () => {
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    const res = buildTrustMod.isAuthorizedUriVerdict({
+      att: { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+      kind: "repro.build",
+      evAttTypes: new Set(["repro.build"]),
+      verifierPolicy: shippedStylePolicy(),
+      signerNode: COGNATE,
+      signerKind: "governance",
+    });
+    assert.equal(res.ok, false, "F1-M1c: !auth.ok alone must reject URI verdict from unauthorised governance signer");
+  });
+
+  it("event-54 shape: a later ledger index with an earlier timestamp (later fail beats earlier pass) in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlierIndexLaterTsPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-06-21T01:13:55.000Z",
+      notes: "repro.build: pass — earlier ledger entry with later timestamp",
+    }), "att-key", AK.privateKey);
+    const laterIndexEarlierTsFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-04-12T03:18:12.425Z",
+      notes: "repro.build: fail — later ledger entry with backfilled earlier timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlierIndexLaterTsPass, laterIndexEarlierTsFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "fail", "later ledger index fail must beat earlier pass despite earlier timestamp");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "fail");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "fail");
+    assert.equal(entry.assuranceScore, 0);
+  });
+
+  it("event-54 mirror: an earlier ledger index with a later timestamp loses to a later pass in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlierIndexLaterTsFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-06-21T01:13:55.000Z",
+      notes: "repro.build: fail — earlier ledger entry with later timestamp",
+    }), "att-key", AK.privateKey);
+    const laterIndexEarlierTsPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-04-12T03:18:12.425Z",
+      notes: "repro.build: pass — later ledger entry with earlier timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlierIndexLaterTsFail, laterIndexEarlierTsPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "earlier ledger index with later timestamp must lose to later ledger index pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "pass");
+    assert.equal(entry.assuranceScore, 30);
   });
 });

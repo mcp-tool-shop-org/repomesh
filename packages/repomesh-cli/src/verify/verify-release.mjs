@@ -48,7 +48,8 @@ import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
   BUNDLED_TRUSTED_ATTESTORS, BUNDLED_TRUSTED_RUN_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
-  BUNDLED_RUN_ATTESTATION_TYPES, resolveCheckPolicy,
+  BUNDLED_RUN_ATTESTATION_TYPES, BUNDLED_CHECK_POLICIES,
+  preloadVerifierPolicy, readVerifierPolicy, checkPolicyForCli,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
@@ -70,6 +71,7 @@ import {
   mergeStricterWindow,
   isBundledTrustedAnchorEvent,
   isSignerTrustedForCheck,
+  selectLatestVerdictPerSigner,
 } from "./key-window.mjs";
 import {
   EXIT, exitCodeForStatus, normalizeFailOn, normalizeFormat,
@@ -140,20 +142,12 @@ function extractKeyFromNode(node, keyId) {
 // if their id is allowlisted. Mirrors tools/verify-release.mjs effectiveTrustedAttestors().
 function effectiveTrustedAttestors(opts) {
   const bundled = new Set(BUNDLED_TRUSTED_ATTESTORS);
-  // Best-effort: read a LOCAL verifier.policy.json (a checkout/clone) and INTERSECT. Remote policy
-  // is intentionally NOT trusted to widen, so we never fetch it to expand the set; absence => bundled.
-  if (opts?.local && opts?.root) {
-    try {
-      const p = path.join(opts.root, "verifier.policy.json");
-      if (fs.existsSync(p)) {
-        const policy = parseStrictJson(fs.readFileSync(p, "utf8"));
-        const fetched = Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : null;
-        if (fetched) {
-          // narrow-only: keep just the bundled nodes the policy ALSO lists.
-          return new Set([...bundled].filter(id => fetched.includes(id)));
-        }
-      }
-    } catch (e) { debugLog(`verifier.policy.json read failed (using bundled allowlist): ${e.message}`); }
+  // Read a validated local or fetched verifier.policy.json and INTERSECT (narrow-only).
+  const policy = readVerifierPolicy(opts);
+  const fetched = Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : null;
+  if (fetched) {
+    // narrow-only: keep just the bundled nodes the policy ALSO lists.
+    return new Set([...bundled].filter(id => fetched.includes(id)));
   }
   return bundled;
 }
@@ -347,22 +341,9 @@ async function buildKeyWindowCtx(ev, events, opts, { online } = {}) {
 // revoke); absence => no governance signer, only Path A (surviving same-node) authorizes.
 function readTrustedPolicyNodes(opts) {
   if (!opts?.local || !opts?.root) return new Set();
-  try {
-    const p = path.join(opts.root, "verifier.policy.json");
-    if (!fs.existsSync(p)) return new Set();
-    const policy = parseStrictJson(fs.readFileSync(p, "utf8"));
-    const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
-    return new Set(ids.filter(id => typeof id === "string"));
-  } catch (e) { debugLog(`trustedPolicy read failed: ${e.message}`); return new Set(); }
-}
-
-function readVerifierPolicy(opts) {
-  if (!opts?.local || !opts?.root) return null;
-  try {
-    const p = path.join(opts.root, "verifier.policy.json");
-    if (!fs.existsSync(p)) return null;
-    return parseStrictJson(fs.readFileSync(p, "utf8"));
-  } catch (e) { debugLog(`verifier.policy.json read failed: ${e.message}`); return null; }
+  const policy = readVerifierPolicy(opts);
+  const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
+  return new Set(ids.filter(id => typeof id === "string"));
 }
 
 // Resolve a maintainer object {keyId,publicKey,...} by keyId from a loaded node.json (local or cached remote).
@@ -844,14 +825,14 @@ function requiredAttestationTypes(profileDef) {
 //   - otherwise                                     -> isRepoMeshCheckout() auto-detect, root = cwd
 // This fixes the doc/impl drift where `local` was unconditionally overwritten by the auto-detect.
 export async function computeVerifyResult({
-  repo, version, anchored, anchoredOrLocal, ledgerUrl, nodesUrl, manifestsUrl,
+  repo, version, anchored, anchoredOrLocal, ledgerUrl, nodesUrl, manifestsUrl, policyUrl,
   local, localDir, human = false,
   preloadedEvents = null,
 }) {
   const explicitLocal = local === true || localDir !== undefined && localDir !== null;
   const useLocal = explicitLocal ? true : isRepoMeshCheckout();
   const root = explicitLocal ? (localDir || process.cwd()) : process.cwd();
-  const opts = { local: useLocal, root, ledgerUrl, nodesUrl, manifestsUrl };
+  const opts = { local: useLocal, root, ledgerUrl, nodesUrl, manifestsUrl, policyUrl };
 
   if (human) progress("1/4", "Loading events...");
   let events;
@@ -1009,17 +990,20 @@ export async function computeVerifyResult({
     console.log(`    Signature: VALID (keyId=${release.signature.keyId}, node=${releaseSignerNode})`);
   }
 
-  // 3. Index + verify attestations, select LATEST per (type, signerNode) — CLI-003.
-  const rawAttestations = events.filter(ev =>
-    ev.type === "AttestationPublished" && ev.repo === repo && ev.version === version
-  );
+  // 3. Index + verify attestations, select latest by ledger index per (type, signerNode) — CLI-003.
+  const rawAttestations = events
+    .map((ev, ledgerIndex) => ({ att: ev, ledgerIndex }))
+    .filter(({ att }) =>
+      att.type === "AttestationPublished" && att.repo === repo && att.version === version
+    );
 
-  // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode })
+  // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode, ledgerIndex })
   const byType = new Map();
+  const invalidTypes = new Set();
   const independentSigners = new Set();
-  const verifierPolicy = readVerifierPolicy(opts);
+  const policyState = await preloadVerifierPolicy(opts);
 
-  for (const att of rawAttestations) {
+  for (const { att, ledgerIndex } of rawAttestations) {
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3): a windowed
     // attestor key out of its window resolves to no key, so the attestation is excluded.
     const sigOk = await verifySignature(att, opts, keyOpts);
@@ -1037,19 +1021,22 @@ export async function computeVerifyResult({
           break;
         }
       }
-      const signerKey = signerNode || `__invalid__${att.signature?.keyId || "?"}`;
-      if (!byType.has(t)) byType.set(t, new Map());
-      const perSigner = byType.get(t);
-      const prev = perSigner.get(signerKey);
-      // LATEST timestamp wins per (type, signer).
-      if (!prev || ts > prev.timestamp) {
-        perSigner.set(signerKey, { result: attResult, signatureValid: sigOk.ok, timestamp: ts, signerNode });
+      if (!sigOk.ok || !signerNode) {
+        invalidTypes.add(t);
       }
+      selectLatestVerdictPerSigner(byType, t, signerNode, {
+        result: attResult,
+        signatureValid: sigOk.ok,
+        timestamp: ts,
+        signerNode,
+        ledgerIndex,
+      });
       if (
         sigOk.ok &&
         signerNode &&
         signerNode !== releaseSignerNode &&
-        isSignerTrustedForCheck(signerNode, resolveCheckPolicy(t, verifierPolicy))
+        Object.hasOwn(BUNDLED_CHECK_POLICIES, t) &&
+        isSignerTrustedForCheck(signerNode, checkPolicyForCli(t, policyState))
       ) {
         independentSigners.add(signerNode);
       }
@@ -1087,22 +1074,32 @@ export async function computeVerifyResult({
     independentAttestors: [...independentSigners],
     status: "PASS",
   };
+  if (!policyState.ok) {
+    gate.policyError = policyState.error;
+    result.policyError = policyState.error;
+    gate.failures.push({
+      check: "verifier.policy",
+      type: "verifier.policy",
+      reason: policyState.error.reason,
+      hint: policyState.error.hint,
+    });
+  }
 
   // For each required attestation type: must be PRESENT, with a selected result `pass`
   // AND signatureValid:true from at least one signer allowed for that check. Any selected fail/invalid -> fail.
   for (const type of required) {
-    const checkPolicy = resolveCheckPolicy(type, verifierPolicy);
+    const checkPolicy = checkPolicyForCli(type, policyState);
     const perSigner = byType.get(type);
     const relevant = perSigner
       ? [...perSigner.values()].filter(
-          sel => !sel.signatureValid || isSignerTrustedForCheck(sel.signerNode, checkPolicy)
+          sel => sel.signatureValid && isSignerTrustedForCheck(sel.signerNode, checkPolicy)
         )
       : [];
     // `signature.chain` is satisfied STRUCTURALLY by a valid release signature that
     // chains to a key registered under the release's own repo (D1) — the release's own
     // signature IS the signature chain. It does not require a separate attestation event.
     // (An explicit signature.chain attestation, if present from an allowed signer, is still honored below.)
-    if (type === "signature.chain" && result.release.signatureValid && relevant.length === 0) {
+    if (type === "signature.chain" && result.release.signatureValid && relevant.length === 0 && !invalidTypes.has(type)) {
       gate.satisfied.push(type);
       continue;
     }
@@ -1136,7 +1133,7 @@ export async function computeVerifyResult({
     if (
       a.signatureValid &&
       a.result === "fail" &&
-      isSignerTrustedForCheck(a.signerNode, resolveCheckPolicy(a.type, verifierPolicy))
+      isSignerTrustedForCheck(a.signerNode, checkPolicyForCli(a.type, policyState))
     ) {
       const reason = "attestation result=fail";
       gate.failures.push({ check: a.type, type: a.type, reason, hint: hintForFailure({ type: a.type, reason }) });
@@ -1427,6 +1424,7 @@ export async function verifyRelease(args = {}) {
     ledgerUrl: args.ledgerUrl,
     nodesUrl: args.nodesUrl,
     manifestsUrl: args.manifestsUrl,
+    policyUrl: args.policyUrl,
     local: args.local,
     localDir: args.localDir,
     human,
