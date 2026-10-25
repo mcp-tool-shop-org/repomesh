@@ -11,6 +11,7 @@
 // is its byte-identical mirror (except the import path line).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   keyWindow,
   isKeyValidForSignature,
@@ -829,15 +830,25 @@ describe("isBundledTrustedAnchorEvent — anchor keys honour their key windows",
   const ANCHOR_NODE = "mcp-tool-shop-org/repomesh-xrpl-anchor";
   const trusted = new Set([ANCHOR_NODE]);
 
+  function canonForAnchor(v) {
+    if (Array.isArray(v)) return `[${v.map(canonForAnchor).join(",")}]`;
+    if (v && typeof v === "object") {
+      const ks = Object.keys(v).filter((k) => v[k] !== undefined).sort();
+      return `{${ks.map((k) => `${JSON.stringify(k)}:${canonForAnchor(v[k])}`).join(",")}}`;
+    }
+    return JSON.stringify(v);
+  }
+
   function makeAnchor(keyId, timestamp) {
     const ev = {
       type: "AttestationPublished",
       repo: ANCHOR_NODE,
       version: "0.0.0-anchor",
       attestations: [{ type: "ledger.anchor", uri: "xrpl:tx:TX" }],
-      signature: { alg: "ed25519", keyId, canonicalHash: "a".repeat(64), value: "AAAA" },
     };
     if (timestamp !== undefined) ev.timestamp = timestamp;
+    const canonicalHash = crypto.createHash("sha256").update(canonForAnchor(ev), "utf8").digest("hex");
+    ev.signature = { alg: "ed25519", keyId, canonicalHash, value: "AAAA" };
     return ev;
   }
 

@@ -556,6 +556,30 @@ function findAnchorEventIndex(events, anchorEvent) {
   return -1;
 }
 
+function canonicalizeEventForHash(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalizeEventForHash).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value)
+      .filter((k) => value[k] !== undefined)
+      .sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalizeEventForHash(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hasMatchingCanonicalHash(ev) {
+  const claimed = ev?.signature?.canonicalHash;
+  if (typeof claimed !== "string" || !/^[0-9a-f]{64}$/i.test(claimed)) return false;
+  try {
+    const copy = JSON.parse(JSON.stringify(ev));
+    delete copy.signature;
+    const computed = crypto.createHash("sha256").update(canonicalizeEventForHash(copy), "utf8").digest("hex");
+    return computed.toLowerCase() === claimed.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   if (!anchorEvent || typeof anchorEvent !== "object") return false;
   const trusted =
@@ -596,6 +620,7 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
 
   const keyId = anchorEvent?.signature?.keyId;
   if (!keyId) return false;
+  if (!hasMatchingCanonicalHash(anchorEvent)) return false;
   const anchorSelfTime = selfTime(anchorEvent);
   const anchorTrustedTime =
     anchorSelfTime !== null
@@ -610,6 +635,9 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
         verifySignature(ev) {
           const sigKeyId = ev?.signature?.keyId;
           if (typeof sigKeyId !== "string" || sigKeyId === "") {
+            return { ok: false, signerKeyId: null, signerNodeRepo: null };
+          }
+          if (!hasMatchingCanonicalHash(ev)) {
             return { ok: false, signerKeyId: null, signerNodeRepo: null };
           }
           const candidateRepos = [ev?.repo, ...trustedPolicy];

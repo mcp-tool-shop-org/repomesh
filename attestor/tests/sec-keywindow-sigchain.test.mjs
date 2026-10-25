@@ -649,9 +649,68 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
       });
     });
 
+    it("P3: an anchor event whose body was edited after signing (genuine signature over original canonicalHash) is refused on all three paths", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths, evalAnchorTrustDirectly }) => {
+        const tampered = buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey, "2026-06-17T00:00:00.000Z");
+        // Tamper the body after signing while keeping the genuine signature over the original canonicalHash
+        tampered.timestamp = "2026-06-16T12:00:00.000Z";
+        assert.deepEqual(
+          evalAnchorTrustDirectly(tampered),
+          { vl: false, lvr: false, ar: false },
+          "isBundledTrustedAnchorEvent must recompute canonicalHash so no caller can pass a weaker check",
+        );
+        assert.deepEqual(
+          evalOnAllThreePaths(tampered),
+          { vl: false, lvr: false, ar: false },
+          "tampered anchor body with genuine signature over original canonicalHash must be refused on VL, LVR, and AR",
+        );
+      });
+    });
+
+    it("F2-M3c single guard: refuses an anchor signed by a governance node in trustedAttestors (not in trustedRunAttestors) on a non-governance repo", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase }) => {
+        const ev = buildAnchorCase("mcp-tool-shop-org/repomesh", "gov2-key", gov2Kp.privateKey, "2026-06-17T00:00:00.000Z");
+        const loadNode = (id) => {
+          const [o, rName] = String(id || "").split("/");
+          if (!o || !rName) return null;
+          const p = path.join(NODES, o, rName, "node.json");
+          return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+        };
+        const trusted = isBundledTrustedAnchorEvent(ev, {
+          trustedAttestors: new Set(["mcp-tool-shop-org/repomesh", "test-org/gov2"]),
+          trustedRunAttestors: new Set(["mcp-tool-shop-org/cognate"]),
+          loadNode,
+        });
+        assert.equal(trusted, false, "signer loop governance guard (F2-M3c) must refuse governance signer even when in trustedAttestors and not in trustedRunAttestors");
+      });
+    });
+
+    it("F2-M3d single guard: refuses an anchor whose repo is a governance node (not in trustedRunAttestors) even when signed by a trusted registry key", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase }) => {
+        const ev = buildAnchorCase("test-org/gov2", "ci-repomesh-2026", regKp.privateKey, "2026-06-17T00:00:00.000Z");
+        const loadNode = (id) => {
+          const [o, rName] = String(id || "").split("/");
+          if (!o || !rName) return null;
+          const p = path.join(NODES, o, rName, "node.json");
+          return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+        };
+        const trusted = isBundledTrustedAnchorEvent(ev, {
+          trustedAttestors: new Set(["mcp-tool-shop-org/repomesh"]),
+          trustedRunAttestors: new Set(["mcp-tool-shop-org/cognate"]),
+          loadNode,
+        });
+        assert.equal(trusted, false, "repo-level governance guard (F2-M3d) must refuse governance repo even when signed by a trusted registry key");
+      });
+    });
+
     it("shared anchor-trust parity: validate-ledger, ledger/scripts/verify-release.mjs, and attestor/scripts/attest-release.mjs return identical answers across all anchor cases", () => {
       const { withSandbox } = setupAnchorFixture();
       withSandbox(({ buildAnchorCase, evalOnAllThreePaths }) => {
+        const tampered = buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey, "2026-06-17T00:00:00.000Z");
+        tampered.timestamp = "2026-06-16T12:00:00.000Z";
         const cases = [
           { name: "A1_valid_registry", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey), expected: true },
           { name: "A2_governance_repo", ev: buildAnchorCase("mcp-tool-shop-org/cognate", "ci-cognate-2026", cogKp.privateKey), expected: false },
@@ -664,6 +723,7 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
           { name: "A9_rotated_key_predating_rotation", ev: buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-17T00:00:00.000Z"), expected: true },
           { name: "A10_rotated_key_at_or_after_rotation", ev: buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-18T00:00:00.000Z"), expected: false },
           { name: "A11_revocation_reason_no_parseable_boundary", ev: buildAnchorCase(ANCHOR_REPO, "anchor-unparseable", unparseableKp.privateKey, "2026-06-10T00:00:00.000Z"), expected: false },
+          { name: "A12_tampered_body_original_sig", ev: tampered, expected: false },
         ];
 
         const validateLedgerAnswers = {};

@@ -28,7 +28,7 @@
       "partLabel": "verifiers"
     },
     {
-      "doors": 4,
+      "doors": 5,
       "importedBy": [
         "anchor",
         "tools"
@@ -41,7 +41,7 @@
       "partLabel": "repomesh-cli"
     },
     {
-      "doors": 4,
+      "doors": 5,
       "importedBy": [
         "pages",
         "tools"
@@ -64,7 +64,7 @@
       "partLabel": "ledger"
     },
     {
-      "doors": 4,
+      "doors": 5,
       "importedBy": [],
       "importedByTests": [
         "ledger",
@@ -79,7 +79,7 @@
       ]
     },
     {
-      "doors": 3,
+      "doors": 4,
       "importedBy": [],
       "importedByTests": [],
       "kind": "part",
@@ -104,7 +104,7 @@
         "tools"
       ],
       "target": "ledger/events/events.jsonl",
-      "tests": 4,
+      "tests": 6,
       "writers": [
         ".github",
         "attestor",
@@ -128,75 +128,126 @@
   ],
   "changes": {
     "fileCounts": {
-      "added": 2,
-      "changed": 28,
+      "added": 5,
+      "changed": 55,
       "moved": 0,
-      "parts": 10,
+      "parts": 11,
       "removed": 0
     },
     "items": [
       {
-        "kind": "cycle",
-        "sentence": "ledger now imports registry, which closes the cycle ledger → registry → ledger.",
+        "kind": "door",
+        "sentence": "ledger-ci now also starts on a push to main touching 18 paths.",
         "subjects": [
-          "ledger",
-          "registry"
+          ".github/workflows/ledger-ci.yml"
         ]
       },
       {
-        "kind": "import-added",
-        "sentence": "ledger now imports repomesh-cli.",
+        "kind": "door",
+        "sentence": "ledger-ci now also runs anchor/xrpl/tests/, attestor/tests/, ledger/tests/ and 7 more.",
         "subjects": [
-          "ledger",
-          "repomesh-cli"
+          ".github/workflows/ledger-ci.yml",
+          "anchor/xrpl/tests/",
+          "attestor/tests/",
+          "ledger/tests/",
+          "packages/repomesh-cli/scripts/build.mjs",
+          "packages/repomesh-cli/tests/",
+          "pages/tests/",
+          "policy/tests/",
+          "registry/tests/",
+          "tools/tests/",
+          "verifiers/tests/"
+        ]
+      },
+      {
+        "kind": "door",
+        "sentence": "registry-ci now also starts when the workflow ledger-ci completes.",
+        "subjects": [
+          ".github/workflows/registry-ci.yml"
+        ]
+      },
+      {
+        "kind": "door",
+        "sentence": "And 1 more change to a door.",
+        "subjects": []
+      },
+      {
+        "kind": "landing",
+        "sentence": ".github/workflows/ is now read by registry/tests/registry-ci-follower.test.mjs.",
+        "subjects": [
+          ".github/workflows/",
+          "registry/tests/registry-ci-follower.test.mjs"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "ledger/scripts/validate-ledger.mjs is now also read by ledger/tests/run-events-and-governance.test.mjs.",
+        "sentence": ".github/workflows/registry-ci.yml is now read by .github/workflows/registry-ci.yml and registry/tests/registry-ci-follower.test.mjs.",
         "subjects": [
-          "ledger/scripts/validate-ledger.mjs",
-          "ledger/tests/run-events-and-governance.test.mjs"
+          ".github/workflows/registry-ci.yml",
+          ".github/workflows/registry-ci.yml",
+          "registry/tests/registry-ci-follower.test.mjs"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "packages/repomesh-cli/schemas/event.schema.json is now also read by ledger/tests/run-events-and-governance.test.mjs.",
+        "sentence": "README.md is now also read by registry/tests/registry-ci-follower.test.mjs.",
         "subjects": [
-          "packages/repomesh-cli/schemas/event.schema.json",
-          "ledger/tests/run-events-and-governance.test.mjs"
+          "README.md",
+          "registry/tests/registry-ci-follower.test.mjs"
         ]
       },
       {
         "kind": "landing",
-        "sentence": "registry/scripts/build-trust.mjs is now read by ledger/tests/run-events-and-governance.test.mjs.",
-        "subjects": [
-          "registry/scripts/build-trust.mjs",
-          "ledger/tests/run-events-and-governance.test.mjs"
-        ]
-      },
-      {
-        "kind": "landing",
-        "sentence": "And 3 more new writers and readers of places.",
+        "sentence": "And 12 more new writers and readers of places.",
         "subjects": []
       },
       {
         "kind": "counts",
-        "sentence": "2 files added and 28 changed content, across 10 parts.",
+        "sentence": "5 files added and 55 changed content, across 11 parts.",
         "subjects": []
       }
     ],
     "since": {
-      "commit": "c8967c9cbce97fd434831f2958e9c68c0c5d730b",
-      "generatedAt": "2026-10-15T02:30:35.200Z"
+      "commit": "571606420e6858c90856a8cc564a1a1f26e91fb2",
+      "generatedAt": "2026-10-24T16:19:31.202Z"
     },
     "unchanged": false
   },
   "changesTogether": [
     {
+      "a": "packages/repomesh-cli/src/verify/key-window.mjs",
+      "b": "verifiers/lib/key-window.mjs",
+      "either": 6,
+      "partLabels": [
+        "repomesh-cli",
+        "verifiers"
+      ],
+      "parts": [
+        "repomesh-cli",
+        "verifiers"
+      ],
+      "relation": "a-imports-b",
+      "shared": 6
+    },
+    {
+      "a": "packages/repomesh-cli/src/verify/verify-release.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 9,
+      "partLabels": [
+        "repomesh-cli",
+        "tools"
+      ],
+      "parts": [
+        "repomesh-cli",
+        "tools"
+      ],
+      "relation": "b-imports-a",
+      "shared": 8
+    },
+    {
       "a": "ledger/scripts/validate-ledger.mjs",
       "b": "registry/scripts/build-trust.mjs",
-      "either": 7,
+      "either": 8,
       "partLabels": [
         "ledger",
         "registry"
@@ -206,6 +257,36 @@
         "registry"
       ],
       "relation": "both",
+      "shared": 6
+    },
+    {
+      "a": "registry/scripts/build-trust.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 9,
+      "partLabels": [
+        "registry",
+        "tools"
+      ],
+      "parts": [
+        "registry",
+        "tools"
+      ],
+      "relation": "b-imports-a",
+      "shared": 6
+    },
+    {
+      "a": "packages/repomesh-cli/src/remote-defaults.mjs",
+      "b": "tools/verify-release.mjs",
+      "either": 8,
+      "partLabels": [
+        "repomesh-cli",
+        "tools"
+      ],
+      "parts": [
+        "repomesh-cli",
+        "tools"
+      ],
+      "relation": "b-imports-a",
       "shared": 5
     }
   ],
@@ -214,15 +295,111 @@
     "Window: 180 days; a pair counts from 3 shared commits, since 0 source files reach 10 revisions; the floor rises to 10 when 25 do."
   ],
   "changesTogetherWithTests": 0,
-  "commit": "571606420e6858c90856a8cc564a1a1f26e91fb2",
+  "commit": "2081a4bc25f52d1ea7f8c6df4ac8f3b24667c022",
   "defaultBranch": "main",
-  "derived": "18 parts, mostly JavaScript (176 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; Release and anchor-xrpl each reach 8 parts, and Release is followed because it comes first by name. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.",
+  "derived": "18 parts, mostly JavaScript (180 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; the busiest is ledger-ci, which reaches 9 parts. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.",
   "doors": [
     {
       "checks": [],
       "checksCount": 0,
       "checksMore": 0,
+      "file": ".github/workflows/ledger-ci.yml",
+      "id": ".github/workflows/ledger-ci.yml",
+      "landings": [
+        "ledger/nodes/",
+        "registry/anchors.json",
+        "registry/trust.json"
+      ],
+      "name": "ledger-ci",
+      "pushes": false,
+      "reach": [
+        {
+          "boundary": "anchor",
+          "depth": 0,
+          "files": 17
+        },
+        {
+          "boundary": "attestor",
+          "depth": 0,
+          "files": 8
+        },
+        {
+          "boundary": "ledger",
+          "depth": 0,
+          "files": 8
+        },
+        {
+          "boundary": "pages",
+          "depth": 0,
+          "files": 8
+        },
+        {
+          "boundary": "policy",
+          "depth": 0,
+          "files": 4
+        },
+        {
+          "boundary": "registry",
+          "depth": 0,
+          "files": 15
+        },
+        {
+          "boundary": "repomesh-cli",
+          "depth": 0,
+          "files": 53
+        },
+        {
+          "boundary": "tools",
+          "depth": 0,
+          "files": 15
+        },
+        {
+          "boundary": "verifiers",
+          "depth": 0,
+          "files": 33
+        }
+      ],
+      "runs": [
+        "ledger/scripts/validate-ledger.mjs",
+        "packages/repomesh-cli/scripts/build.mjs",
+        "anchor/xrpl/tests/",
+        "attestor/tests/",
+        "ledger/tests/",
+        "packages/repomesh-cli/tests/",
+        "pages/tests/",
+        "policy/tests/",
+        "registry/tests/",
+        "tools/tests/",
+        "verifiers/tests/"
+      ],
+      "runsCount": 11,
+      "runsMore": 102,
+      "sends": [],
+      "stages": [],
+      "triggers": [
+        "on a pull request",
+        "on a push to main touching 18 paths",
+        "or by hand"
+      ],
+      "untracked": "packages/repomesh-cli/dist/ and pages/out/, which are not tracked"
+    },
+    {
+      "checks": [],
+      "checksCount": 0,
+      "checksMore": 0,
       "file": ".github/workflows/release.yml",
+      "held": [
+        {
+          "checks": [],
+          "checksMore": 0,
+          "lead": "on a release event",
+          "runs": [
+            "packages/repomesh-cli/tests/"
+          ],
+          "runsMore": 0,
+          "when": "on a release event"
+        }
+      ],
       "id": ".github/workflows/release.yml",
       "landings": [],
       "name": "Release",
@@ -246,7 +423,7 @@
         {
           "boundary": "repomesh-cli",
           "depth": 0,
-          "files": 58
+          "files": 59
         },
         {
           "boundary": "root",
@@ -280,13 +457,13 @@
         }
       ],
       "runs": [
-        "packages/repomesh-cli/scripts/build.mjs",
-        "packages/repomesh-cli/tests/"
+        "packages/repomesh-cli/scripts/build.mjs"
       ],
-      "runsCount": 2,
+      "runsCount": 1,
       "runsMore": 0,
       "sends": [
-        "publishes @mcptoolshop/repomesh to npm and a container image"
+        "publishes a container image",
+        "publishes @mcptoolshop/repomesh to npm on a release event"
       ],
       "stages": [],
       "triggers": [
@@ -334,7 +511,7 @@
         {
           "boundary": "repomesh-cli",
           "depth": 0,
-          "files": 58
+          "files": 59
         },
         {
           "boundary": "root",
@@ -577,40 +754,7 @@
         "registry/verifiers.json"
       ],
       "triggers": [
-        "on a push to main touching 5 paths",
-        "or by hand"
-      ]
-    },
-    {
-      "checks": [],
-      "checksCount": 0,
-      "checksMore": 0,
-      "file": ".github/workflows/ledger-ci.yml",
-      "id": ".github/workflows/ledger-ci.yml",
-      "landings": [],
-      "name": "ledger-ci",
-      "pushes": false,
-      "reach": [
-        {
-          "boundary": "ledger",
-          "depth": 0,
-          "files": 2
-        },
-        {
-          "boundary": "verifiers",
-          "depth": 1,
-          "files": 3
-        }
-      ],
-      "runs": [
-        "ledger/scripts/validate-ledger.mjs"
-      ],
-      "runsCount": 1,
-      "runsMore": 0,
-      "sends": [],
-      "stages": [],
-      "triggers": [
-        "on a pull request",
+        "when the workflow ledger-ci completes",
         "or by hand"
       ]
     },
@@ -777,6 +921,21 @@
         "packages/repomesh-cli/src/verify/key-window.mjs",
         "verifiers/lib/key-window.mjs"
       ],
+      "name": "isBundledTrustedAnchorEvent",
+      "partLabels": [
+        "repomesh-cli",
+        "verifiers"
+      ],
+      "parts": [
+        "repomesh-cli",
+        "verifiers"
+      ]
+    },
+    {
+      "files": [
+        "packages/repomesh-cli/src/verify/key-window.mjs",
+        "verifiers/lib/key-window.mjs"
+      ],
       "name": "isKeyValidForSignature",
       "partLabels": [
         "repomesh-cli",
@@ -792,22 +951,7 @@
         "packages/repomesh-cli/src/verify/key-window.mjs",
         "verifiers/lib/key-window.mjs"
       ],
-      "name": "keyWindow",
-      "partLabels": [
-        "repomesh-cli",
-        "verifiers"
-      ],
-      "parts": [
-        "repomesh-cli",
-        "verifiers"
-      ]
-    },
-    {
-      "files": [
-        "packages/repomesh-cli/src/verify/key-window.mjs",
-        "verifiers/lib/key-window.mjs"
-      ],
-      "name": "mergeStricterWindow",
+      "name": "isSignerTrustedForCheck",
       "partLabels": [
         "repomesh-cli",
         "verifiers"
@@ -820,7 +964,7 @@
   ],
   "duplicatesLead": "These are candidates from names and call order, not a judgement.",
   "duplicatesNote": [
-    "And 9 more pairs."
+    "And 12 more pairs."
   ],
   "edges": [
     {
@@ -943,19 +1087,20 @@
       ]
     }
   ],
-  "generatedAt": "2026-10-24T16:19:31.202Z",
+  "generatedAt": "2026-10-25T10:45:43.888Z",
   "limits": [
-    "107 imports could not be resolved: `attestor/tests/emit-key-event.test.mjs` imports a path built at run time, twice; `packages/repomesh-cli/tests/anchor-leaf-window.test.mjs` imports a path built at run time; `packages/repomesh-cli/tests/anchor-prev-chain.test.mjs` imports a path built at run time, twice; and 102 more.",
+    "108 imports could not be resolved: `attestor/tests/emit-key-event.test.mjs` imports a path built at run time, twice; `packages/repomesh-cli/tests/anchor-leaf-window.test.mjs` imports a path built at run time; `packages/repomesh-cli/tests/anchor-prev-chain.test.mjs` imports a path built at run time, twice; and 103 more.",
     "6 reads use paths built at run time and are not named here.",
     "23 writes go to places this repository does not track, so they are not listed as generated.",
-    "38 writes and 141 reads go to a path their caller passes, not to this repository.",
+    "38 writes and 153 reads go to a path their caller passes, not to this repository.",
     "7 writes and 13 reads go to the directory the command is run in (.repomesh-tmp/, anchor/ and ledger/) or a path their caller passes, not to this repository.",
     "12 reads go to the directory the command is run in (anchor/, ledger/ and verifiers/), not to this repository.",
     "1 read goes to a temporary directory, not to this repository.",
-    "9 commands are built at run time and not followed, all of them in tests.",
+    "13 commands are built at run time and not followed, all of them in tests.",
+    "Readers marked (found by text) come from scanning unparsed files.",
     "Statistics confidence is low: fewer than 25 source files reach 10 revisions in the window."
   ],
-  "mainDoor": ".github/workflows/release.yml",
+  "mainDoor": ".github/workflows/ledger-ci.yml",
   "partLabels": {
     ".github": ".github",
     "anchor": "anchor",
@@ -977,7 +1122,28 @@
     "verifiers": "verifiers"
   },
   "parts": 18,
-  "readers": [],
+  "readers": [
+    {
+      "readers": [
+        "attestor/scripts/attest-release.mjs",
+        "ledger/scripts/validate-ledger.mjs",
+        "ledger/scripts/verify-release.mjs",
+        "policy/scripts/check-policy.mjs",
+        "registry (5 files)",
+        "tools/verify-release.mjs"
+      ],
+      "target": "ledger/nodes/",
+      "tests": 5
+    },
+    {
+      "readers": [
+        "packages/repomesh-cli/src/verify/verify-all.mjs",
+        "pages (5 files)",
+        "scripts/verify.sh (found by text)"
+      ],
+      "target": "registry/"
+    }
+  ],
   "repo": "mcp-tool-shop-org/repomesh",
   "sequences": [],
   "startDoor": ".github/workflows/ledger-ci.yml",
@@ -987,17 +1153,17 @@
   ],
   "summary": null,
   "summaryFrom": null,
-  "testFiles": 109,
+  "testFiles": 113,
   "testedBy": {
-    "anchor": 17,
-    "attestor": 8,
-    "ledger": 19,
+    "anchor": 18,
+    "attestor": 9,
+    "ledger": 22,
     "pages": 5,
     "policy": 3,
     "registry": 16,
-    "repomesh-cli": 29,
+    "repomesh-cli": 31,
     "tools": 13,
-    "verifiers": 55
+    "verifiers": 57
   },
   "unnamedWrites": 0,
   "unread": [
@@ -1023,8 +1189,6 @@
   "unreadFiles": 0,
   "unreadNote": [],
   "untested": [],
-  "untestedNote": [
-    "73 test files run in no workflow: anchor/xrpl/tests/anchor-writepath-stagec.test.mjs, anchor/xrpl/tests/docker-image.test.mjs, anchor/xrpl/tests/idle-epoch.test.mjs and 70 more."
-  ],
+  "untestedNote": [],
   "written": 11
 }

@@ -480,6 +480,14 @@ function loadVerifierPolicy(policyPath) {
   try { return JSON.parse(fs.readFileSync(policyPath, "utf8")); } catch { return null; }
 }
 
+export function isAuthorizedUriVerdict({ att, kind, evAttTypes, verifierPolicy, signerNode, signerKind }) {
+  const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
+  if (att.type !== kind || !evAttTypes.has(kind) || !auth.ok) {
+    return { ok: false, auth };
+  }
+  return { ok: true, auth };
+}
+
 // Resolve consensus from multiple attestations for a single check kind.
 function resolveConsensus(sources, checkPolicy) {
   if (sources.length === 0) return { consensus: "missing", sources };
@@ -778,13 +786,13 @@ export function buildTrust(opts = {}) {
         if (uriMatch) {
           const kind = uriMatch[1];
           const result = uriMatch[2];
-          const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
-          if (att.type !== kind || !evAttTypes.has(kind) || !auth.ok) {
+          const uriAuth = isAuthorizedUriVerdict({ att, kind, evAttTypes, verifierPolicy, signerNode, signerKind });
+          if (!uriAuth.ok) {
             console.warn(
               `Warning: dropping URI verdict for ${ev.type} ${key} from signer ${signerNode} on kind ${kind} — ` +
               (att.type !== kind || !evAttTypes.has(kind)
                 ? `kind "${kind}" does not match attestation entry type "${att.type || ""}"`
-                : auth.reason)
+                : uriAuth.auth.reason)
             );
             continue;
           }

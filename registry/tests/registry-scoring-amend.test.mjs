@@ -29,7 +29,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { canonicalizeForHash } from "../../ledger/scripts/canonicalize.mjs";
-import { buildTrust, INTEGRITY_BANDS } from "../scripts/build-trust.mjs";
+import * as buildTrustMod from "../scripts/build-trust.mjs";
+const { buildTrust, INTEGRITY_BANDS } = buildTrustMod;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
@@ -731,5 +732,69 @@ describe("build-trust scores only verdicts the signer is authorised for", () => 
     assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "forged later fail must never win");
     assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
     assert.equal(entry.assuranceScore, 30);
+  });
+
+  it("F1-M1a single guard: drops URI verdict when att.type !== kind even though kind is in evAttTypes and signer is authorised", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    // evAttTypes has both "repro.build" (via a non-verdict URI entry) and "license.audit",
+    // and ATTESTOR is authorised for both, so ONLY `att.type !== kind` rejects the second entry's URI verdict.
+    const ev = sign(attestation([
+      { type: "repro.build", uri: "https://example.com/repro-log.json" },
+      { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      notes: "license.audit: pass — ok",
+    }), "att-key", AK.privateKey);
+
+    const origWarn = console.warn;
+    console.warn = () => {};
+    let entry;
+    try {
+      entry = entryFor(
+        sandbox([rel, ev], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+      );
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "missing", "F1-M1a: att.type !== kind alone must reject mismatched URI verdict");
+    assert.equal(entry.assuranceConsensus["repro.build"], undefined);
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    assert.equal(
+      buildTrustMod.isAuthorizedUriVerdict({
+        att: { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+        kind: "repro.build",
+        evAttTypes: new Set(["repro.build", "license.audit"]),
+        verifierPolicy: shippedStylePolicy(),
+        signerNode: ATTESTOR,
+        signerKind: "attestor",
+      }).ok,
+      false,
+      "F1-M1a: isAuthorizedUriVerdict must reject when att.type !== kind alone",
+    );
+  });
+
+  it("F1-M1b single guard: drops URI verdict when !evAttTypes.has(kind) even when att.type === kind and signer is authorised", () => {
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    const res = buildTrustMod.isAuthorizedUriVerdict({
+      att: { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+      kind: "repro.build",
+      evAttTypes: new Set(["license.audit"]),
+      verifierPolicy: shippedStylePolicy(),
+      signerNode: ATTESTOR,
+      signerKind: "attestor",
+    });
+    assert.equal(res.ok, false, "F1-M1b: !evAttTypes.has(kind) alone must reject URI verdict");
+  });
+
+  it("F1-M1c single guard: drops URI verdict when !auth.ok even when att.type === kind and evAttTypes.has(kind)", () => {
+    assert.equal(typeof buildTrustMod.isAuthorizedUriVerdict, "function", "build-trust must export isAuthorizedUriVerdict");
+    const res = buildTrustMod.isAuthorizedUriVerdict({
+      att: { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+      kind: "repro.build",
+      evAttTypes: new Set(["repro.build"]),
+      verifierPolicy: shippedStylePolicy(),
+      signerNode: COGNATE,
+      signerKind: "governance",
+    });
+    assert.equal(res.ok, false, "F1-M1c: !auth.ok alone must reject URI verdict from unauthorised governance signer");
   });
 });
