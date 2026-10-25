@@ -15,7 +15,7 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Syntropic repo network — append-only ledger, node manifests, and scoring for distributed repo coordination.
+Release ledger and XRPL-anchored trust clock for a repo network: signed events, node manifests, and verification. Separate from Attestia's event store.
 
 ## Place in the system
 
@@ -27,6 +27,17 @@ Attestia, Cognate, and RepoMesh are three products.
 
 **Cognate** is the AI governance domain on Attestia's event store and Merkle proofs. It calls RepoMesh when it needs a release checked. It does not keep a second event store, and it does not use Attestia's Merkle tree for this network.
 
+## What's new in 2.4 and 2.5
+
+**Version 2.5.0.**
+
+- **2.5.0: anchor posting fails closed.** `post-anchor.mjs` refuses to post, and opens no connection, unless the config says `testnet` and the WebSocket URL is a known testnet endpoint. An environment variable alone can't switch posting to mainnet. See [XRPL Anchoring (Testnet Guard)](#xrpl-anchoring-testnet-guard).
+- **2.5.0: a required test gate.** Every pull request runs all 9 `node --test` suites with a line-coverage floor and a production `npm audit` at `high`. `validate-ledger` and `test` are required checks on `main`, and `registry-ci.yml` now runs only after `ledger-ci` succeeds on `main`.
+- **2.4.0: run attestations from Cognate.** The ledger accepts three new attestation types, `run.preregistered`, `run.outcome` and `cognate.root.anchored`, each with a `sha256` digest and a `urn:cognate:...` URI. Only a `governance` node on both `trustedAttestors` and `trustedRunAttestors` (today, `mcp-tool-shop-org/cognate`) may sign them, and it may sign nothing else. Every `run.outcome` must reference a `run.preregistered` event already on the ledger.
+- **2.4.0: the signing contract is checked.** An Ed25519 signature must be over the 32 raw bytes of `canonicalHash`. The validator names and refuses a signature made over the canonical JSON text or over the 64-character hex string.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
+
 ## What is this?
 
 RepoMesh turns a collection of repos into a cooperative network. Each repo is a **node** with:
@@ -36,7 +47,7 @@ RepoMesh turns a collection of repos into a cooperative network. Each repo is a 
 - A **registry** indexing all nodes and capabilities
 - A **profile** defining what "done" means for trust
 
-Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Seven registered nodes do not make seven operators. An independent witness would be a party this organization does not operate.
 
 The network enforces three invariants:
 
@@ -165,7 +176,7 @@ Add `node.json` to your repo root:
     "changelog": true
   },
   "maintainers": [
-    { "name": "your-name", "keyId": "ci-yourrepo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
+    { "name": "your-name", "contact": "https://github.com/your-org", "keyId": "ci-yourrepo-2026", "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----" }
   ]
 }
 ```
@@ -226,6 +237,9 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `KeyRotation` | A maintainer key is rotated to a successor (prospective — past signatures stay valid) |
 | `KeyRevocation` | A maintainer key is revoked (compromise = retroactive invalidity, RFC 5280) |
 
+`AttestationPublished` also carries Cognate's run attestations (`run.preregistered`, `run.outcome`,
+`cognate.root.anchored`, since 2.4.0), signed only by its `governance` node.
+
 **Reserved / planned (not yet emitted):**
 
 | Type | Intended meaning |
@@ -234,7 +248,7 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `HealthCheckFailed` | A node fails its own health checks |
 | `DependencyVulnFound` | A vulnerability is found in dependencies |
 | `InterfaceUpdated` | An interface schema changes |
-| `PolicyViolation` | A network policy is violated |
+| `PolicyViolation` | A network policy is violated. `policy/scripts/check-policy.mjs` can build and sign one; none is on the ledger yet |
 
 ## Key Rotation & Revocation
 
@@ -276,7 +290,7 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 | `oracle` | Provides external data |
 | `compute` | Does work (transforms, builds) |
 | `settlement` | Finalizes state |
-| `governance` | Makes decisions |
+| `governance` | Makes decisions; since 2.4.0, signs Cognate's run attestations and nothing else |
 | `identity` | Issues/verifies credentials |
 
 ## Extending the network — the verifier-plugin contract
@@ -438,7 +452,7 @@ Checks: semver monotonicity, artifact hash uniqueness, required capabilities.
 
 ## Security & Threat Model
 
-RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process, and the [threat model](docs/threat-model.md) for the key-lifecycle trust boundary (why `node.json` authenticity depends on its source, and why revocation-sensitive verification should use `--anchored`).
+RepoMesh touches **ledger events** (signed JSON), **node manifests** (public keys + capabilities), **registry indexes** (auto-generated trust scores), and **XRPL testnet** (anchor transactions; posting refuses any endpoint that isn't a known testnet one). It does **not** touch member repo source code, private keys, user credentials, or browsing data. Private signing keys never leave the CI runner. Network access is limited to the GitHub API (PR creation), XRPL testnet (anchoring), and OSV.dev (vulnerability lookups). **No telemetry** is collected or sent — zero analytics, zero crash reports, zero phone-home. See [SECURITY.md](SECURITY.md) for the full scope, required permissions, and vulnerability reporting process, and the [threat model](docs/threat-model.md) for the key-lifecycle trust boundary (why `node.json` authenticity depends on its source, and why revocation-sensitive verification should use `--anchored`).
 
 Hardening:
 
@@ -462,6 +476,10 @@ node --test $(git ls-files '*.test.mjs')
 
 The test count grows as suites are added — run the command above for the current total
 rather than relying on a number that drifts out of date.
+
+CI runs the same 9 suites on every pull request (`ledger-ci.yml`, the required `test` check), with
+`--experimental-test-coverage` and a line-coverage floor (`--test-coverage-lines=57`), then
+`npm audit --audit-level=high --omit=dev` for the root, `anchor/xrpl` and `ledger`.
 
 ## License
 
