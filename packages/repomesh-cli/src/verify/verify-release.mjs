@@ -47,7 +47,7 @@ import { fetchText, fetchJson } from "../http.mjs";
 import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
-  BUNDLED_TRUSTED_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
+  BUNDLED_TRUSTED_ATTESTORS, BUNDLED_TRUSTED_RUN_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
   BUNDLED_RUN_ATTESTATION_TYPES, resolveCheckPolicy,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
@@ -68,6 +68,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isBundledTrustedAnchorEvent,
   isSignerTrustedForCheck,
 } from "./key-window.mjs";
 import {
@@ -174,6 +175,105 @@ function isTrustedAttestorNode(key, allowlist, event = null) {
   return true;
 }
 
+function effectiveTrustedRunAttestors(opts) {
+  const out = new Set(BUNDLED_TRUSTED_RUN_ATTESTORS);
+  const policy = readVerifierPolicy(opts);
+  for (const id of Array.isArray(policy?.trustedRunAttestors) ? policy.trustedRunAttestors : []) {
+    if (typeof id === "string") out.add(id);
+  }
+  return out;
+}
+
+function getNodeCache(opts) {
+  if (!opts || typeof opts !== "object") return new Map();
+  if (!(opts.nodeCache instanceof Map)) opts.nodeCache = new Map();
+  return opts.nodeCache;
+}
+
+function loadNodeSync(repoId, opts) {
+  if (typeof repoId !== "string" || !repoId.includes("/")) return null;
+  const cache = getNodeCache(opts);
+  if (cache.has(repoId)) return cache.get(repoId);
+  if (opts?.local && opts?.root) {
+    const [org, repo] = repoId.split("/");
+    if (!org || !repo) return null;
+    const node = readNodeFromDir(path.join(opts.root, "ledger", "nodes", org, repo, "node.json"));
+    cache.set(repoId, node);
+    return node;
+  }
+  return null;
+}
+
+async function preloadNodeForOpts(repoId, opts) {
+  if (typeof repoId !== "string" || !repoId.includes("/")) return null;
+  if (opts?.local) return loadNodeSync(repoId, opts);
+  const cache = getNodeCache(opts);
+  if (cache.has(repoId)) return cache.get(repoId);
+  try {
+    const node = await fetchJson(`${opts?.nodesUrl || DEFAULT_NODES_URL}/${repoId}/node.json`, TRUST_FETCH_OPTS);
+    const valid = node && typeof node === "object" ? node : null;
+    cache.set(repoId, valid);
+    return valid;
+  } catch (e) { debugLog(e.message); cache.set(repoId, null); return null; }
+}
+
+async function preloadKeyEventNodes(events, opts, trustedPolicy) {
+  if (opts?.local || !Array.isArray(events)) return;
+  const needed = new Set();
+  for (const ev of events) {
+    if (ev && (ev.type === "KeyRotation" || ev.type === "KeyRevocation") && typeof ev.repo === "string") {
+      needed.add(ev.repo);
+      for (const p of trustedPolicy || []) needed.add(p);
+    }
+  }
+  await Promise.all([...needed].map((id) => preloadNodeForOpts(id, opts)));
+}
+
+// Shared anchor-trust evaluation (#153): decides anchor trust with isBundledTrustedAnchorEvent
+// over the loaded ledger events and active node source (--local or remote), failing closed.
+async function evaluateAnchorTrust(anchorEvent, events, opts) {
+  const sig = anchorEvent?.signature;
+  if (!sig?.keyId || !Array.isArray(events) || events.length === 0) {
+    return { trusted: false, nodeId: null, reason: "anchor event signature invalid" };
+  }
+  const trustedPolicy = readTrustedPolicyNodes(opts);
+  const trustedRunAttestors = effectiveTrustedRunAttestors(opts);
+  const allowlist = effectiveTrustedAttestors(opts);
+  const candidates = BUNDLED_TRUSTED_ATTESTORS.filter((id) => !trustedRunAttestors.has(id));
+  if (!opts?.local) {
+    if (typeof anchorEvent.repo === "string") await preloadNodeForOpts(anchorEvent.repo, opts);
+    await preloadKeyEventNodes(events, opts, trustedPolicy);
+    if (!candidates.some((id) => (loadNodeSync(id, opts)?.maintainers || []).some((m) => m.keyId === sig.keyId))) {
+      await Promise.all(candidates.map((id) => preloadNodeForOpts(id, opts)));
+    }
+  }
+  const loadNode = (repoId) => loadNodeSync(repoId, opts);
+  if (typeof anchorEvent.repo === "string" && anchorEvent.repo && !loadNode(anchorEvent.repo)) {
+    return { trusted: false, nodeId: null, reason: `anchor node ${anchorEvent.repo} could not be loaded` };
+  }
+  for (const e of events) {
+    if (e && (e.type === "KeyRotation" || e.type === "KeyRevocation") && BUNDLED_TRUSTED_ATTESTORS.includes(e.repo) && !loadNode(e.repo)) {
+      return { trusted: false, nodeId: null, reason: `node ${e.repo} could not be loaded` };
+    }
+  }
+  const verifySig = (pem, targetEv) => verifyKeyEventSig(targetEv, pem);
+  const sharedTrusted = isBundledTrustedAnchorEvent(anchorEvent, {
+    trustedAttestors: BUNDLED_TRUSTED_ATTESTORS, trustedRunAttestors, loadNode, events, verifySignature: verifySig, trustedPolicy,
+  });
+  const matchedNodeId = candidates.find((id) => {
+    const node = loadNode(id);
+    const m = node && node.kind !== "governance" ? (node.maintainers || []).find((x) => x.keyId === sig.keyId) : null;
+    return m?.publicKey && verifySig(String(m.publicKey).trim(), anchorEvent);
+  }) || null;
+  if (!sharedTrusted || !matchedNodeId || !allowlist.has(matchedNodeId)) {
+    const reason = matchedNodeId && !allowlist.has(matchedNodeId)
+      ? `anchor signed by non-allowlisted node ${matchedNodeId}`
+      : `anchor event signature invalid: no valid trusted anchor key for keyId=${sig.keyId}`;
+    return { trusted: false, nodeId: matchedNodeId, reason };
+  }
+  return { trusted: true, nodeId: matchedNodeId, reason: null };
+}
+
 // --- Key-lifecycle trust gate (contract §5.3) -------------------------------------------------
 // Build a resolver ctx for the event being verified, pre-resolving the earliest TRUSTED anchor
 // that covers ev's leaf so the (SYNC) resolver API stays sync while the manifest-loading anchor
@@ -193,14 +293,15 @@ async function buildKeyWindowCtx(ev, events, opts, { online } = {}) {
       anchorEvent = found?.anchor || null;
     } catch (e) { debugLog(`key-window anchor lookup failed: ${e.message}`); }
   }
-  // Rung-2 trust gate (§5.2): precompute the trust decision for the resolved anchor (an async
-  // signature check) so the SYNC resolver below can read it. A non-trusted/forged anchor's
-  // timestamp is NOT a trusted clock => the resolver falls through to the self time.
+  // Rung-2 trust gate (§5.2): precompute the trust decision for the resolved anchor via the
+  // shared isBundledTrustedAnchorEvent rule so the SYNC resolver below can read it. A
+  // non-trusted or rotated-out anchor's timestamp is NOT a trusted clock => the resolver
+  // falls through to the self time (provable: false).
   let ctxAnchorTrusted = false;
   if (anchorEvent) {
     try {
-      const anchorSig = await verifySignature(anchorEvent, opts, { events, skipKeyWindow: true });
-      ctxAnchorTrusted = anchorSig.ok && BUNDLED_TRUSTED_ATTESTORS.includes(anchorSig.nodeId);
+      const anchorTrust = await evaluateAnchorTrust(anchorEvent, events, opts);
+      ctxAnchorTrusted = anchorTrust.trusted;
     } catch (e) { debugLog(`anchor trust check failed: ${e.message}`); }
   }
   const ctx = {
@@ -264,12 +365,9 @@ function readVerifierPolicy(opts) {
   } catch (e) { debugLog(`verifier.policy.json read failed: ${e.message}`); return null; }
 }
 
-// Resolve a maintainer object {keyId,publicKey,...} by keyId from a node.json on disk (LOCAL only).
+// Resolve a maintainer object {keyId,publicKey,...} by keyId from a loaded node.json (local or cached remote).
 function findMaintainerInNode(orgRepo, keyId, opts) {
-  if (!opts?.local || !opts?.root || typeof orgRepo !== "string") return null;
-  const [org, repo] = orgRepo.split("/");
-  if (!org || !repo) return null;
-  const node = readNodeFromDir(path.join(opts.root, "ledger", "nodes", org, repo, "node.json"));
+  const node = loadNodeSync(orgRepo, opts);
   if (!node) return null;
   const m = (node.maintainers || []).find(x => x.keyId === keyId);
   return m || null;
@@ -277,8 +375,7 @@ function findMaintainerInNode(orgRepo, keyId, opts) {
 
 // Resolve the signing PEM for a key-lifecycle event's signer keyId (§13.1 verifySignature I/O):
 // same-node (the event's own repo) FIRST, then any trustedPolicy node. Returns
-// { pem, nodeRepo } | null. LOCAL/offline only (the realistic threat is a verifier pointed at a
-// mirror/cache/--nodes-url override, run locally).
+// { pem, nodeRepo } | null.
 function resolveKeyEventSigner(keyEvent, opts, trustedPolicy) {
   const signerKeyId = keyEvent?.signature?.keyId;
   if (typeof signerKeyId !== "string" || !signerKeyId) return null;
@@ -387,6 +484,7 @@ async function gateKeyByWindow(key, keyCtx) {
   const tt = online
     ? await resolveTrustedSignatureTime(ev, ctx)
     : resolveTrustedSignatureTimeSync(ev, ctx);
+  keyCtx.trustedTime = { source: tt.source, provable: tt.provable };
   const dec = isKeyValidForSignature(eff, tt);
   if (!dec.valid) {
     debugLog(`key-window gate rejected keyId=${ev?.signature?.keyId}: ${dec.reason}`);
@@ -413,14 +511,11 @@ async function findPublicKey(keyId, ev, opts, keyCtx) {
     const [org, repo] = ev.repo.split("/");
     if (!org || !repo) return null;
     if (opts.local) {
-      const nodePath = path.join(opts.root, "ledger", "nodes", org, repo, "node.json");
-      return gateKeyByWindow(extractKeyFromNode(readNodeFromDir(nodePath), keyId), keyCtx);
+      return gateKeyByWindow(extractKeyFromNode(loadNodeSync(ev.repo, opts), keyId), keyCtx);
     }
-    const nodesUrl = opts.nodesUrl || DEFAULT_NODES_URL;
-    try {
-      const node = await fetchJson(`${nodesUrl}/${ev.repo}/node.json`, TRUST_FETCH_OPTS);
-      return gateKeyByWindow(extractKeyFromNode(node, keyId), keyCtx);
-    } catch (e) { debugLog(e.message); return null; }
+    const node = await preloadNodeForOpts(ev.repo, opts);
+    if (!node) return null;
+    return gateKeyByWindow(extractKeyFromNode(node, keyId), keyCtx);
   }
 
   // Third-party (AttestationPublished / PolicyViolation): the signer must be a TRUSTED attestor.
@@ -432,8 +527,7 @@ async function findPublicKey(keyId, ev, opts, keyCtx) {
   if (opts.local) {
     // Resolve ONLY from allowlisted node dirs — never scan arbitrary nodes.
     for (const nodeId of allowlist) {
-      const [org, repo] = nodeId.split("/");
-      const found = extractKeyFromNode(readNodeFromDir(path.join(opts.root, "ledger", "nodes", org, repo, "node.json")), keyId);
+      const found = extractKeyFromNode(loadNodeSync(nodeId, opts), keyId);
       if (found && isTrustedAttestorNode(found, allowlist)) return gateKeyByWindow(found, keyCtx);
     }
     return null;
@@ -441,23 +535,19 @@ async function findPublicKey(keyId, ev, opts, keyCtx) {
   // Remote third-party: fetch ONLY allowlisted node.json files; the keyId must resolve to one of
   // them and that node must be of an allowed kind. We do NOT fetch arbitrary event-repo nodes,
   // because a release repo could otherwise self-register a key and forge an "independent" witness.
-  const nodesUrl = opts.nodesUrl || DEFAULT_NODES_URL;
   for (const nodeId of allowlist) {
-    try {
-      const node = await fetchJson(`${nodesUrl}/${nodeId}/node.json`, TRUST_FETCH_OPTS);
-      const found = extractKeyFromNode(node, keyId);
-      if (found && isTrustedAttestorNode(found, allowlist)) return gateKeyByWindow(found, keyCtx);
-    } catch (e) { debugLog(e.message); }
+    const node = await preloadNodeForOpts(nodeId, opts);
+    if (!node) continue;
+    const found = extractKeyFromNode(node, keyId);
+    if (found && isTrustedAttestorNode(found, allowlist)) return gateKeyByWindow(found, keyCtx);
   }
   return null;
 }
 
 // verifySignature(event, opts, keyOpts?) — keyOpts threads the key-lifecycle window context:
-//   { events, online, skipKeyWindow }. When `events` is present and skipKeyWindow is not set, the
-//   resolved key is gated at the trusted signature time (contract §5.3). `skipKeyWindow` is used
-//   internally for the anchor-event trust check to avoid infinite recursion + because the anchor's
-//   own signer (the bundled xrpl-anchor node) is itself a grandfathered key in practice. Without
-//   keyOpts (legacy callers), behavior is grandfather-only (byte-identical to today).
+//   { events, online }. When `events` is present, the resolved key is gated at the trusted
+//   signature time (contract §5.3). Without keyOpts (legacy callers), behavior is grandfather-only
+//   (byte-identical to today).
 async function verifySignature(event, opts, keyOpts) {
   // CLI-010: round-trip via strict parse so duplicate keys can't split signed/displayed views.
   let ev;
@@ -472,31 +562,34 @@ async function verifySignature(event, opts, keyOpts) {
   const canonHash = crypto.createHash("sha256").update(canonicalize(ev), "utf8").digest("hex");
   if (canonHash !== sig.canonicalHash) return { ok: false, reason: "canonical hash mismatch" };
 
-  // Build the key-lifecycle window gate ctx (contract §5.3) when ledger events are threaded and the
-  // gate is not explicitly skipped. The ONLINE path (computeVerifyResult) sets online:true so the
-  // async resolver consults the XRPL close-time (rung-1); everyone else stays offline/sync.
+  // Build the key-lifecycle window gate ctx (contract §5.3) when ledger events are threaded.
+  // The ONLINE path (computeVerifyResult) sets online:true so the async resolver consults the XRPL
+  // close-time (rung-1); everyone else stays offline/sync.
   let keyCtx = null;
-  if (keyOpts && keyOpts.events && !keyOpts.skipKeyWindow) {
+  if (keyOpts && keyOpts.events) {
     const online = keyOpts.online === true;
+    await preloadKeyEventNodes(keyOpts.events, opts, readTrustedPolicyNodes(opts));
     const ctx = await buildKeyWindowCtx(event, keyOpts.events, opts, { online });
     // §12.1: thread the loaded events + opts so gateKeyByWindow can derive the stricter window from
     // the signed KeyRotation/KeyRevocation events (independent of a possibly-tampered node.json).
-    keyCtx = { ev: event, ctx, online, events: keyOpts.events, opts };
+    keyCtx = { ev: event, ctx, online, events: keyOpts.events, opts, trustedTime: null };
   }
 
   const key = await findPublicKey(sig.keyId, event, opts, keyCtx);
-  if (!key) return { ok: false, reason: `no public key for keyId=${sig.keyId}`, hint: "Ensure the signing repo has registered node.json in the ledger. Run: npx repomesh doctor --repo <org/repo> to check node registration" };
+  const signatureTime = keyCtx?.trustedTime ?? null;
+  const withTime = (r) => (signatureTime ? { ...r, signatureTime } : r);
+  if (!key) return withTime({ ok: false, reason: `no public key for keyId=${sig.keyId}`, hint: "Ensure the signing repo has registered node.json in the ledger. Run: npx repomesh doctor --repo <org/repo> to check node registration" });
 
   // D1: for non-third-party events, the resolving node MUST be the event's own repo.
   if (!THIRD_PARTY_TYPES.has(event?.type) && key.nodeId !== event.repo) {
-    return { ok: false, reason: `signer node ${key.nodeId} does not match event repo ${event.repo}` };
+    return withTime({ ok: false, reason: `signer node ${key.nodeId} does not match event repo ${event.repo}` });
   }
 
   try {
     const ok = crypto.verify(null, Buffer.from(canonHash, "hex"), key.publicKey, Buffer.from(sig.value, "base64"));
-    return ok ? { ok: true, nodeId: key.nodeId } : { ok: false, reason: "signature invalid", hint: "The release may have been tampered with, or the signing key has changed" };
+    return withTime(ok ? { ok: true, nodeId: key.nodeId } : { ok: false, reason: "signature invalid", hint: "The release may have been tampered with, or the signing key has changed" });
   } catch (e) {
-    return { ok: false, reason: `verify error: ${e.message}`, hint: "The release may have been tampered with, or the signing key has changed" };
+    return withTime({ ok: false, reason: `verify error: ${e.message}`, hint: "The release may have been tampered with, or the signing key has changed" });
   }
 }
 
@@ -880,6 +973,9 @@ export async function computeVerifyResult({
   result.release.signatureValid = sigResult.ok;
   result.release.signerNode = sigResult.ok ? sigResult.nodeId : null;
   result.release.keyId = release.signature.keyId;
+  if (sigResult.signatureTime) {
+    result.release.signatureTime = sigResult.signatureTime;
+  }
 
   if (!sigResult.ok) {
     result.ok = false;
@@ -1109,25 +1205,14 @@ export async function computeVerifyResult({
 
     const { anchor: anchorEvent, manifest, meta, leaves } = anchorResult;
 
-    // D18: the anchor EVENT itself (an AttestationPublished signed by the xrpl-anchor node) must
-    // carry a valid signature from a node in the bundled trusted attestor/anchor set. verifySignature
-    // runs the third-party path, which already enforces the D12 allowlist + kind — so an unsigned or
-    // locally-forged anchor (signed by a non-allowlisted key) resolves to no key and is NOT trusted.
-    // This anchorSignerTrusted flag gates whether the anchor may be credited as an independent
-    // witness below (so --anchored-or-local cannot flip UNVERIFIED->PASS on a forged anchor).
-    // skipKeyWindow: the anchor signer's trust is the D18 concern, not the key-window gate, and
-    // skipping avoids the recursive close-time fetch (the gate ctx itself trust-checks the anchor).
-    const anchorSig = await verifySignature(anchorEvent, opts, { events, skipKeyWindow: true });
-    anchorSignerTrusted = anchorSig.ok &&
-      BUNDLED_TRUSTED_ATTESTORS.includes(anchorSig.nodeId);
+    // D18: the anchor EVENT itself must pass the shared isBundledTrustedAnchorEvent
+    // gate (honouring key windows and ledger order in both --local and remote mode, failing closed
+    // when events or nodes needed to place and judge the anchor cannot be loaded).
+    const anchorTrust = await evaluateAnchorTrust(anchorEvent, events, opts);
+    anchorSignerTrusted = anchorTrust.trusted;
     // B-OBS-03: when the anchor event's signature fails / its signer is not allowlisted, capture
     // WHY so result.anchor can surface it. A trusted signer leaves this null.
-    let anchorSignerReason = null;
-    if (!anchorSignerTrusted) {
-      anchorSignerReason = !anchorSig.ok
-        ? `anchor event signature invalid: ${anchorSig.reason}`
-        : `anchor signed by non-allowlisted node ${anchorSig.nodeId}`;
-    }
+    const anchorSignerReason = anchorSignerTrusted ? null : anchorTrust.reason;
 
     // 5a. Manifest hash integrity.
     const { manifestHash: mh, ...base } = manifest;
@@ -1224,7 +1309,7 @@ export async function computeVerifyResult({
       // B-OBS-03: when the anchor signer is NOT trusted, surface exactly why (invalid sig vs
       // non-allowlisted node). A trusted signer omits this field.
       ...(anchorSignerReason ? { signerReason: anchorSignerReason } : {}),
-      ...(anchorSig.ok ? { signerNode: anchorSig.nodeId } : {}),
+      ...(anchorTrust.nodeId ? { signerNode: anchorTrust.nodeId } : {}),
       ...(xrplReason ? { xrplReason } : {}),
     };
 

@@ -45,7 +45,14 @@ describe("CLI-A-001 key-window predicate copies are byte-identical (drift guard)
   it("both copies actually export the load-bearing predicate symbols", () => {
     const a = readFileSync(VERIFIERS_COPY, "utf8");
     const b = readFileSync(CLI_COPY, "utf8");
-    for (const sym of ["isKeyValidForSignature", "keyWindow", "mergeStricterWindow", "deriveKeyWindowConstraints"]) {
+    for (const sym of [
+      "isKeyValidForSignature",
+      "keyWindow",
+      "mergeStricterWindow",
+      "deriveKeyWindowConstraints",
+      "isBundledTrustedAnchorEvent",
+      "isSignerTrustedForCheck",
+    ]) {
       assert.match(a, new RegExp(`export function ${sym}\\b`), `verifiers copy must export ${sym}`);
       assert.match(b, new RegExp(`export function ${sym}\\b`), `cli copy must export ${sym}`);
     }
