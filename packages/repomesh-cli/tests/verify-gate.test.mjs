@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(__dirname, "..", "src");
 function toURL(p) { return pathToFileURL(p).href; }
+const importFromSrc = (...parts) => import(toURL(resolve(srcDir, ...parts)));
 const { canonicalize } = await import(toURL(resolve(srcDir, "verify", "canonicalize.mjs")));
 
 function makeKeypair() {
@@ -67,7 +68,7 @@ function writeEvents(events) {
 
 // Run verifyRelease capturing exit code + JSON result, with cwd pointed at tmpRoot.
 async function runVerify(args) {
-  const { verifyRelease } = await import(toURL(resolve(srcDir, "verify", "verify-release.mjs")));
+  const { verifyRelease } = await importFromSrc("verify", "verify-release.mjs");
   const origExit = process.exit;
   const origCwd = process.cwd;
   const origLog = console.log;
@@ -340,7 +341,7 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
     const base = `http://127.0.0.1:${server.address().port}`;
     const nonCheckoutDir = fs.mkdtempSync(join(os.tmpdir(), "repomesh-remote-cwd-"));
-    const { verifyRelease } = await import(toURL(resolve(srcDir, "verify", "verify-release.mjs")));
+    const { verifyRelease } = await importFromSrc("verify", "verify-release.mjs");
     const origExit = process.exit;
     const origCwd = process.cwd;
     const origLog = console.log;
@@ -410,8 +411,8 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
   });
 
   it("shipped BUNDLED_CHECK_POLICIES stays in step with verifier.policy.json and only narrows (never widens)", async () => {
-    const remoteDefaults = await import(toURL(resolve(srcDir, "remote-defaults.mjs")));
-    const { isSignerTrustedForCheck } = await import(toURL(resolve(srcDir, "verify", "key-window.mjs")));
+    const remoteDefaults = await importFromSrc("remote-defaults.mjs");
+    const { isSignerTrustedForCheck } = await importFromSrc("verify", "key-window.mjs");
     const repoPolicy = JSON.parse(fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"));
     assert.ok(remoteDefaults.BUNDLED_CHECK_POLICIES && typeof remoteDefaults.BUNDLED_CHECK_POLICIES === "object",
       "remote-defaults.mjs must export BUNDLED_CHECK_POLICIES");
