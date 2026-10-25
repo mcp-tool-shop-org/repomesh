@@ -70,6 +70,7 @@ import {
   mergeStricterWindow,
   isBundledTrustedAnchorEvent,
   isSignerTrustedForCheck,
+  selectLatestVerdictPerSigner,
 } from "./key-window.mjs";
 import {
   EXIT, exitCodeForStatus, normalizeFailOn, normalizeFormat,
@@ -1016,6 +1017,7 @@ export async function computeVerifyResult({
 
   // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode })
   const byType = new Map();
+  const invalidTypes = new Set();
   const independentSigners = new Set();
   const verifierPolicy = readVerifierPolicy(opts);
 
@@ -1037,14 +1039,15 @@ export async function computeVerifyResult({
           break;
         }
       }
-      const signerKey = signerNode || `__invalid__${att.signature?.keyId || "?"}`;
-      if (!byType.has(t)) byType.set(t, new Map());
-      const perSigner = byType.get(t);
-      const prev = perSigner.get(signerKey);
-      // LATEST timestamp wins per (type, signer).
-      if (!prev || ts > prev.timestamp) {
-        perSigner.set(signerKey, { result: attResult, signatureValid: sigOk.ok, timestamp: ts, signerNode });
+      if (!sigOk.ok || !signerNode) {
+        invalidTypes.add(t);
       }
+      selectLatestVerdictPerSigner(byType, t, signerNode, {
+        result: attResult,
+        signatureValid: sigOk.ok,
+        timestamp: ts,
+        signerNode,
+      });
       if (
         sigOk.ok &&
         signerNode &&
@@ -1095,14 +1098,14 @@ export async function computeVerifyResult({
     const perSigner = byType.get(type);
     const relevant = perSigner
       ? [...perSigner.values()].filter(
-          sel => !sel.signatureValid || isSignerTrustedForCheck(sel.signerNode, checkPolicy)
+          sel => sel.signatureValid && isSignerTrustedForCheck(sel.signerNode, checkPolicy)
         )
       : [];
     // `signature.chain` is satisfied STRUCTURALLY by a valid release signature that
     // chains to a key registered under the release's own repo (D1) — the release's own
     // signature IS the signature chain. It does not require a separate attestation event.
     // (An explicit signature.chain attestation, if present from an allowed signer, is still honored below.)
-    if (type === "signature.chain" && result.release.signatureValid && relevant.length === 0) {
+    if (type === "signature.chain" && result.release.signatureValid && relevant.length === 0 && !invalidTypes.has(type)) {
       gate.satisfied.push(type);
       continue;
     }

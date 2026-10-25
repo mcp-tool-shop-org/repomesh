@@ -623,4 +623,113 @@ describe("build-trust scores only verdicts the signer is authorised for", () => 
       "warning must name signer and kind for dropped repro.build URI verdict",
     );
   });
+
+  it("S7a: pass then a later fail from the same trusted signer resolves to fail in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlyPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: pass — initial reproducible build verified",
+    }), "att-key", AK.privateKey);
+    const laterFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: fail — re-scan failed",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlyPass, laterFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "fail", "latest fail from the same signer must win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "fail");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "fail");
+    assert.equal(entry.assuranceScore, 0);
+  });
+
+  it("S7a mirror: fail then a later pass from the same trusted signer resolves to pass in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlyFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: fail — initial failure",
+    }), "att-key", AK.privateKey);
+    const laterPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: pass — later re-run succeeded",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlyFail, laterPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "latest pass from the same signer must win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "pass");
+    assert.equal(entry.assuranceScore, 30);
+  });
+
+  it("timestamp tie: ties go to the later ledger position in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const tiedTs = "2026-03-01T01:00:00.000Z";
+    const firstPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: tiedTs,
+      notes: "repro.build: pass — earlier ledger entry",
+    }), "att-key", AK.privateKey);
+    const secondFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: tiedTs,
+      notes: "repro.build: fail — later ledger entry at same timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry1 = entryFor(
+      sandbox([rel, firstPass, secondFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry1.assuranceBreakdown["repro.build"].result, "fail", "tie must go to later ledger position (fail)");
+    assert.equal(entry1.assuranceConsensus["repro.build"].consensus, "fail");
+
+    const entry2 = entryFor(
+      sandbox([rel, secondFail, firstPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry2.assuranceBreakdown["repro.build"].result, "pass", "tie must go to later ledger position (pass)");
+    assert.equal(entry2.assuranceConsensus["repro.build"].consensus, "pass");
+  });
+
+  it("invalid-signature later event never competes or overrides an earlier valid verdict in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const validPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: pass — valid signature",
+    }), "att-key", AK.privateKey);
+    const forgedLaterFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: fail — forged signature",
+    }), "att-key", RK.privateKey);
+
+    const origWarn = console.warn;
+    console.warn = () => {};
+    let entry;
+    try {
+      entry = entryFor(
+        sandbox([rel, validPass, forgedLaterFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+      );
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "forged later fail must never win");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceScore, 30);
+  });
 });

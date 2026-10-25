@@ -496,4 +496,59 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     assert.equal(remoteDefaults.resolveCheckPolicy("", null), null);
     assert.equal(remoteDefaults.resolveCheckPolicy("unknown.check", null), null);
   });
+
+  it("CLI-003 mirror: fail then a later pass from the same trusted signer resolves to PASS", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-09T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "the later PASS must win over the earlier FAIL");
+    assert.equal(result?.gate?.status, "PASS");
+    assert.equal(exitCode, 0);
+  });
+
+  it("timestamp tie: ties go to the later ledger position in the CLI", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const base = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      base.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    const tiedTs = "2026-01-02T00:05:00Z";
+    const passEv = attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: tiedTs, keyId: "ci-attestor-2026", key: attestor.privateKey });
+    const failEv = attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: tiedTs, keyId: "ci-attestor-2026", key: attestor.privateKey });
+
+    writeEvents([...base, passEv, failEv]);
+    const r1 = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(r1.result?.ok, false, "tie: later fail in ledger order must win over earlier pass");
+    assert.equal((r1.result?.attestations || []).find((a) => a.type === "security.scan")?.result, "fail");
+
+    writeEvents([...base, failEv, passEv]);
+    const r2 = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(r2.result?.ok, true, "tie: later pass in ledger order must win over earlier fail");
+    assert.equal((r2.result?.attestations || []).find((a) => a.type === "security.scan")?.result, "pass");
+  });
+
+  it("invalid-signature later event never competes or overrides an earlier valid pass in the CLI", async () => {
+    const { rel, attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    // Later event claiming the same keyId ("ci-attestor-2026") but signed with the wrong key (invalid signature)
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-09T00:00:00Z", keyId: "ci-attestor-2026", key: rel.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "invalid-signature later fail must never compete or fail the gate");
+    assert.equal(result?.gate?.status, "PASS");
+    const scanAtts = (result?.attestations || []).filter((a) => a.type === "security.scan");
+    assert.equal(scanAtts.length, 1);
+    assert.equal(scanAtts[0].result, "pass");
+    assert.equal(exitCode, 0);
+  });
 });

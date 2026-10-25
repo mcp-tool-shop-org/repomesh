@@ -40,6 +40,7 @@ import {
   deriveKeyWindowConstraints,
   mergeStricterWindow,
   isSignerTrustedForCheck,
+  selectLatestVerdictPerSigner,
 } from "../../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex). The anchor-event-type + range guards stay local to parseAnchorMeta below.
@@ -718,6 +719,7 @@ export function buildTrust(opts = {}) {
   }
 
   // Collect ALL attestation sources per (release, check kind) — from verified AttestationPublished.
+  // Per (kind, signerNode), the latest timestamp wins (ties go to the later ledger position).
   const manifestByNode = new Map(nodeManifests.map(({ id, manifest }) => [id, manifest]));
   const rawSources = {};
   for (const ev of okEvents) {
@@ -728,6 +730,7 @@ export function buildTrust(opts = {}) {
     const signerKind = manifestByNode.get(signerNode)?.kind || null;
     const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
     const evAttTypes = new Set(evAttestations.map((a) => a?.type).filter(Boolean));
+    const seenKindsInEvent = new Set();
 
     try {
       const noteLines = (ev.notes || "").split("\n").filter(Boolean);
@@ -745,11 +748,16 @@ export function buildTrust(opts = {}) {
             );
             continue;
           }
-          (rawSources[key] ||= {});
-          (rawSources[key][kind] ||= []);
-          if (!rawSources[key][kind].some((s) => s.node === signerNode)) {
-            rawSources[key][kind].push({ result: match[2], reason: match[3].trim(), node: signerNode, timestamp: ev.timestamp });
-          }
+          if (seenKindsInEvent.has(kind)) continue;
+          seenKindsInEvent.add(kind);
+          const kindMap = (rawSources[key] ||= new Map());
+          selectLatestVerdictPerSigner(kindMap, kind, signerNode, {
+            result: match[2],
+            reason: match[3].trim(),
+            node: signerNode,
+            timestamp: ev.timestamp,
+            signatureValid: true,
+          });
         } else if (ATTESTATION_NEARMISS_RE.test(line)) {
           // ANC-B10: looks like an attestation result line but the full pattern didn't match (bad
           // separator / missing reason). Warn so format drift is caught instead of silently dropped.
@@ -780,11 +788,16 @@ export function buildTrust(opts = {}) {
             );
             continue;
           }
-          (rawSources[key] ||= {});
-          (rawSources[key][kind] ||= []);
-          if (!rawSources[key][kind].some((s) => s.node === signerNode)) {
-            rawSources[key][kind].push({ result, reason: "", node: signerNode, timestamp: ev.timestamp });
-          }
+          if (seenKindsInEvent.has(kind)) continue;
+          seenKindsInEvent.add(kind);
+          const kindMap = (rawSources[key] ||= new Map());
+          selectLatestVerdictPerSigner(kindMap, kind, signerNode, {
+            result,
+            reason: "",
+            node: signerNode,
+            timestamp: ev.timestamp,
+            signatureValid: true,
+          });
         }
       }
     } catch (uriErr) {
@@ -827,7 +840,13 @@ export function buildTrust(opts = {}) {
   for (const [key, kindMap] of Object.entries(rawSources)) {
     if (!releases[key]) continue;
     releases[key].attestationSources = {};
-    for (const [kind, sources] of Object.entries(kindMap)) {
+    for (const [kind, perSigner] of kindMap.entries()) {
+      const sources = [...perSigner.values()].map(({ result, reason, node, timestamp }) => ({
+        result,
+        reason,
+        node,
+        timestamp,
+      }));
       const checkPolicy = verifierPolicy?.checks?.[kind] || null;
       const resolved = resolveConsensus(sources, checkPolicy);
       const entry = { consensus: resolved.consensus, sources: resolved.sources };

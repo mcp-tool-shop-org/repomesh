@@ -37,6 +37,7 @@ import {
   deriveKeyWindowConstraints,
   mergeStricterWindow,
   isSignerTrustedForCheck,
+  selectLatestVerdictPerSigner,
 } from "../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex in findAnchorForHash). Imported from the repo-root verifiers/lib mirror; the
@@ -744,8 +745,10 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
 
   // Index every (type, signerNode) → list of {result, signatureValid, timestamp}. Verify each
   // attestation's signature (third-party path). Select LATEST by timestamp per (type, signerNode)
-  // (fixes first-match masking, CLI-003).
-  const byTypeSigner = new Map(); // key: `${type}|${signerNode}` -> selected record
+  // via the shared selectLatestVerdictPerSigner helper (ties go to the later ledger position;
+  // invalid-signature events never compete).
+  const byType = new Map();
+  const invalidTypes = new Set();
   const attestTypes = new Set();
   const policyState = readVerifierPolicy();
   // Track the set of INDEPENDENT signers (valid signature, node !== release signer, allowed for the check).
@@ -768,8 +771,9 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
         }
       }
       attestTypes.add(a.type);
-      const key = `${a.type}|${signerNode}`;
-      const prev = byTypeSigner.get(key);
+      if (!sigOk.ok || !signerNode) {
+        invalidTypes.add(a.type);
+      }
       const rec = {
         type: a.type,
         result: attResult,
@@ -777,9 +781,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
         signerNode,
         timestamp: att.timestamp || "",
       };
-      if (!prev || String(rec.timestamp) >= String(prev.timestamp)) {
-        byTypeSigner.set(key, rec);
-      }
+      selectLatestVerdictPerSigner(byType, a.type, signerNode, rec);
       if (
         sigOk.ok &&
         signerNode &&
@@ -791,7 +793,12 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     }
   }
 
-  const selected = [...byTypeSigner.values()];
+  const selected = [];
+  for (const [, perSigner] of byType) {
+    for (const [, rec] of perSigner) {
+      selected.push(rec);
+    }
+  }
   result.attestations = selected;
 
   if (!json) {
@@ -834,7 +841,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     // own signature IS the signature chain. It does not require a separate attestation
     // event. (An explicit signature.chain attestation, if one exists from an allowed signer, is honored below.)
     if (type === "signature.chain" && result.release.signatureValid &&
-        candidates.length === 0 && !selected.some(r => r.type === type && !r.signatureValid)) {
+        candidates.length === 0 && !invalidTypes.has(type)) {
       gate.satisfied.push(type);
       continue;
     }

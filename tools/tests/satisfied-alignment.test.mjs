@@ -218,7 +218,8 @@ describe("D19: the two verify-release copies report the same satisfied array", (
     const mkAtt = (type, result, keyPem, keyId, ts = "2026-01-02T00:00:00Z") => signEvent({
       type: "AttestationPublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
       timestamp: ts, artifacts: [{ name: "att", sha256: "b".repeat(64), uri: "x" }],
-      attestations: [{ type, uri: "x" }], notes: `${type}: ${result}`,
+      attestations: [{ type, uri: `repomesh:attestor:${type}:${result}` }],
+      notes: `${type}: ${result} — ok`,
     }, keyPem, keyId);
 
     const events = [
@@ -343,5 +344,104 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       fs.rmSync(rootS6a, { recursive: true, force: true });
       fs.rmSync(rootS6b, { recursive: true, force: true });
     }
+  });
+
+  async function runAllThree(extraEventsFn) {
+    const { buildTrust } = await import(toURL(path.resolve(REPO_ROOT, "registry", "scripts", "build-trust.mjs")));
+    const root = buildPolicyScopedRoot(extraEventsFn);
+    const origWarn = console.warn;
+    const origLog = console.log;
+    console.warn = () => {};
+    console.log = () => {};
+    let btEntry;
+    try {
+      const trust = buildTrust({
+        ledgerPath: path.join(root, "ledger", "events", "events.jsonl"),
+        nodesDir: path.join(root, "ledger", "nodes"),
+        profilesDir: path.join(root, "profiles"),
+        registryDir: path.join(root, "registry"),
+        policyPath: path.join(root, "verifier.policy.json"),
+        write: false,
+      });
+      btEntry = trust.find((r) => r.repo === "org/app" && r.version === "1.0.0");
+    } finally {
+      console.warn = origWarn;
+      console.log = origLog;
+    }
+
+    let toolsResult;
+    try {
+      toolsResult = runToolsCopy(root);
+    } catch (e) {
+      const blobs = String(e.stdout || "").match(/\{[\s\S]*\}/g);
+      toolsResult = JSON.parse(blobs[blobs.length - 1]);
+    }
+    const pkgResult = await runPackagesCopy(root);
+    fs.rmSync(root, { recursive: true, force: true });
+    return { btEntry, toolsResult, pkgResult };
+  }
+
+  it("S7a parity across build-trust, CLI, and tools: pass then a later fail from the same trusted signer -> fail", async () => {
+    const s7a = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(s7a.btEntry.assuranceBreakdown["security.scan"].result, "fail", "S7a: build-trust must say fail");
+    assert.equal(s7a.btEntry.assuranceConsensus["security.scan"].consensus, "fail", "S7a: build-trust consensus must say fail");
+    assert.equal(s7a.pkgResult.ok, false, "S7a: CLI must fail");
+    assert.equal((s7a.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "S7a: CLI selected verdict must be fail");
+    assert.equal(s7a.toolsResult.ok, false, "S7a: tools must fail");
+    assert.equal((s7a.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "S7a: tools selected verdict must be fail");
+  });
+
+  it("S7a mirror parity across build-trust, CLI, and tools: fail then a later pass from the same trusted signer -> pass", async () => {
+    const mirror = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(mirror.btEntry.assuranceBreakdown["security.scan"].result, "pass", "mirror: build-trust must say pass");
+    assert.equal(mirror.btEntry.assuranceConsensus["security.scan"].consensus, "pass", "mirror: build-trust consensus must say pass");
+    assert.equal(mirror.pkgResult.ok, true, "mirror: CLI must pass");
+    assert.equal((mirror.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "mirror: CLI selected verdict must be pass");
+    assert.equal(mirror.toolsResult.ok, true, "mirror: tools must pass");
+    assert.equal((mirror.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "mirror: tools selected verdict must be pass");
+  });
+
+  it("timestamp tie parity across build-trust, CLI, and tools: ties go to the later ledger position", async () => {
+    const tieFailSecond = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    assert.equal(tieFailSecond.btEntry.assuranceBreakdown["security.scan"].result, "fail", "tie: build-trust must pick later fail");
+    assert.equal(tieFailSecond.pkgResult.ok, false, "tie: CLI must pick later fail");
+    assert.equal(tieFailSecond.toolsResult.ok, false, "tie: tools must pick later fail");
+
+    const tiePassSecond = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    assert.equal(tiePassSecond.btEntry.assuranceBreakdown["security.scan"].result, "pass", "tie: build-trust must pick later pass");
+    assert.equal(tiePassSecond.pkgResult.ok, true, "tie: CLI must pick later pass");
+    assert.equal(tiePassSecond.toolsResult.ok, true, "tie: tools must pick later pass");
+  });
+
+  it("invalid-signature later event parity across build-trust, CLI, and tools: never competes or wins", async () => {
+    const forgedLater = await runAllThree(({ mkAtt, sec, lic }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", lic.privateKeyPem, "ci-security-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    assert.equal(forgedLater.btEntry.assuranceBreakdown["security.scan"].result, "pass", "invalid-sig: build-trust must keep pass");
+    assert.equal(forgedLater.pkgResult.ok, true, "invalid-sig: CLI must keep pass and not fail gate");
+    assert.equal(
+      (forgedLater.pkgResult.attestations || []).filter((a) => a.type === "security.scan").length,
+      1,
+      "invalid-sig: CLI must not include invalid-signature event in selected attestations",
+    );
+    assert.equal(forgedLater.toolsResult.ok, true, "invalid-sig: tools must keep pass");
+    assert.equal(
+      (forgedLater.toolsResult.attestations || []).filter((a) => a.type === "security.scan").length,
+      1,
+      "invalid-sig: tools must not include invalid-signature event in selected attestations",
+    );
   });
 });
