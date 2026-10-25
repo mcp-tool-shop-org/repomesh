@@ -44,6 +44,7 @@ const ANCHOR_REPO = "mcp-tool-shop-org/repomesh-xrpl-anchor";
 let checkSignatureChain;
 let buildAttestorTimeCtx;
 let signEvent;
+let isBundledTrustedAnchorEvent;
 
 function canonicalize(v) {
   if (Array.isArray(v)) return v.map(canonicalize);
@@ -141,6 +142,7 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
     kp = crypto.generateKeyPairSync("ed25519");
     pubPem = kp.publicKey.export({ type: "spki", format: "pem" }).toString();
     ({ checkSignatureChain, buildAttestorTimeCtx, signEvent } = await import("../scripts/attest-release.mjs"));
+    ({ isBundledTrustedAnchorEvent } = await import("../../verifiers/lib/key-window.mjs"));
   });
 
   // --- §9.1 grandfather: window-less key behaves byte-identically to today --------------------
@@ -354,14 +356,21 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
     assert.equal(r.code, "key-time-invalid");
   });
 
-  it("shared anchor-trust parity: validate-ledger, ledger/scripts/verify-release.mjs, and attestor/scripts/attest-release.mjs return identical answers across all anchor cases", () => {
+  // --- Anchor key lifecycle window checks across all three paths (VL, LVR, AR) ---
+  describe("anchor key window checks across validate-ledger, ledger/scripts/verify-release.mjs, and attestor/scripts/attest-release.mjs", () => {
     const regKp = crypto.generateKeyPairSync("ed25519");
     const cogKp = crypto.generateKeyPairSync("ed25519");
     const gov2Kp = crypto.generateKeyPairSync("ed25519");
     const missingKp = crypto.generateKeyPairSync("ed25519");
+    const revCompKp = crypto.generateKeyPairSync("ed25519");
+    const rotKp = crypto.generateKeyPairSync("ed25519");
+    const unparseableKp = crypto.generateKeyPairSync("ed25519");
     const regPem = regKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const cogPem = cogKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
     const gov2Pem = gov2Kp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const revCompPem = revCompKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const rotPem = rotKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const unparseablePem = unparseableKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
 
     function fullManifest(id, kind, maintainers) {
       return {
@@ -377,144 +386,275 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
       };
     }
 
-    const nodes = [
-      fullManifest(REPO, "compute", [{
-        name: "Compromised Dev",
-        keyId: "compromised-key",
-        publicKey: pubPem.trim(),
-        contact: "dev@example.com",
-        revokedAt: "2026-06-20T09:00:00.000Z",
-        revocationReason: "compromise",
-        invalidAfter: C,
-      }]),
-      fullManifest("mcp-tool-shop-org/repomesh", "registry", [{
-        name: "Registry",
-        keyId: "ci-repomesh-2026",
-        publicKey: regPem,
-        contact: "reg@example.com",
-      }]),
-      fullManifest("mcp-tool-shop-org/cognate", "governance", [{
-        name: "Cognate",
-        keyId: "ci-cognate-2026",
-        publicKey: cogPem,
-        contact: "cog@example.com",
-      }]),
-      fullManifest("test-org/gov2", "governance", [{
-        name: "Gov2",
-        keyId: "gov2-key",
-        publicKey: gov2Pem,
-        contact: "gov2@example.com",
-      }]),
-    ];
-
-    // Write nodes into NODES (and remove ANCHOR_REPO so A6_missing_manifest is genuinely missing).
-    fs.rmSync(path.join(NODES, "mcp-tool-shop-org", "repomesh-xrpl-anchor"), { recursive: true, force: true });
-    for (const n of nodes) {
-      const [o, rName] = n.id.split("/");
-      fs.mkdirSync(path.join(NODES, o, rName), { recursive: true });
-      fs.writeFileSync(path.join(NODES, o, rName, "node.json"), JSON.stringify(n, null, 2), "utf8");
-    }
-
-    const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
-    const leaf = rel.signature.canonicalHash;
-
-    function buildAnchorCase(repoId, keyId, privKey) {
-      const meta = {
-        txHash: "TX-SHARED",
-        network: "testnet",
-        partitionId: "p-shared",
-        partitionStart: "2026-05-01T00:00:00.000Z",
-        partitionEnd: "2026-06-30T00:00:00.000Z",
-        range: [leaf, leaf],
-        merkleRoot: "d".repeat(64),
-      };
-      const ev = {
-        type: "AttestationPublished",
-        repo: repoId,
-        version: "0.0.0-anchor",
-        commit: "c".repeat(40),
-        timestamp: "2026-06-17T00:00:00.000Z",
-        artifacts: [{ name: "anchor.json", sha256: "d".repeat(64), uri: "https://example.com/anchor.json" }],
-        attestations: [{ type: "ledger.anchor", uri: "xrpl:tx:TX-SHARED" }],
-        notes: `ledger.anchor: pass\n${JSON.stringify(meta)}`,
-        signature: { alg: "ed25519", keyId, value: "AAAA", canonicalHash: "" },
-      };
-      const hash = canonicalHashOf(ev);
-      ev.signature.canonicalHash = hash;
-      if (privKey) {
-        ev.signature.value = crypto.sign(null, Buffer.from(hash, "hex"), privKey).toString("base64");
-      }
-      return ev;
-    }
-
-    const cases = [
-      { name: "A1_valid_registry", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey), expected: true },
-      { name: "A2_governance_repo", ev: buildAnchorCase("mcp-tool-shop-org/cognate", "ci-cognate-2026", cogKp.privateKey), expected: false },
-      { name: "A3_governance_keyId_in_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-cognate-2026", cogKp.privateKey), expected: false },
-      { name: "A4_forged_signature", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", null), expected: false },
-      { name: "A5_governance_keyId_outside_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "gov2-key", gov2Kp.privateKey), expected: false },
-      { name: "A6_missing_manifest", ev: buildAnchorCase(ANCHOR_REPO, "ci-repomesh-xrpl-anchor-2026", missingKp.privateKey), expected: false },
-    ];
-
-    const sbDir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-shared-anchor-"));
-    try {
-      const manifestsDir = path.join(sbDir, "manifests");
-      fs.mkdirSync(manifestsDir, { recursive: true });
-      const vrRoot = path.join(sbDir, "vr");
-      const vrScripts = path.join(vrRoot, "ledger", "scripts");
-      const vrEvents = path.join(vrRoot, "ledger", "events");
-      const vrNodes = path.join(vrRoot, "ledger", "nodes");
-      const vrLib = path.join(vrRoot, "verifiers", "lib");
-      fs.mkdirSync(vrScripts, { recursive: true });
-      fs.mkdirSync(vrEvents, { recursive: true });
-      fs.mkdirSync(vrLib, { recursive: true });
-      fs.cpSync(NODES, vrNodes, { recursive: true });
-      fs.copyFileSync(LEDGER_VERIFY_RELEASE, path.join(vrScripts, "verify-release.mjs"));
-      fs.copyFileSync(path.join(REPO_ROOT, "ledger", "scripts", "canonicalize.mjs"), path.join(vrScripts, "canonicalize.mjs"));
-      fs.copyFileSync(path.join(REPO_ROOT, "verifiers", "lib", "key-window.mjs"), path.join(vrLib, "key-window.mjs"));
-      fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(vrRoot, "verifier.policy.json"));
-
-      const validateLedgerAnswers = {};
-      const ledgerVerifyAnswers = {};
-      const attestorAnswers = {};
-
-      for (const c of cases) {
-        const basePath = path.join(sbDir, `base-${c.name}.jsonl`);
-        const headPath = path.join(sbDir, `head-${c.name}.jsonl`);
-        fs.writeFileSync(basePath, JSON.stringify(c.ev) + "\n", "utf8");
-        fs.writeFileSync(headPath, [c.ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
-
-        const vlRes = spawnSync(process.execPath, [VALIDATOR], {
-          env: {
-            ...process.env,
-            BASE_LEDGER: basePath,
-            HEAD_LEDGER: headPath,
-            REPOMESH_NODES_PATH: NODES,
-            REPOMESH_MANIFESTS_PATH: manifestsDir,
+    function setupAnchorFixture() {
+      const nodes = [
+        fullManifest(REPO, "compute", [{
+          name: "Compromised Dev",
+          keyId: "compromised-key",
+          publicKey: pubPem.trim(),
+          contact: "dev@example.com",
+          revokedAt: "2026-06-20T09:00:00.000Z",
+          revocationReason: "compromise",
+          invalidAfter: C,
+        }]),
+        fullManifest("mcp-tool-shop-org/repomesh", "registry", [{
+          name: "Registry",
+          keyId: "ci-repomesh-2026",
+          publicKey: regPem,
+          contact: "reg@example.com",
+        }]),
+        fullManifest(ANCHOR_REPO, "attestor", [
+          {
+            name: "Revoked Anchor",
+            keyId: "anchor-revoked-comp",
+            publicKey: revCompPem,
+            contact: "rev@example.com",
+            revokedAt: "2026-06-16T00:00:00.000Z",
+            revocationReason: "compromise",
+            invalidAfter: "2026-06-16T00:00:00.000Z",
           },
-          encoding: "utf8",
-        });
-        validateLedgerAnswers[c.name] = vlRes.status === 0;
+          {
+            name: "Rotated Anchor",
+            keyId: "anchor-rotated",
+            publicKey: rotPem,
+            contact: "rot@example.com",
+            validUntil: "2026-06-18T00:00:00.000Z",
+            revokedAt: "2026-06-18T00:00:00.000Z",
+            revocationReason: "rotation",
+          },
+          {
+            name: "Broken Boundary Anchor",
+            keyId: "anchor-unparseable",
+            publicKey: unparseablePem,
+            contact: "brk@example.com",
+            revocationReason: "compromise",
+            revokedAt: "not-a-valid-date",
+          },
+        ]),
+        fullManifest("mcp-tool-shop-org/cognate", "governance", [{
+          name: "Cognate",
+          keyId: "ci-cognate-2026",
+          publicKey: cogPem,
+          contact: "cog@example.com",
+        }]),
+        fullManifest("test-org/gov2", "governance", [{
+          name: "Gov2",
+          keyId: "gov2-key",
+          publicKey: gov2Pem,
+          contact: "gov2@example.com",
+        }]),
+      ];
 
-        fs.writeFileSync(path.join(vrEvents, "events.jsonl"), [c.ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
-        const vrRes = spawnSync(process.execPath, [path.join(vrScripts, "verify-release.mjs"), "--repo", REPO, "--version", "1.0.0"], {
-          env: { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vrRoot, "verifier.policy.json") },
-          encoding: "utf8",
-        });
-        ledgerVerifyAnswers[c.name] = vrRes.status === 0;
-
-        const ctx = buildAttestorTimeCtx([c.ev, rel]);
-        const attRes = checkSignatureChain(rel, ctx);
-        attestorAnswers[c.name] = ctx.isBundledTrustedAnchor(c.ev) && attRes.result === "pass";
+      fs.rmSync(path.join(NODES, "mcp-tool-shop-org", "repomesh-license-verifier"), { recursive: true, force: true });
+      for (const n of nodes) {
+        const [o, rName] = n.id.split("/");
+        fs.mkdirSync(path.join(NODES, o, rName), { recursive: true });
+        fs.writeFileSync(path.join(NODES, o, rName, "node.json"), JSON.stringify(n, null, 2), "utf8");
       }
 
-      const expectedMap = Object.fromEntries(cases.map((c) => [c.name, c.expected]));
-      assert.deepEqual(validateLedgerAnswers, expectedMap, "validate-ledger answers must match expected anchor trust decisions");
-      assert.deepEqual(ledgerVerifyAnswers, validateLedgerAnswers, "ledger/scripts/verify-release.mjs must agree with validate-ledger on every anchor case");
-      assert.deepEqual(attestorAnswers, validateLedgerAnswers, "attestor/scripts/attest-release.mjs must agree with validate-ledger on every anchor case");
-    } finally {
-      fs.rmSync(sbDir, { recursive: true, force: true });
+      const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
+      const leaf = rel.signature.canonicalHash;
+
+      function buildAnchorCase(repoId, keyId, privKey, ts = "2026-06-17T00:00:00.000Z") {
+        const meta = {
+          txHash: "TX-SHARED",
+          network: "testnet",
+          partitionId: "p-shared",
+          partitionStart: "2026-05-01T00:00:00.000Z",
+          partitionEnd: "2026-06-30T00:00:00.000Z",
+          range: [leaf, leaf],
+          merkleRoot: "d".repeat(64),
+        };
+        const ev = {
+          type: "AttestationPublished",
+          repo: repoId,
+          version: "0.0.0-anchor",
+          commit: "c".repeat(40),
+          timestamp: ts,
+          artifacts: [{ name: "anchor.json", sha256: "d".repeat(64), uri: "https://example.com/anchor.json" }],
+          attestations: [{ type: "ledger.anchor", uri: "xrpl:tx:TX-SHARED" }],
+          notes: `ledger.anchor: pass\n${JSON.stringify(meta)}`,
+          signature: { alg: "ed25519", keyId, value: "AAAA", canonicalHash: "" },
+        };
+        const hash = canonicalHashOf(ev);
+        ev.signature.canonicalHash = hash;
+        if (privKey) {
+          ev.signature.value = crypto.sign(null, Buffer.from(hash, "hex"), privKey).toString("base64");
+        }
+        return ev;
+      }
+
+      function withSandbox(fn) {
+        const sbDir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-shared-anchor-"));
+        try {
+          const manifestsDir = path.join(sbDir, "manifests");
+          fs.mkdirSync(manifestsDir, { recursive: true });
+          const vrRoot = path.join(sbDir, "vr");
+          const vrScripts = path.join(vrRoot, "ledger", "scripts");
+          const vrEvents = path.join(vrRoot, "ledger", "events");
+          const vrNodes = path.join(vrRoot, "ledger", "nodes");
+          const vrLib = path.join(vrRoot, "verifiers", "lib");
+          fs.mkdirSync(vrScripts, { recursive: true });
+          fs.mkdirSync(vrEvents, { recursive: true });
+          fs.mkdirSync(vrLib, { recursive: true });
+          fs.cpSync(NODES, vrNodes, { recursive: true });
+          fs.copyFileSync(LEDGER_VERIFY_RELEASE, path.join(vrScripts, "verify-release.mjs"));
+          fs.copyFileSync(path.join(REPO_ROOT, "ledger", "scripts", "canonicalize.mjs"), path.join(vrScripts, "canonicalize.mjs"));
+          fs.copyFileSync(path.join(REPO_ROOT, "verifiers", "lib", "key-window.mjs"), path.join(vrLib, "key-window.mjs"));
+          fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(vrRoot, "verifier.policy.json"));
+
+          function evalOnAllThreePaths(ev) {
+            const basePath = path.join(sbDir, "base.jsonl");
+            const headPath = path.join(sbDir, "head.jsonl");
+            fs.writeFileSync(basePath, JSON.stringify(ev) + "\n", "utf8");
+            fs.writeFileSync(headPath, [ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+
+            const vlRes = spawnSync(process.execPath, [VALIDATOR], {
+              env: {
+                ...process.env,
+                BASE_LEDGER: basePath,
+                HEAD_LEDGER: headPath,
+                REPOMESH_NODES_PATH: NODES,
+                REPOMESH_MANIFESTS_PATH: manifestsDir,
+              },
+              encoding: "utf8",
+            });
+            const vl = vlRes.status === 0;
+
+            fs.writeFileSync(path.join(vrEvents, "events.jsonl"), [ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+            const vrRes = spawnSync(process.execPath, [path.join(vrScripts, "verify-release.mjs"), "--repo", REPO, "--version", "1.0.0"], {
+              env: { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vrRoot, "verifier.policy.json") },
+              encoding: "utf8",
+            });
+            const lvr = vrRes.status === 0;
+
+            const ctx = buildAttestorTimeCtx([ev, rel]);
+            const attRes = checkSignatureChain(rel, ctx);
+            const ar = ctx.isBundledTrustedAnchor(ev) && attRes.result === "pass";
+
+            return { vl, lvr, ar };
+          }
+
+          function evalAnchorTrustDirectly(ev) {
+            const policy = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "verifier.policy.json"), "utf8"));
+            const trusted = new Set(policy.trustedAttestors || []);
+            const runAtt = new Set(policy.trustedRunAttestors || []);
+            const loadNode = (id) => {
+              const [o, rName] = String(id || "").split("/");
+              if (!o || !rName) return null;
+              const p = path.join(NODES, o, rName, "node.json");
+              return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+            };
+            const verifyRaw32 = (pem, e) => {
+              const msgHex = e.signature?.canonicalHash;
+              if (typeof msgHex !== "string" || !/^[0-9a-f]{64}$/i.test(msgHex)) return false;
+              try {
+                return crypto.verify(null, Buffer.from(msgHex, "hex"), pem, Buffer.from(e.signature?.value || "", "base64"));
+              } catch {
+                return false;
+              }
+            };
+            const vl = isBundledTrustedAnchorEvent(ev, {
+              trustedAttestors: trusted,
+              trustedRunAttestors: runAtt,
+              loadNode,
+              verifySignature: verifyRaw32,
+            });
+            const lvr = isBundledTrustedAnchorEvent(ev, {
+              trustedAttestors: trusted,
+              trustedRunAttestors: runAtt,
+              loadNode,
+              verifySignature: (pem, e) => {
+                try {
+                  return crypto.verify(null, Buffer.from(e.signature.canonicalHash, "hex"), pem, Buffer.from(e.signature.value, "base64"));
+                } catch {
+                  return false;
+                }
+              },
+            });
+            const ar = buildAttestorTimeCtx([ev]).isBundledTrustedAnchor(ev);
+            return { vl, lvr, ar };
+          }
+
+          return fn({ buildAnchorCase, evalOnAllThreePaths, evalAnchorTrustDirectly });
+        } finally {
+          fs.rmSync(sbDir, { recursive: true, force: true });
+        }
+      }
+
+      return { buildAnchorCase, withSandbox };
     }
+
+    it("a revoked anchor key is refused on all three paths", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths }) => {
+        const ev = buildAnchorCase(ANCHOR_REPO, "anchor-revoked-comp", revCompKp.privateKey, "2026-06-17T00:00:00.000Z");
+        assert.deepEqual(evalOnAllThreePaths(ev), { vl: false, lvr: false, ar: false }, "a revoked anchor key must be refused on VL, LVR, and AR");
+      });
+    });
+
+    it("a backdated anchor from a revoked key is refused on all three paths", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths }) => {
+        const ev = buildAnchorCase(ANCHOR_REPO, "anchor-revoked-comp", revCompKp.privateKey, "2026-06-10T00:00:00.000Z");
+        assert.deepEqual(evalOnAllThreePaths(ev), { vl: false, lvr: false, ar: false }, "a backdated anchor from a revoked key must be refused on VL, LVR, and AR");
+      });
+    });
+
+    it("a rotated key (validUntil) whose anchors predate the rotation still counts on all three paths, while anchors at/after validUntil are refused", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths, evalAnchorTrustDirectly }) => {
+        const preEv = buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-17T00:00:00.000Z");
+        assert.deepEqual(evalAnchorTrustDirectly(preEv), { vl: true, lvr: true, ar: true }, "a rotated key whose anchor predates validUntil must be trusted as an anchor on VL, LVR, and AR");
+        assert.deepEqual(evalOnAllThreePaths(preEv), { vl: true, lvr: true, ar: true }, "a rotated key whose anchor predates validUntil must count on VL, LVR, and AR");
+        const postEv = buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-18T00:00:00.000Z");
+        assert.deepEqual(evalAnchorTrustDirectly(postEv), { vl: false, lvr: false, ar: false }, "a rotated key whose anchor is at/after validUntil must be refused as an anchor on VL, LVR, and AR");
+        assert.deepEqual(evalOnAllThreePaths(postEv), { vl: false, lvr: false, ar: false }, "a rotated key whose anchor is at/after validUntil must be refused on VL, LVR, and AR");
+      });
+    });
+
+    it("a key with a revocation reason but no parseable boundary is refused on all three paths", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths }) => {
+        const ev = buildAnchorCase(ANCHOR_REPO, "anchor-unparseable", unparseableKp.privateKey, "2026-06-10T00:00:00.000Z");
+        assert.deepEqual(evalOnAllThreePaths(ev), { vl: false, lvr: false, ar: false }, "a key with revocation reason and no parseable boundary must be refused on VL, LVR, and AR");
+      });
+    });
+
+    it("shared anchor-trust parity: validate-ledger, ledger/scripts/verify-release.mjs, and attestor/scripts/attest-release.mjs return identical answers across all anchor cases", () => {
+      const { withSandbox } = setupAnchorFixture();
+      withSandbox(({ buildAnchorCase, evalOnAllThreePaths }) => {
+        const cases = [
+          { name: "A1_valid_registry", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey), expected: true },
+          { name: "A2_governance_repo", ev: buildAnchorCase("mcp-tool-shop-org/cognate", "ci-cognate-2026", cogKp.privateKey), expected: false },
+          { name: "A3_governance_keyId_in_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-cognate-2026", cogKp.privateKey), expected: false },
+          { name: "A4_forged_signature", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", null), expected: false },
+          { name: "A5_governance_keyId_outside_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "gov2-key", gov2Kp.privateKey), expected: false },
+          { name: "A6_missing_manifest", ev: buildAnchorCase("mcp-tool-shop-org/repomesh-license-verifier", "ci-repomesh-license-2026", missingKp.privateKey), expected: false },
+          { name: "A7_revoked_anchor_key", ev: buildAnchorCase(ANCHOR_REPO, "anchor-revoked-comp", revCompKp.privateKey, "2026-06-17T00:00:00.000Z"), expected: false },
+          { name: "A8_backdated_anchor_from_revoked_key", ev: buildAnchorCase(ANCHOR_REPO, "anchor-revoked-comp", revCompKp.privateKey, "2026-06-10T00:00:00.000Z"), expected: false },
+          { name: "A9_rotated_key_predating_rotation", ev: buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-17T00:00:00.000Z"), expected: true },
+          { name: "A10_rotated_key_at_or_after_rotation", ev: buildAnchorCase(ANCHOR_REPO, "anchor-rotated", rotKp.privateKey, "2026-06-18T00:00:00.000Z"), expected: false },
+          { name: "A11_revocation_reason_no_parseable_boundary", ev: buildAnchorCase(ANCHOR_REPO, "anchor-unparseable", unparseableKp.privateKey, "2026-06-10T00:00:00.000Z"), expected: false },
+        ];
+
+        const validateLedgerAnswers = {};
+        const ledgerVerifyAnswers = {};
+        const attestorAnswers = {};
+
+        for (const c of cases) {
+          const r = evalOnAllThreePaths(c.ev);
+          validateLedgerAnswers[c.name] = r.vl;
+          ledgerVerifyAnswers[c.name] = r.lvr;
+          attestorAnswers[c.name] = r.ar;
+        }
+
+        const expectedMap = Object.fromEntries(cases.map((c) => [c.name, c.expected]));
+        assert.deepEqual(validateLedgerAnswers, expectedMap, "validate-ledger answers must match expected anchor trust decisions");
+        assert.deepEqual(ledgerVerifyAnswers, validateLedgerAnswers, "ledger/scripts/verify-release.mjs must agree with validate-ledger on every anchor case");
+        assert.deepEqual(attestorAnswers, validateLedgerAnswers, "attestor/scripts/attest-release.mjs must agree with validate-ledger on every anchor case");
+      });
+    });
   });
 
   // --- §9.5 routine rotation is prospective; pre-R signatures stay valid ----------------------

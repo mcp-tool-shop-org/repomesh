@@ -19,6 +19,7 @@ import {
   deriveKeyWindowConstraints,
   __deriveLegacyForTests,
   mergeStricterWindow,
+  isBundledTrustedAnchorEvent,
 } from "../src/verify/key-window.mjs";
 
 // --- Fixtures -----------------------------------------------------------------------------
@@ -820,5 +821,76 @@ describe("§13.1 ③ order-aware single forward pass — consolidated §4 author
     assert.equal(map.get(K_A), undefined, "an already-invalid surviving key cannot authorize a later revocation");
     // (And K_surv itself DID get the compromise window from the authorized KILL_SURV.)
     assert.equal(map.get(K_SURV).revocationReason, "compromise");
+  });
+});
+
+describe("isBundledTrustedAnchorEvent — anchor keys honour their key windows", () => {
+  const PEM = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAauffIokii3uu7oOQvkFXemEROPhBjnez/DEyir25J7w=\n-----END PUBLIC KEY-----";
+  const ANCHOR_NODE = "mcp-tool-shop-org/repomesh-xrpl-anchor";
+  const trusted = new Set([ANCHOR_NODE]);
+
+  function makeAnchor(keyId, timestamp) {
+    const ev = {
+      type: "AttestationPublished",
+      repo: ANCHOR_NODE,
+      version: "0.0.0-anchor",
+      attestations: [{ type: "ledger.anchor", uri: "xrpl:tx:TX" }],
+      signature: { alg: "ed25519", keyId, canonicalHash: "a".repeat(64), value: "AAAA" },
+    };
+    if (timestamp !== undefined) ev.timestamp = timestamp;
+    return ev;
+  }
+
+  function checkWithMaintainer(maintainer, anchorEv) {
+    return isBundledTrustedAnchorEvent(anchorEv, {
+      trustedAttestors: trusted,
+      loadNode: (id) => (id === ANCHOR_NODE ? { id: ANCHOR_NODE, kind: "attestor", maintainers: [maintainer] } : null),
+      verifySignature: () => true,
+    });
+  }
+
+  it("refuses a compromise-revoked anchor key (even when timestamp is after invalidAfter)", () => {
+    const m = {
+      keyId: "anchor-old",
+      publicKey: PEM,
+      revokedAt: "2026-01-01T00:00:00.000Z",
+      revocationReason: "compromise",
+      invalidAfter: "2026-01-01T00:00:00.000Z",
+    };
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-old", "2026-06-17T00:00:00.000Z")), false);
+  });
+
+  it("refuses a backdated anchor from a compromise-revoked key (anchor self-time is not provable)", () => {
+    const m = {
+      keyId: "anchor-old",
+      publicKey: PEM,
+      revokedAt: "2026-06-20T00:00:00.000Z",
+      revocationReason: "compromise",
+      invalidAfter: "2026-06-18T00:00:00.000Z",
+    };
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-old", "2026-06-10T00:00:00.000Z")), false);
+  });
+
+  it("accepts a rotated key (validUntil) whose anchor predates the rotation, and refuses one at/after validUntil", () => {
+    const m = {
+      keyId: "anchor-rot",
+      publicKey: PEM,
+      validUntil: "2026-06-18T00:00:00.000Z",
+      revokedAt: "2026-06-18T00:00:00.000Z",
+      revocationReason: "rotation",
+    };
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-rot", "2026-06-17T00:00:00.000Z")), true);
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-rot", "2026-06-18T00:00:00.000Z")), false);
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-rot", undefined)), false);
+  });
+
+  it("refuses a key with a revocation reason but no parseable boundary", () => {
+    const m = {
+      keyId: "anchor-broken",
+      publicKey: PEM,
+      revocationReason: "compromise",
+      revokedAt: "not-a-date",
+    };
+    assert.equal(checkWithMaintainer(m, makeAnchor("anchor-broken", "2026-06-10T00:00:00.000Z")), false);
   });
 });

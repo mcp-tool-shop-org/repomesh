@@ -580,6 +580,11 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
 
   const keyId = anchorEvent?.signature?.keyId;
   if (!keyId) return false;
+  const anchorSelfTime = selfTime(anchorEvent);
+  const anchorTrustedTime =
+    anchorSelfTime !== null
+      ? { time: anchorSelfTime, provable: false, source: "self" }
+      : { time: null, provable: false, source: "none" };
   for (const id of trusted) {
     if (runAttestors.has(id)) continue;
     const node = loadNode(id);
@@ -588,6 +593,7 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
     if (!m?.publicKey) continue;
     const pem = String(m.publicKey).trim();
     if (!pem.includes("BEGIN PUBLIC KEY")) continue;
+    if (!isKeyValidForSignature(m, anchorTrustedTime).valid) continue;
     if (verifySignature(pem, anchorEvent)) {
       return true;
     }
