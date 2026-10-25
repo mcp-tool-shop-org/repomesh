@@ -22,6 +22,8 @@
 #   |                       |  — use <prev>"` (npm forbids unpublish after 72h  | deprecated; consumers pin to  |       |
 #   |                       |  / for depended-on pkgs); then publish <v+1>.     | <prev>; ship fixed <v+1>.     |       |
 #   | GitHub Release create | `gh release delete <tag> --cleanup-tag`           | release + tag removed         | Mike  |
+#   | GHCR image push       | `gh api -X DELETE orgs/mcp-tool-shop-org/packages/ | :<v> and :sha-<sha> removed;  | Mike  |
+#   |                       |  container/repomesh/versions/<id>`                | image job runs after publish  |       |
 
 name: Release
 
@@ -104,6 +106,9 @@ jobs:
 
   image:
     name: Publish container image
+    # Only after the publish job's build, tests, pack check and audit passed
+    # and the npm publish succeeded, so a broken build never pushes an image.
+    needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
