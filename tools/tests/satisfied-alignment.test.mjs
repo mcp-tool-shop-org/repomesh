@@ -181,4 +181,103 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  function buildPolicyScopedRoot(extraScanEventsFn) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "repomesh-s6-"));
+    fs.mkdirSync(path.join(root, "ledger", "events"), { recursive: true });
+    fs.mkdirSync(path.join(root, "registry"), { recursive: true });
+    fs.mkdirSync(path.join(root, "schemas"), { recursive: true });
+    fs.mkdirSync(path.join(root, "profiles"), { recursive: true });
+    fs.copyFileSync(path.join(REPO_ROOT, "profiles", "regulated.json"), path.join(root, "profiles", "regulated.json"));
+    fs.copyFileSync(path.join(REPO_ROOT, "profiles", "baseline.json"), path.join(root, "profiles", "baseline.json"));
+    fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(root, "verifier.policy.json"));
+
+    const rel = makeKeypair();
+    const reg = makeKeypair();
+    const lic = makeKeypair();
+    const sec = makeKeypair();
+    const repro = makeKeypair();
+
+    function writeNode(orgRepo, kind, keyId, pub, profileId) {
+      const [org, repo] = orgRepo.split("/");
+      const dir = path.join(root, "ledger", "nodes", org, repo);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "node.json"), JSON.stringify({
+        id: orgRepo, kind, provides: [], consumes: [], interfaces: [], invariants: {},
+        maintainers: [{ name: org, keyId, publicKey: pub, contact: "x@example.com" }],
+      }, null, 2));
+      if (profileId) fs.writeFileSync(path.join(dir, "repomesh.profile.json"), JSON.stringify({ profileId, profileVersion: "v1" }));
+    }
+
+    writeNode("org/app", "compute", "ci-app-2026", rel.publicKeyPem, "regulated");
+    writeNode("mcp-tool-shop-org/repomesh", "registry", "ci-repomesh-2026", reg.publicKeyPem);
+    writeNode("mcp-tool-shop-org/repomesh-license-verifier", "attestor", "ci-license-2026", lic.publicKeyPem);
+    writeNode("mcp-tool-shop-org/repomesh-security-verifier", "attestor", "ci-security-2026", sec.publicKeyPem);
+    writeNode("mcp-tool-shop-org/repomesh-repro-verifier", "attestor", "ci-repro-2026", repro.publicKeyPem);
+
+    const mkAtt = (type, result, keyPem, keyId, ts = "2026-01-02T00:00:00Z") => signEvent({
+      type: "AttestationPublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
+      timestamp: ts, artifacts: [{ name: "att", sha256: "b".repeat(64), uri: "x" }],
+      attestations: [{ type, uri: "x" }], notes: `${type}: ${result}`,
+    }, keyPem, keyId);
+
+    const events = [
+      signEvent({
+        type: "ReleasePublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
+        timestamp: "2026-01-01T00:00:00Z", artifacts: [{ name: "a", sha256: "a".repeat(64), uri: "x" }], attestations: [],
+      }, rel.privateKeyPem, "ci-app-2026"),
+      mkAtt("sbom.present", "pass", reg.privateKeyPem, "ci-repomesh-2026"),
+      mkAtt("provenance.present", "pass", reg.privateKeyPem, "ci-repomesh-2026"),
+      mkAtt("signature.chain", "pass", reg.privateKeyPem, "ci-repomesh-2026"),
+      mkAtt("license.audit", "pass", lic.privateKeyPem, "ci-license-2026"),
+      mkAtt("repro.build", "pass", repro.privateKeyPem, "ci-repro-2026"),
+      ...extraScanEventsFn({ mkAtt, lic, sec }),
+    ];
+    fs.writeFileSync(path.join(root, "ledger", "events", "events.jsonl"), events.map(e => JSON.stringify(e)).join("\n") + "\n");
+    return root;
+  }
+
+  it("S6a: license verifier's security.scan: pass does NOT satisfy the gate in either tools or packages", async () => {
+    const root = buildPolicyScopedRoot(({ mkAtt, lic }) => [
+      mkAtt("security.scan", "pass", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    try {
+      let toolsResult;
+      try {
+        toolsResult = runToolsCopy(root);
+      } catch (e) {
+        const blobs = String(e.stdout || "").match(/\{[\s\S]*\}/g);
+        toolsResult = JSON.parse(blobs[blobs.length - 1]);
+      }
+      const pkgResult = await runPackagesCopy(root);
+
+      assert.equal(toolsResult.ok, false, "tools must reject license verifier security.scan: pass");
+      assert.equal(pkgResult.ok, false, "packages must reject license verifier security.scan: pass");
+      assert.ok(!(toolsResult.gate?.satisfied || []).includes("security.scan"));
+      assert.ok(!(pkgResult.gate?.satisfied || []).includes("security.scan"));
+      assert.ok((toolsResult.gate?.missing || []).includes("security.scan"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("S6b: license verifier's security.scan: fail does NOT hard-fail a trusted security verifier's pass in either tools or packages", async () => {
+    const root = buildPolicyScopedRoot(({ mkAtt, lic, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    try {
+      const toolsResult = runToolsCopy(root);
+      const pkgResult = await runPackagesCopy(root);
+
+      assert.equal(toolsResult.ok, true, "tools must pass when trusted security verifier passes despite untrusted-for-check fail");
+      assert.equal(pkgResult.ok, true, "packages must pass when trusted security verifier passes despite untrusted-for-check fail");
+      assert.ok((toolsResult.gate?.satisfied || []).includes("security.scan"));
+      assert.ok((pkgResult.gate?.satisfied || []).includes("security.scan"));
+      assert.deepEqual(toolsResult.gate?.failed || [], []);
+      assert.deepEqual(pkgResult.gate?.failures || [], []);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

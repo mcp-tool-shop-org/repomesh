@@ -32,6 +32,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isSignerTrustedForCheck,
 } from "../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex in findAnchorForHash). Imported from the repo-root verifiers/lib mirror; the
@@ -96,6 +97,19 @@ function effectiveTrustedAttestors() {
     }
   }
   return bundled;
+}
+
+function readVerifierPolicy() {
+  const policyPath =
+    process.env.REPOMESH_VERIFIER_POLICY_PATH ||
+    path.join(LEDGER_CHECKOUT_ROOT, "verifier.policy.json");
+  if (!fs.existsSync(policyPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(policyPath, "utf8"));
+  } catch (e) {
+    console.error(`Warning: verifier.policy.json read failed: ${e.message}`);
+    return null;
+  }
 }
 
 // A resolved third-party signer is trusted for release verification iff its node id is in the
@@ -736,6 +750,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
 
   // The gate, driven by the repo's profile.
   const { profileId, requiredAttestationTypes } = loadProfileForRepo(repo);
+  const verifierPolicy = readVerifierPolicy();
   const gate = {
     profile: profileId,
     requiredAttestationTypes,
@@ -752,17 +767,20 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   gate.independentAttestor = hasIndependentAttestor;
 
   for (const type of requiredAttestationTypes) {
+    const checkPolicy = verifierPolicy?.checks?.[type] || null;
+    // Candidate selected attestations of this type with a valid signature from a signer allowed for this check.
+    const candidates = selected.filter(
+      r => r.type === type && r.signatureValid && isSignerTrustedForCheck(r.signerNode, checkPolicy)
+    );
     // `signature.chain` is satisfied STRUCTURALLY by a valid release signature that
     // chains to a key registered under the release's OWN repo (D1) — the release's
     // own signature IS the signature chain. It does not require a separate attestation
-    // event. (An explicit signature.chain attestation, if one exists, is honored below.)
+    // event. (An explicit signature.chain attestation, if one exists from an allowed signer, is honored below.)
     if (type === "signature.chain" && result.release.signatureValid &&
-        !selected.some(r => r.type === type)) {
+        candidates.length === 0 && !selected.some(r => r.type === type && !r.signatureValid)) {
       gate.satisfied.push(type);
       continue;
     }
-    // Candidate selected attestations of this type with a valid signature.
-    const candidates = selected.filter(r => r.type === type && r.signatureValid);
     if (candidates.length === 0) {
       gate.missing.push(type);
       continue;
@@ -779,14 +797,19 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   }
 
   // ATT-A-001: also surface ANY selected attestation (even a NON-required type) that is a hard fail
-  // — a validly-signed trusted-attestor attestation with result "fail". Mirrors the published copy's
-  // post-required-gate loop (which pushes a gate.failures entry); here we use this copy's local
-  // gate.failed shape so the BEHAVIOR is identical: a baseline-profile release carrying a
+  // — a validly-signed trusted-attestor attestation with result "fail" from a signer allowed for that check.
+  // Mirrors the published copy's post-required-gate loop (which pushes a gate.failures entry); here we use
+  // this copy's local gate.failed shape so the BEHAVIOR is identical: a baseline-profile release carrying a
   // trusted-attestor security.scan:fail can no longer return PASS from tools/ while the published
   // CLI returns FAIL. De-dup against gate.failed so a required type already hard-failed above is not
   // listed twice.
   for (const a of selected) {
-    if (a.signatureValid && a.result === "fail" && !gate.failed.includes(a.type)) {
+    if (
+      a.signatureValid &&
+      a.result === "fail" &&
+      isSignerTrustedForCheck(a.signerNode, verifierPolicy?.checks?.[a.type]) &&
+      !gate.failed.includes(a.type)
+    ) {
       gate.failed.push(a.type);
     }
   }

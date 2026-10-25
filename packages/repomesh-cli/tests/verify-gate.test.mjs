@@ -270,4 +270,60 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     assert.ok(!(result?.gate?.satisfied || []).includes("security.scan"), "security.scan must not be reported satisfied");
     assert.equal(exitCode, 1);
   });
+
+  function setupPolicyScopedRelease() {
+    fs.copyFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), join(tmpRoot, "verifier.policy.json"));
+    const rel = makeKeypair();
+    const reg = makeKeypair();
+    const lic = makeKeypair();
+    const sec = makeKeypair();
+    const repro = makeKeypair();
+    writeNode("org/app", "compute", "ci-app-2026", rel.publicPem, "regulated");
+    writeNode("mcp-tool-shop-org/repomesh", "registry", "ci-repomesh-2026", reg.publicPem);
+    writeNode("mcp-tool-shop-org/repomesh-license-verifier", "attestor", "ci-license-2026", lic.publicPem);
+    writeNode("mcp-tool-shop-org/repomesh-security-verifier", "attestor", "ci-security-2026", sec.publicPem);
+    writeNode("mcp-tool-shop-org/repomesh-repro-verifier", "attestor", "ci-repro-2026", repro.publicPem);
+    const release = signEvent({
+      type: "ReleasePublished", repo: "org/app", version: "1.0.0",
+      commit: "abcdef0", timestamp: "2026-01-01T00:00:00Z",
+      artifacts: [{ name: "a", sha256: "a".repeat(64), uri: "x" }], attestations: [],
+    }, "ci-app-2026", rel.privateKey);
+    const baseAtts = [
+      attestation({ type: "sbom.present", result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-repomesh-2026", key: reg.privateKey }),
+      attestation({ type: "provenance.present", result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-repomesh-2026", key: reg.privateKey }),
+      attestation({ type: "signature.chain", result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-repomesh-2026", key: reg.privateKey }),
+      attestation({ type: "license.audit", result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-license-2026", key: lic.privateKey }),
+      attestation({ type: "repro.build", result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-repro-2026", key: repro.privateKey }),
+    ];
+    return { release, baseAtts, lic, sec };
+  }
+
+  it("S6a: a license verifier's security.scan: pass does NOT satisfy the gate under trusted-set policy", async () => {
+    const { release, baseAtts, lic } = setupPolicyScopedRelease();
+    writeEvents([
+      release,
+      ...baseAtts,
+      attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-license-2026", key: lic.privateKey }),
+    ]);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, false, "license verifier is not in checks['security.scan'].trustedNodes and must not satisfy security.scan");
+    assert.ok(!(result?.gate?.satisfied || []).includes("security.scan"), "security.scan must not be satisfied");
+    assert.ok((result?.gate?.failures || []).some((f) => f.check === "security.scan"), "security.scan must be reported as a gate failure");
+    assert.equal(exitCode, 1);
+  });
+
+  it("S6b: a license verifier's security.scan: fail does NOT hard-fail a trusted security verifier's pass", async () => {
+    const { release, baseAtts, lic, sec } = setupPolicyScopedRelease();
+    writeEvents([
+      release,
+      ...baseAtts,
+      attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-02T00:02:00Z", keyId: "ci-license-2026", key: lic.privateKey }),
+    ]);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "untrusted-for-check fail must not override trusted security verifier pass");
+    assert.ok((result?.gate?.satisfied || []).includes("security.scan"), "security.scan must be satisfied by the trusted security verifier");
+    assert.deepEqual(result?.gate?.failures || [], []);
+    assert.equal(exitCode, 0);
+  });
 });

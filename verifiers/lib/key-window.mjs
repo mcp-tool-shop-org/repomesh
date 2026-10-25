@@ -594,3 +594,16 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   }
   return false;
 }
+
+// isSignerTrustedForCheck(signerNode, checkPolicy) -> boolean
+// Shared per-check signer gate across registry/scripts/build-trust.mjs,
+// packages/repomesh-cli/src/verify/verify-release.mjs, and tools/verify-release.mjs.
+// When checkPolicy.mode === "trusted-set" and checkPolicy.trustedNodes is non-empty,
+// only signers listed in checkPolicy.trustedNodes may count toward the check.
+export function isSignerTrustedForCheck(signerNode, checkPolicy) {
+  if (checkPolicy?.mode === "trusted-set" && checkPolicy.trustedNodes?.length > 0) {
+    return typeof signerNode === "string" && checkPolicy.trustedNodes.includes(signerNode);
+  }
+  return true;
+}
+

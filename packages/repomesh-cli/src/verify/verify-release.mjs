@@ -68,6 +68,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isSignerTrustedForCheck,
 } from "./key-window.mjs";
 import {
   EXIT, exitCodeForStatus, normalizeFailOn, normalizeFormat,
@@ -252,6 +253,15 @@ function readTrustedPolicyNodes(opts) {
     const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
     return new Set(ids.filter(id => typeof id === "string"));
   } catch (e) { debugLog(`trustedPolicy read failed: ${e.message}`); return new Set(); }
+}
+
+function readVerifierPolicy(opts) {
+  if (!opts?.local || !opts?.root) return null;
+  try {
+    const p = path.join(opts.root, "verifier.policy.json");
+    if (!fs.existsSync(p)) return null;
+    return parseStrictJson(fs.readFileSync(p, "utf8"));
+  } catch (e) { debugLog(`verifier.policy.json read failed: ${e.message}`); return null; }
 }
 
 // Resolve a maintainer object {keyId,publicKey,...} by keyId from a node.json on disk (LOCAL only).
@@ -966,6 +976,7 @@ export async function computeVerifyResult({
   const profileId = loadProfileId(repo, opts);
   const profileDef = loadProfileDef(profileId);
   const required = requiredAttestationTypes(profileDef);
+  const verifierPolicy = readVerifierPolicy(opts);
 
   const gate = {
     profile: profileId,
@@ -977,18 +988,24 @@ export async function computeVerifyResult({
   };
 
   // For each required attestation type: must be PRESENT, with a selected result `pass`
-  // AND signatureValid:true from at least one signer. Any selected fail/invalid -> fail.
+  // AND signatureValid:true from at least one signer allowed for that check. Any selected fail/invalid -> fail.
   for (const type of required) {
+    const checkPolicy = verifierPolicy?.checks?.[type] || null;
+    const perSigner = byType.get(type);
+    const relevant = perSigner
+      ? [...perSigner.values()].filter(
+          sel => !sel.signatureValid || isSignerTrustedForCheck(sel.signerNode, checkPolicy)
+        )
+      : [];
     // `signature.chain` is satisfied STRUCTURALLY by a valid release signature that
     // chains to a key registered under the release's own repo (D1) — the release's own
     // signature IS the signature chain. It does not require a separate attestation event.
-    // (An explicit signature.chain attestation, if present, is still honored below.)
-    if (type === "signature.chain" && result.release.signatureValid && !byType.has(type)) {
+    // (An explicit signature.chain attestation, if present from an allowed signer, is still honored below.)
+    if (type === "signature.chain" && result.release.signatureValid && relevant.length === 0) {
       gate.satisfied.push(type);
       continue;
     }
-    const perSigner = byType.get(type);
-    if (!perSigner || perSigner.size === 0) {
+    if (relevant.length === 0) {
       // B-OBS-01: every failure carries `check` (machine-readable) + `reason` + `hint` (how to
       // fix). `type` is retained for backward compatibility with existing consumers/tests.
       const reason = "missing";
@@ -997,7 +1014,7 @@ export async function computeVerifyResult({
     }
     let anyPass = false;
     let anyHardFail = false;
-    for (const [, sel] of perSigner) {
+    for (const sel of relevant) {
       if (!sel.signatureValid) { anyHardFail = true; continue; }
       if (sel.result === "fail") { anyHardFail = true; continue; }
       if (sel.result === "pass") anyPass = true;
@@ -1013,9 +1030,13 @@ export async function computeVerifyResult({
     }
   }
 
-  // Also surface any selected attestation (even non-required) that is a hard fail.
+  // Also surface any selected attestation (even non-required) that is a hard fail from a signer allowed for that check.
   for (const a of result.attestations) {
-    if (a.signatureValid && a.result === "fail") {
+    if (
+      a.signatureValid &&
+      a.result === "fail" &&
+      isSignerTrustedForCheck(a.signerNode, verifierPolicy?.checks?.[a.type])
+    ) {
       const reason = "attestation result=fail";
       gate.failures.push({ check: a.type, type: a.type, reason, hint: hintForFailure({ type: a.type, reason }) });
     }

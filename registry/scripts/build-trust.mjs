@@ -39,6 +39,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isSignerTrustedForCheck,
 } from "../../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex). The anchor-event-type + range guards stay local to parseAnchorMeta below.
@@ -481,10 +482,7 @@ function loadVerifierPolicy(policyPath) {
 // Resolve consensus from multiple attestations for a single check kind.
 function resolveConsensus(sources, checkPolicy) {
   if (sources.length === 0) return { consensus: "missing", sources };
-  let filtered = sources;
-  if (checkPolicy?.mode === "trusted-set" && checkPolicy.trustedNodes?.length > 0) {
-    filtered = sources.filter((s) => checkPolicy.trustedNodes.includes(s.node));
-  }
+  const filtered = sources.filter((s) => isSignerTrustedForCheck(s.node, checkPolicy));
   if (filtered.length === 0) return { consensus: "untrusted", sources };
 
   const results = filtered.map((s) => s.result);
