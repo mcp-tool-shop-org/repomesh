@@ -65,6 +65,7 @@ function buildLedger(tmpDir, events) {
   const dir = path.join(tmpDir, "ledger", "events");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "events.jsonl"), events.map(e => JSON.stringify(e)).join("\n") + "\n", "utf8");
+  fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(tmpDir, "verifier.policy.json"));
 }
 
 function registerNode(tmpDir, repoId, kind, keyId, publicKeyPem) {

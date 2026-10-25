@@ -53,6 +53,104 @@ export const BUNDLED_RUN_ATTESTATION_TYPES = Object.freeze([
   "cognate.root.anchored",
 ]);
 
+// Bundled per-check trusted sets taken from verifier.policy.json.
+// Shipped in the CLI so remote verification enforces the per-check rule even without a local
+// checkout. A fetched or local verifier.policy.json may NARROW a check's trusted set
+// (intersection only), never widen it.
+export const BUNDLED_CHECK_POLICIES = Object.freeze({
+  "license.audit": Object.freeze({
+    mode: "trusted-set",
+    trustedNodes: Object.freeze([
+      "mcp-tool-shop-org/repomesh",
+      "mcp-tool-shop-org/repomesh-license-verifier",
+    ]),
+  }),
+  "security.scan": Object.freeze({
+    mode: "trusted-set",
+    trustedNodes: Object.freeze([
+      "mcp-tool-shop-org/repomesh",
+      "mcp-tool-shop-org/repomesh-security-verifier",
+    ]),
+  }),
+  "repro.build": Object.freeze({
+    mode: "open",
+    trustedNodes: Object.freeze([]),
+  }),
+  "sbom.present": Object.freeze({
+    mode: "trusted-set",
+    trustedNodes: Object.freeze([
+      "mcp-tool-shop-org/repomesh",
+    ]),
+  }),
+  "provenance.present": Object.freeze({
+    mode: "trusted-set",
+    trustedNodes: Object.freeze([
+      "mcp-tool-shop-org/repomesh",
+    ]),
+  }),
+  "signature.chain": Object.freeze({
+    mode: "trusted-set",
+    trustedNodes: Object.freeze([
+      "mcp-tool-shop-org/repomesh",
+    ]),
+  }),
+});
+
+export function resolveCheckPolicy(checkType, policy) {
+  if (typeof checkType !== "string" || !checkType) return null;
+  const hasBundled = Object.hasOwn(BUNDLED_CHECK_POLICIES, checkType);
+  const bundled = hasBundled ? BUNDLED_CHECK_POLICIES[checkType] : null;
+  const checks = policy?.checks;
+  const hasPolicyEntry =
+    checks && typeof checks === "object" && Object.hasOwn(checks, checkType);
+  const entry = hasPolicyEntry ? checks[checkType] : null;
+
+  if (bundled) {
+    if (bundled.mode === "trusted-set") {
+      if (entry && entry.mode === "trusted-set" && Array.isArray(entry.trustedNodes)) {
+        const allowed = new Set(entry.trustedNodes.filter((id) => typeof id === "string"));
+        return {
+          mode: "trusted-set",
+          trustedNodes: bundled.trustedNodes.filter((id) => allowed.has(id)),
+        };
+      }
+      return {
+        mode: "trusted-set",
+        trustedNodes: [...bundled.trustedNodes],
+      };
+    }
+    if (entry && entry.mode === "trusted-set" && Array.isArray(entry.trustedNodes)) {
+      const allowed = new Set(entry.trustedNodes.filter((id) => typeof id === "string"));
+      return {
+        mode: "trusted-set",
+        trustedNodes: BUNDLED_TRUSTED_ATTESTORS.filter((id) => allowed.has(id)),
+      };
+    }
+    return {
+      mode: "open",
+      trustedNodes: [],
+    };
+  }
+
+  if (entry && typeof entry === "object") {
+    if (entry.mode === "trusted-set") {
+      const configured = Array.isArray(entry.trustedNodes)
+        ? entry.trustedNodes.filter((id) => typeof id === "string")
+        : [];
+      const allowed = new Set(configured);
+      return {
+        mode: "trusted-set",
+        trustedNodes: BUNDLED_TRUSTED_ATTESTORS.filter((id) => allowed.has(id)),
+      };
+    }
+    return {
+      mode: entry.mode || "open",
+      trustedNodes: [],
+    };
+  }
+  return null;
+}
+
 // STGB-CLI-001 (observability): in REMOTE mode the local revocation defenses — the §12.1
 // derive-stricter key-window narrowing and the LEDGER-A-005 ledger-immutability check — are
 // INERT, because they recompute against a local checkout that remote mode does not have. That

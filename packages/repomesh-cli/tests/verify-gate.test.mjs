@@ -67,7 +67,7 @@ function writeEvents(events) {
 
 // Run verifyRelease capturing exit code + JSON result, with cwd pointed at tmpRoot.
 async function runVerify(args) {
-  const { verifyRelease } = await import(toURL(resolve(srcDir, "verify", "verify-release.mjs")) + `?t=${Date.now()}${Math.random()}`);
+  const { verifyRelease } = await import(toURL(resolve(srcDir, "verify", "verify-release.mjs")));
   const origExit = process.exit;
   const origCwd = process.cwd;
   const origLog = console.log;
@@ -137,12 +137,12 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
   // helper: a regulated repo requires sbom.present, provenance.present, license.audit, security.scan
   // D12: attestations must be signed by a node in the BUNDLED trusted-attestor allowlist — a random
   // "org/attestor" no longer earns trust. Use an allowlisted org node as the independent attestor.
-  const TRUSTED_ATTESTOR = "mcp-tool-shop-org/repomesh-security-verifier";
+  const TRUSTED_ATTESTOR = "mcp-tool-shop-org/repomesh";
   function setupRegulatedRelease() {
     const rel = makeKeypair();
     const attestor = makeKeypair();
     writeNode("org/app", "compute", "ci-app-2026", rel.publicPem, "regulated");
-    writeNode(TRUSTED_ATTESTOR, "attestor", "ci-attestor-2026", attestor.publicPem);
+    writeNode(TRUSTED_ATTESTOR, "registry", "ci-attestor-2026", attestor.publicPem);
     const release = signEvent({
       type: "ReleasePublished", repo: "org/app", version: "1.0.0",
       commit: "abcdef0", timestamp: "2026-01-01T00:00:00Z",
@@ -216,9 +216,9 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     // D12: to isolate the independence path (not the allowlist path), the self-signing node is
     // itself an ALLOWLISTED attestor node — so its attestations RESOLVE + satisfy the gate, but
     // they are NOT independent (signer === release signer). The only objection is independence.
-    const SOLO = "mcp-tool-shop-org/repomesh-security-verifier";
+    const SOLO = "mcp-tool-shop-org/repomesh";
     const rel = makeKeypair();
-    writeNode(SOLO, "attestor", "ci-solo-2026", rel.publicPem, "regulated");
+    writeNode(SOLO, "registry", "ci-solo-2026", rel.publicPem, "regulated");
     const release = signEvent({
       type: "ReleasePublished", repo: SOLO, version: "1.0.0",
       commit: "abcdef0", timestamp: "2026-01-01T00:00:00Z",
@@ -325,5 +325,174 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     assert.ok((result?.gate?.satisfied || []).includes("security.scan"), "security.scan must be satisfied by the trusted security verifier");
     assert.deepEqual(result?.gate?.failures || [], []);
     assert.equal(exitCode, 0);
+  });
+
+  async function runVerifyRemote(args) {
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      const p = join(tmpRoot, decodeURIComponent(new URL(req.url, "http://x").pathname));
+      if (!p.startsWith(tmpRoot) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) {
+        res.statusCode = 404;
+        return res.end("nf");
+      }
+      res.end(fs.readFileSync(p));
+    });
+    await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const nonCheckoutDir = fs.mkdtempSync(join(os.tmpdir(), "repomesh-remote-cwd-"));
+    const { verifyRelease } = await import(toURL(resolve(srcDir, "verify", "verify-release.mjs")));
+    const origExit = process.exit;
+    const origCwd = process.cwd;
+    const origLog = console.log;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    let exitCode = null;
+    let out = "";
+    process.exit = (code) => { exitCode = code; throw new Error("__EXIT__"); };
+    process.cwd = () => nonCheckoutDir;
+    console.log = (m) => { out += (typeof m === "string" ? m : JSON.stringify(m)) + "\n"; };
+    console.error = () => {};
+    console.warn = () => {};
+    try {
+      await verifyRelease({
+        json: true,
+        ledgerUrl: `${base}/ledger/events/events.jsonl`,
+        nodesUrl: `${base}/ledger/nodes`,
+        manifestsUrl: `${base}/anchor/xrpl/manifests`,
+        ...args,
+      });
+    } catch (e) {
+      if (e.message !== "__EXIT__") throw e;
+    } finally {
+      process.exit = origExit;
+      process.cwd = origCwd;
+      console.log = origLog;
+      console.error = origErr;
+      console.warn = origWarn;
+      await new Promise((ok) => server.close(ok));
+      try { fs.rmSync(nonCheckoutDir, { recursive: true, force: true }); } catch {}
+    }
+    let result = null;
+    const blobs = out.match(/\{[\s\S]*\}/g);
+    if (blobs) { try { result = JSON.parse(blobs[blobs.length - 1]); } catch { /* ignore */ } }
+    return { exitCode, out, result };
+  }
+
+  it("remote-mode S6a: a license verifier's security.scan: pass does NOT count as an independent witness or satisfy security.scan", async () => {
+    const { release, lic } = setupPolicyScopedRelease();
+    fs.rmSync(join(tmpRoot, "verifier.policy.json"), { force: true });
+    writeEvents([
+      release,
+      attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-license-2026", key: lic.privateKey }),
+    ]);
+    const { exitCode, result } = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, false, "remote mode: license verifier's security.scan: pass must not make the release PASS");
+    assert.equal(result?.gate?.status, "UNVERIFIED", "remote mode: unauthorized security.scan signer must not count as an independent witness");
+    assert.deepEqual(result?.gate?.independentAttestors || [], []);
+    assert.ok(!(result?.gate?.satisfied || []).includes("security.scan"));
+    assert.equal(exitCode, 3);
+  });
+
+  it("remote-mode S6b: a license verifier's security.scan: fail does NOT hard-fail a trusted security verifier's pass", async () => {
+    const { release, baseAtts, lic, sec } = setupPolicyScopedRelease();
+    fs.rmSync(join(tmpRoot, "verifier.policy.json"), { force: true });
+    writeEvents([
+      release,
+      ...baseAtts,
+      attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-01-02T00:02:00Z", keyId: "ci-license-2026", key: lic.privateKey }),
+    ]);
+    const { exitCode, result } = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "remote mode: license verifier's security.scan: fail must not hard-fail a trusted security verifier's pass");
+    assert.equal(result?.gate?.status, "PASS");
+    assert.deepEqual(result?.gate?.failures || [], []);
+    assert.equal(exitCode, 0);
+  });
+
+  it("shipped BUNDLED_CHECK_POLICIES stays in step with verifier.policy.json and only narrows (never widens)", async () => {
+    const remoteDefaults = await import(toURL(resolve(srcDir, "remote-defaults.mjs")));
+    const { isSignerTrustedForCheck } = await import(toURL(resolve(srcDir, "verify", "key-window.mjs")));
+    const repoPolicy = JSON.parse(fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"));
+    assert.ok(remoteDefaults.BUNDLED_CHECK_POLICIES && typeof remoteDefaults.BUNDLED_CHECK_POLICIES === "object",
+      "remote-defaults.mjs must export BUNDLED_CHECK_POLICIES");
+    assert.equal(typeof remoteDefaults.resolveCheckPolicy, "function",
+      "remote-defaults.mjs must export resolveCheckPolicy");
+
+    const policyCheckKeys = Object.keys(repoPolicy.checks).sort();
+    const bundledCheckKeys = Object.keys(remoteDefaults.BUNDLED_CHECK_POLICIES).sort();
+    assert.deepEqual(bundledCheckKeys, policyCheckKeys,
+      "BUNDLED_CHECK_POLICIES keys must match verifier.policy.json checks");
+    for (const k of policyCheckKeys) {
+      assert.equal(remoteDefaults.BUNDLED_CHECK_POLICIES[k].mode, repoPolicy.checks[k].mode, `mode mismatch on ${k}`);
+      assert.deepEqual(
+        [...remoteDefaults.BUNDLED_CHECK_POLICIES[k].trustedNodes].sort(),
+        [...(repoPolicy.checks[k].trustedNodes || [])].sort(),
+        `trustedNodes mismatch on ${k}`,
+      );
+    }
+
+    // Narrowing: a policy may intersect trustedNodes, never union/widen or flip trusted-set -> open.
+    const widened = remoteDefaults.resolveCheckPolicy("security.scan", {
+      checks: {
+        "security.scan": {
+          mode: "trusted-set",
+          trustedNodes: [
+            "mcp-tool-shop-org/repomesh-security-verifier",
+            "mcp-tool-shop-org/repomesh-license-verifier",
+            "rogue-org/rogue",
+          ],
+        },
+      },
+    });
+    assert.equal(widened.mode, "trusted-set");
+    assert.deepEqual(widened.trustedNodes, ["mcp-tool-shop-org/repomesh-security-verifier"]);
+
+    const modeFlipAttempt = remoteDefaults.resolveCheckPolicy("security.scan", {
+      checks: { "security.scan": { mode: "open", trustedNodes: [] } },
+    });
+    assert.equal(modeFlipAttempt.mode, "trusted-set");
+    assert.deepEqual(
+      [...modeFlipAttempt.trustedNodes].sort(),
+      [...repoPolicy.checks["security.scan"].trustedNodes].sort(),
+    );
+
+    const narrowedEmpty = remoteDefaults.resolveCheckPolicy("security.scan", {
+      checks: { "security.scan": { mode: "trusted-set", trustedNodes: [] } },
+    });
+    assert.equal(narrowedEmpty.mode, "trusted-set");
+    assert.deepEqual(narrowedEmpty.trustedNodes, []);
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh-security-verifier", narrowedEmpty), false,
+      "an empty trusted-set must be closed (trust nobody), not open");
+
+    const openNarrowed = remoteDefaults.resolveCheckPolicy("repro.build", {
+      checks: {
+        "repro.build": {
+          mode: "trusted-set",
+          trustedNodes: ["mcp-tool-shop-org/repomesh-repro-verifier", "rogue-org/rogue"],
+        },
+      },
+    });
+    assert.equal(openNarrowed.mode, "trusted-set");
+    assert.deepEqual(openNarrowed.trustedNodes, ["mcp-tool-shop-org/repomesh-repro-verifier"]);
+
+    const customTrusted = remoteDefaults.resolveCheckPolicy("custom.check", {
+      checks: {
+        "custom.check": {
+          mode: "trusted-set",
+          trustedNodes: ["mcp-tool-shop-org/repomesh", "rogue-org/rogue"],
+        },
+      },
+    });
+    assert.equal(customTrusted.mode, "trusted-set");
+    assert.deepEqual(customTrusted.trustedNodes, ["mcp-tool-shop-org/repomesh"]);
+
+    const customOpen = remoteDefaults.resolveCheckPolicy("custom.open", {
+      checks: { "custom.open": { mode: "open" } },
+    });
+    assert.equal(customOpen.mode, "open");
+    assert.deepEqual(customOpen.trustedNodes, []);
+
+    assert.equal(remoteDefaults.resolveCheckPolicy("", null), null);
+    assert.equal(remoteDefaults.resolveCheckPolicy("unknown.check", null), null);
   });
 });

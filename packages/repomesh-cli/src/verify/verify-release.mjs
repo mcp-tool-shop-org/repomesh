@@ -48,7 +48,7 @@ import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
   BUNDLED_TRUSTED_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
-  BUNDLED_RUN_ATTESTATION_TYPES,
+  BUNDLED_RUN_ATTESTATION_TYPES, resolveCheckPolicy,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
@@ -921,6 +921,7 @@ export async function computeVerifyResult({
   // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode })
   const byType = new Map();
   const independentSigners = new Set();
+  const verifierPolicy = readVerifierPolicy(opts);
 
   for (const att of rawAttestations) {
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3): a windowed
@@ -948,7 +949,12 @@ export async function computeVerifyResult({
       if (!prev || ts > prev.timestamp) {
         perSigner.set(signerKey, { result: attResult, signatureValid: sigOk.ok, timestamp: ts, signerNode });
       }
-      if (sigOk.ok && signerNode && signerNode !== releaseSignerNode) {
+      if (
+        sigOk.ok &&
+        signerNode &&
+        signerNode !== releaseSignerNode &&
+        isSignerTrustedForCheck(signerNode, resolveCheckPolicy(t, verifierPolicy))
+      ) {
         independentSigners.add(signerNode);
       }
     }
@@ -976,7 +982,6 @@ export async function computeVerifyResult({
   const profileId = loadProfileId(repo, opts);
   const profileDef = loadProfileDef(profileId);
   const required = requiredAttestationTypes(profileDef);
-  const verifierPolicy = readVerifierPolicy(opts);
 
   const gate = {
     profile: profileId,
@@ -990,7 +995,7 @@ export async function computeVerifyResult({
   // For each required attestation type: must be PRESENT, with a selected result `pass`
   // AND signatureValid:true from at least one signer allowed for that check. Any selected fail/invalid -> fail.
   for (const type of required) {
-    const checkPolicy = verifierPolicy?.checks?.[type] || null;
+    const checkPolicy = resolveCheckPolicy(type, verifierPolicy);
     const perSigner = byType.get(type);
     const relevant = perSigner
       ? [...perSigner.values()].filter(
@@ -1035,7 +1040,7 @@ export async function computeVerifyResult({
     if (
       a.signatureValid &&
       a.result === "fail" &&
-      isSignerTrustedForCheck(a.signerNode, verifierPolicy?.checks?.[a.type])
+      isSignerTrustedForCheck(a.signerNode, resolveCheckPolicy(a.type, verifierPolicy))
     ) {
       const reason = "attestation result=fail";
       gate.failures.push({ check: a.type, type: a.type, reason, hint: hintForFailure({ type: a.type, reason }) });

@@ -24,6 +24,10 @@ import crypto from "node:crypto";
 import { merkleRootForAlgo } from "../anchor/xrpl/scripts/merkle.mjs";
 import { verifyAnchorTx } from "../anchor/xrpl/scripts/verify-anchor.mjs";
 import { resolveTrustedAnchorAccounts } from "../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
+import {
+  BUNDLED_CHECK_POLICIES,
+  resolveCheckPolicy,
+} from "../packages/repomesh-cli/src/remote-defaults.mjs";
 // Key-lifecycle trust predicate + trusted-time resolver (the shared stable secret, contract §5).
 // tools/ runs OFFLINE over the local ledger => the SYNC resolver only (no XRPL close-time rung).
 // Imported from the repo-root verifiers/lib mirror (byte-identical to the CLI copy).
@@ -99,17 +103,61 @@ function effectiveTrustedAttestors() {
   return bundled;
 }
 
-function readVerifierPolicy() {
-  const policyPath =
-    process.env.REPOMESH_VERIFIER_POLICY_PATH ||
-    path.join(LEDGER_CHECKOUT_ROOT, "verifier.policy.json");
-  if (!fs.existsSync(policyPath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(policyPath, "utf8"));
-  } catch (e) {
-    console.error(`Warning: verifier.policy.json read failed: ${e.message}`);
-    return null;
+function resolveVerifierPolicyPath() {
+  if (process.env.REPOMESH_VERIFIER_POLICY_PATH) {
+    return process.env.REPOMESH_VERIFIER_POLICY_PATH;
   }
+  if (process.env.REPOMESH_ROOT) {
+    return path.join(ROOT, "verifier.policy.json");
+  }
+  const checkoutPolicy = path.join(LEDGER_CHECKOUT_ROOT, "verifier.policy.json");
+  if (fs.existsSync(checkoutPolicy)) {
+    return checkoutPolicy;
+  }
+  return path.join(ROOT, "verifier.policy.json");
+}
+
+function readVerifierPolicy() {
+  const policyPath = resolveVerifierPolicyPath();
+  if (!fs.existsSync(policyPath)) {
+    const error = {
+      code: "VERIFIER_POLICY_MISSING",
+      reason: `verifier.policy.json not found at ${policyPath}`,
+      hint: "Restore verifier.policy.json at the checkout root or set REPOMESH_VERIFIER_POLICY_PATH to a valid policy file.",
+    };
+    console.error(`Error [${error.code}]: ${error.reason}. Hint: ${error.hint}`);
+    return { ok: false, policy: null, error };
+  }
+  try {
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+      throw new Error("policy root must be a JSON object");
+    }
+    return { ok: true, policy, error: null };
+  } catch (e) {
+    const error = {
+      code: "VERIFIER_POLICY_UNREADABLE",
+      reason: `verifier.policy.json at ${policyPath} could not be parsed: ${e.message}`,
+      hint: "Fix the JSON syntax in verifier.policy.json or restore it from a clean checkout.",
+    };
+    console.error(`Error [${error.code}]: ${error.reason}. Hint: ${error.hint}`);
+    return { ok: false, policy: null, error };
+  }
+}
+
+function checkPolicyForTools(checkType, policyState) {
+  if (typeof checkType !== "string" || !checkType) return null;
+  if (!policyState.ok) {
+    // Missing or unreadable verifier.policy.json: fail closed for every trusted-set check.
+    const bundled = Object.hasOwn(BUNDLED_CHECK_POLICIES, checkType)
+      ? BUNDLED_CHECK_POLICIES[checkType]
+      : null;
+    if (bundled && bundled.mode === "open") {
+      return { mode: "open", trustedNodes: [] };
+    }
+    return { mode: "trusted-set", trustedNodes: [] };
+  }
+  return resolveCheckPolicy(checkType, policyState.policy);
 }
 
 // A resolved third-party signer is trusted for release verification iff its node id is in the
@@ -699,7 +747,8 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   // (fixes first-match masking, CLI-003).
   const byTypeSigner = new Map(); // key: `${type}|${signerNode}` -> selected record
   const attestTypes = new Set();
-  // Track the set of INDEPENDENT signers (valid signature, node !== release signer).
+  const policyState = readVerifierPolicy();
+  // Track the set of INDEPENDENT signers (valid signature, node !== release signer, allowed for the check).
   // Mirrors the published packages copy: independence is decided over verified
   // attestation signers, not just the presence of attestation records.
   const independentSigners = new Set();
@@ -707,9 +756,6 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3).
     const sigOk = verifySignature(att, events);
     const signerNode = sigOk.ok ? sigOk.nodeId : null;
-    if (sigOk.ok && signerNode && signerNode !== result.release.signerNode) {
-      independentSigners.add(signerNode);
-    }
     const noteLines = String(att.notes || "").split("\n").filter(Boolean);
     for (const a of (att.attestations || [])) {
       if (a.type === "ledger.anchor") continue; // anchor handled separately
@@ -734,6 +780,14 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
       if (!prev || String(rec.timestamp) >= String(prev.timestamp)) {
         byTypeSigner.set(key, rec);
       }
+      if (
+        sigOk.ok &&
+        signerNode &&
+        signerNode !== result.release.signerNode &&
+        isSignerTrustedForCheck(signerNode, checkPolicyForTools(a.type, policyState))
+      ) {
+        independentSigners.add(signerNode);
+      }
     }
   }
 
@@ -750,7 +804,6 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
 
   // The gate, driven by the repo's profile.
   const { profileId, requiredAttestationTypes } = loadProfileForRepo(repo);
-  const verifierPolicy = readVerifierPolicy();
   const gate = {
     profile: profileId,
     requiredAttestationTypes,
@@ -760,6 +813,10 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     independentAttestor: false,
     verdict: "PASS",
   };
+  if (!policyState.ok) {
+    gate.policyError = policyState.error;
+    result.policyError = policyState.error;
+  }
 
   // Does any selected attestation come from an independent attestor (valid sig,
   // signerNode !== release signer)? Computed over verified attestation signers.
@@ -767,7 +824,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   gate.independentAttestor = hasIndependentAttestor;
 
   for (const type of requiredAttestationTypes) {
-    const checkPolicy = verifierPolicy?.checks?.[type] || null;
+    const checkPolicy = checkPolicyForTools(type, policyState);
     // Candidate selected attestations of this type with a valid signature from a signer allowed for this check.
     const candidates = selected.filter(
       r => r.type === type && r.signatureValid && isSignerTrustedForCheck(r.signerNode, checkPolicy)
@@ -807,7 +864,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     if (
       a.signatureValid &&
       a.result === "fail" &&
-      isSignerTrustedForCheck(a.signerNode, verifierPolicy?.checks?.[a.type]) &&
+      isSignerTrustedForCheck(a.signerNode, checkPolicyForTools(a.type, policyState)) &&
       !gate.failed.includes(a.type)
     ) {
       gate.failed.push(a.type);

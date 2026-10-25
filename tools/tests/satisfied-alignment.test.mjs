@@ -51,7 +51,7 @@ function buildRegulatedRoot() {
   fs.copyFileSync(path.join(REPO_ROOT, "profiles", "regulated.json"), path.join(root, "profiles", "regulated.json"));
   fs.copyFileSync(path.join(REPO_ROOT, "profiles", "baseline.json"), path.join(root, "profiles", "baseline.json"));
 
-  const ATTESTOR = "mcp-tool-shop-org/repomesh-security-verifier"; // bundled allowlisted attestor
+  const ATTESTOR = "mcp-tool-shop-org/repomesh"; // bundled allowlisted registry attestor (trusted for all checks)
   const rel = makeKeypair();
   const att = makeKeypair();
 
@@ -66,7 +66,7 @@ function buildRegulatedRoot() {
     if (profileId) fs.writeFileSync(path.join(dir, "repomesh.profile.json"), JSON.stringify({ profileId, profileVersion: "v1" }));
   }
   writeNode("org/app", "compute", "ci-app-2026", rel.publicKeyPem, "regulated");
-  writeNode(ATTESTOR, "attestor", "ci-att-2026", att.publicKeyPem);
+  writeNode(ATTESTOR, "registry", "ci-att-2026", att.publicKeyPem);
 
   const release = signEvent({
     type: "ReleasePublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
@@ -141,7 +141,7 @@ describe("D19: the two verify-release copies report the same satisfied array", (
         (e) => e.type === "ReleasePublished" || !e.attestations?.some((a) => a.type === "security.scan" || a.type === "repro.build"),
       );
       const att = makeKeypair();
-      const attNodePath = path.join(root, "ledger", "nodes", "mcp-tool-shop-org", "repomesh-security-verifier", "node.json");
+      const attNodePath = path.join(root, "ledger", "nodes", "mcp-tool-shop-org", "repomesh", "node.json");
       const attNode = JSON.parse(fs.readFileSync(attNodePath, "utf8"));
       attNode.maintainers[0].publicKey = att.publicKeyPem;
       fs.writeFileSync(attNodePath, JSON.stringify(attNode, null, 2));
@@ -278,6 +278,70 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       assert.deepEqual(pkgResult.gate?.failures || [], []);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("tools no-policy: missing or unreadable verifier.policy.json fails closed for every trusted-set check with structured code + hint", () => {
+    const { spawnSync } = require("node:child_process");
+    function runToolsNoPolicy(root) {
+      const r = spawnSync(
+        process.execPath,
+        [path.join(REPO_ROOT, "tools", "verify-release.mjs"), "--repo", "org/app", "--version", "1.0.0", "--json"],
+        { cwd: REPO_ROOT, env: { ...process.env, REPOMESH_ROOT: root }, encoding: "utf8" },
+      );
+      const blobs = String(r.stdout || "").match(/\{[\s\S]*\}/g);
+      return { status: r.status, out: blobs ? JSON.parse(blobs[blobs.length - 1]) : null };
+    }
+
+    const rootS6a = buildPolicyScopedRoot(({ mkAtt, lic }) => [
+      mkAtt("security.scan", "pass", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:01:00Z"),
+    ]);
+    const rootS6b = buildPolicyScopedRoot(({ mkAtt, lic, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      mkAtt("security.scan", "fail", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:02:00Z"),
+    ]);
+    try {
+      // Missing verifier.policy.json on S6a
+      fs.rmSync(path.join(rootS6a, "verifier.policy.json"));
+      const s6a = runToolsNoPolicy(rootS6a);
+      assert.notEqual(s6a.status, 0, "missing policy must exit non-zero");
+      assert.equal(s6a.out?.ok, false);
+      assert.equal(s6a.out?.gate?.verdict, "FAIL");
+      assert.deepEqual(s6a.out?.gate?.satisfied, ["signature.chain", "repro.build"],
+        "missing policy must treat all trusted-set checks as closed (never satisfy security.scan or other trusted-set checks)");
+      assert.deepEqual(s6a.out?.gate?.missing, ["sbom.present", "provenance.present", "license.audit", "security.scan"]);
+      assert.deepEqual(s6a.out?.gate?.failed, []);
+      assert.ok(s6a.out?.gate?.policyError?.code, "missing policy must report structured policyError.code");
+      assert.ok(s6a.out?.gate?.policyError?.hint, "missing policy must report structured policyError.hint");
+
+      // Missing verifier.policy.json on S6b
+      fs.rmSync(path.join(rootS6b, "verifier.policy.json"));
+      const s6b = runToolsNoPolicy(rootS6b);
+      assert.notEqual(s6b.status, 0, "missing policy must exit non-zero");
+      assert.equal(s6b.out?.ok, false);
+      assert.equal(s6b.out?.gate?.verdict, "FAIL");
+      assert.deepEqual(s6b.out?.gate?.satisfied, ["signature.chain", "repro.build"],
+        "missing policy must treat all trusted-set checks as closed");
+      assert.deepEqual(s6b.out?.gate?.missing, ["sbom.present", "provenance.present", "license.audit", "security.scan"]);
+      assert.deepEqual(s6b.out?.gate?.failed, [],
+        "missing policy must not accept an untrusted-for-check fail into gate.failed");
+      assert.ok(s6b.out?.gate?.policyError?.code, "missing policy must report structured policyError.code");
+      assert.ok(s6b.out?.gate?.policyError?.hint, "missing policy must report structured policyError.hint");
+
+      // Unreadable/corrupt verifier.policy.json on S6b
+      fs.writeFileSync(path.join(rootS6b, "verifier.policy.json"), "{ invalid json");
+      const corrupt = runToolsNoPolicy(rootS6b);
+      assert.notEqual(corrupt.status, 0, "corrupt policy must exit non-zero");
+      assert.equal(corrupt.out?.ok, false);
+      assert.equal(corrupt.out?.gate?.verdict, "FAIL");
+      assert.deepEqual(corrupt.out?.gate?.satisfied, ["signature.chain", "repro.build"]);
+      assert.deepEqual(corrupt.out?.gate?.missing, ["sbom.present", "provenance.present", "license.audit", "security.scan"]);
+      assert.deepEqual(corrupt.out?.gate?.failed, []);
+      assert.ok(corrupt.out?.gate?.policyError?.code, "corrupt policy must report structured policyError.code");
+      assert.ok(corrupt.out?.gate?.policyError?.hint, "corrupt policy must report structured policyError.hint");
+    } finally {
+      fs.rmSync(rootS6a, { recursive: true, force: true });
+      fs.rmSync(rootS6b, { recursive: true, force: true });
     }
   });
 });
