@@ -30,7 +30,7 @@ Independent verifier nodes read the ledger and produce `AttestationPublished` ev
 Each attestation carries a result: `pass`, `warn`, `fail`, or `unscored`.
 
 - `pass` / `warn` / `fail` mean the verifier **ran** and reached that verdict.
-- `unscored` means the verifier **could not run** (e.g. OSV.dev unreachable, the SBOM fetch timed out, Docker unavailable). An `unscored` result earns **zero assurance credit** and is reported as a *missing* check — a transient outage can never inflate a release's score by masquerading as a partial pass. Re-run the verifier once the dependency is reachable.
+- `unscored` means the verifier **could not run** (e.g. OSV.dev unreachable, the SBOM fetch timed out, Docker unavailable). An `unscored` result earns **zero assurance credit** and is reported as a *missing* check — a transient outage can never inflate a release's score by masquerading as a partial pass. Re-run the verifier once the dependency is reachable; per `(check, signer)`, the event at the greater ledger index wins (the signer's timestamp is data only).
 
 ### Layer 3: Anchor Manifests
 

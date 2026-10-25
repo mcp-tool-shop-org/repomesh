@@ -686,4 +686,36 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
       assert.equal(localRes.exitCode, 3, `local (${unbundledType}): exitCode must be 3`);
     });
   }
+
+  it("event-54 shape in CLI: a later ledger index with an earlier timestamp (later fail beats earlier pass)", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-06-21T01:13:55Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-04-12T03:18:12Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, false, "later ledger index fail must beat earlier pass despite earlier timestamp");
+    assert.equal(result?.gate?.status, "FAIL");
+    assert.equal((result?.attestations || []).find((a) => a.type === "security.scan")?.result, "fail");
+    assert.equal(exitCode, 1);
+  });
+
+  it("event-54 mirror in CLI: an earlier ledger index with a later timestamp loses to a later pass", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit", "repro.build"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(attestation({ type: "security.scan", result: "fail", repo: "org/app", ts: "2026-06-21T01:13:55Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    events.push(attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-04-12T03:18:12Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    assert.equal(result?.ok, true, "earlier ledger index with later timestamp must lose to later pass");
+    assert.equal(result?.gate?.status, "PASS");
+    assert.equal((result?.attestations || []).find((a) => a.type === "security.scan")?.result, "pass");
+    assert.equal(exitCode, 0);
+  });
 });

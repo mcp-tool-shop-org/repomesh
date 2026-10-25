@@ -528,4 +528,30 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       }
     });
   }
+
+  it("event-54 shape parity across build-trust, CLI, and tools: later ledger index with earlier timestamp (later fail beats earlier pass)", async () => {
+    const ev54 = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-06-21T01:13:55Z"),
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-04-12T03:18:12Z"),
+    ]);
+    assert.equal(ev54.btEntry.assuranceBreakdown["security.scan"].result, "fail", "event-54 shape: build-trust must say fail");
+    assert.equal(ev54.btEntry.assuranceConsensus["security.scan"].consensus, "fail", "event-54 shape: build-trust consensus must say fail");
+    assert.equal(ev54.pkgResult.ok, false, "event-54 shape: CLI must fail");
+    assert.equal((ev54.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "event-54 shape: CLI selected verdict must be fail");
+    assert.equal(ev54.toolsResult.ok, false, "event-54 shape: tools must fail");
+    assert.equal((ev54.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "fail", "event-54 shape: tools selected verdict must be fail");
+  });
+
+  it("event-54 mirror parity across build-trust, CLI, and tools: earlier ledger index with later timestamp loses", async () => {
+    const ev54Mirror = await runAllThree(({ mkAtt, sec }) => [
+      mkAtt("security.scan", "fail", sec.privateKeyPem, "ci-security-2026", "2026-06-21T01:13:55Z"),
+      mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-04-12T03:18:12Z"),
+    ]);
+    assert.equal(ev54Mirror.btEntry.assuranceBreakdown["security.scan"].result, "pass", "event-54 mirror: build-trust must say pass");
+    assert.equal(ev54Mirror.btEntry.assuranceConsensus["security.scan"].consensus, "pass", "event-54 mirror: build-trust consensus must say pass");
+    assert.equal(ev54Mirror.pkgResult.ok, true, "event-54 mirror: CLI must pass");
+    assert.equal((ev54Mirror.pkgResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "event-54 mirror: CLI selected verdict must be pass");
+    assert.equal(ev54Mirror.toolsResult.ok, true, "event-54 mirror: tools must pass");
+    assert.equal((ev54Mirror.toolsResult.attestations || []).find((a) => a.type === "security.scan")?.result, "pass", "event-54 mirror: tools selected verdict must be pass");
+  });
 });

@@ -990,18 +990,20 @@ export async function computeVerifyResult({
     console.log(`    Signature: VALID (keyId=${release.signature.keyId}, node=${releaseSignerNode})`);
   }
 
-  // 3. Index + verify attestations, select LATEST per (type, signerNode) — CLI-003.
-  const rawAttestations = events.filter(ev =>
-    ev.type === "AttestationPublished" && ev.repo === repo && ev.version === version
-  );
+  // 3. Index + verify attestations, select latest by ledger index per (type, signerNode) — CLI-003.
+  const rawAttestations = events
+    .map((ev, ledgerIndex) => ({ att: ev, ledgerIndex }))
+    .filter(({ att }) =>
+      att.type === "AttestationPublished" && att.repo === repo && att.version === version
+    );
 
-  // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode })
+  // Map: type -> Map(signerNode -> { result, signatureValid, timestamp, signerNode, ledgerIndex })
   const byType = new Map();
   const invalidTypes = new Set();
   const independentSigners = new Set();
   const policyState = await preloadVerifierPolicy(opts);
 
-  for (const att of rawAttestations) {
+  for (const { att, ledgerIndex } of rawAttestations) {
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3): a windowed
     // attestor key out of its window resolves to no key, so the attestation is excluded.
     const sigOk = await verifySignature(att, opts, keyOpts);
@@ -1027,6 +1029,7 @@ export async function computeVerifyResult({
         signatureValid: sigOk.ok,
         timestamp: ts,
         signerNode,
+        ledgerIndex,
       });
       if (
         sigOk.ok &&

@@ -797,4 +797,54 @@ describe("build-trust scores only verdicts the signer is authorised for", () => 
     });
     assert.equal(res.ok, false, "F1-M1c: !auth.ok alone must reject URI verdict from unauthorised governance signer");
   });
+
+  it("event-54 shape: a later ledger index with an earlier timestamp (later fail beats earlier pass) in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlierIndexLaterTsPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-06-21T01:13:55.000Z",
+      notes: "repro.build: pass — earlier ledger entry with later timestamp",
+    }), "att-key", AK.privateKey);
+    const laterIndexEarlierTsFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-04-12T03:18:12.425Z",
+      notes: "repro.build: fail — later ledger entry with backfilled earlier timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlierIndexLaterTsPass, laterIndexEarlierTsFail], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "fail", "later ledger index fail must beat earlier pass despite earlier timestamp");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "fail");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "fail");
+    assert.equal(entry.assuranceScore, 0);
+  });
+
+  it("event-54 mirror: an earlier ledger index with a later timestamp loses to a later pass in build-trust", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const earlierIndexLaterTsFail = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:fail" },
+    ], {
+      timestamp: "2026-06-21T01:13:55.000Z",
+      notes: "repro.build: fail — earlier ledger entry with later timestamp",
+    }), "att-key", AK.privateKey);
+    const laterIndexEarlierTsPass = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-04-12T03:18:12.425Z",
+      notes: "repro.build: pass — later ledger entry with earlier timestamp",
+    }), "att-key", AK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, earlierIndexLaterTsFail, laterIndexEarlierTsPass], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "earlier ledger index with later timestamp must lose to later ledger index pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].result, "pass");
+    assert.equal(entry.assuranceScore, 30);
+  });
 });

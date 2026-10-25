@@ -720,17 +720,27 @@ export function isSignerTrustedForCheck(signerNode, checkPolicy) {
   return true;
 }
 
-// selectLatestVerdictPerSigner(byKind, kind, signerNode, candidate) -> boolean
-// Shared latest-wins rule across registry/scripts/build-trust.mjs,
+// selectLatestVerdictPerSigner(byKind, kind, signerNode, candidate, ledgerIndex) -> boolean
+// Shared ledger-order rule across registry/scripts/build-trust.mjs,
 // packages/repomesh-cli/src/verify/verify-release.mjs, and tools/verify-release.mjs.
-// Per (kind, signerNode), the latest timestamp wins; timestamp ties go to the later
-// ledger position. Events with an invalid signature (signatureValid === false or missing
-// signerNode) never compete.
-export function selectLatestVerdictPerSigner(byKind, kind, signerNode, candidate) {
+// Per (kind, signerNode), the event with the greater ledger index (its position in the
+// loaded events array) wins; the signer's timestamp is data only and never used for
+// ordering. Events with an invalid signature or without a valid integer ledger index
+// never compete (fail closed).
+export function selectLatestVerdictPerSigner(
+  byKind,
+  kind,
+  signerNode,
+  candidate,
+  ledgerIndex = candidate?.ledgerIndex,
+) {
   if (!(byKind instanceof Map)) return false;
   if (typeof kind !== "string" || !kind) return false;
   if (typeof signerNode !== "string" || !signerNode) return false;
   if (!candidate || typeof candidate !== "object" || candidate.signatureValid === false) {
+    return false;
+  }
+  if (!Number.isInteger(ledgerIndex) || ledgerIndex < 0) {
     return false;
   }
   let perSigner = byKind.get(kind);
@@ -738,21 +748,14 @@ export function selectLatestVerdictPerSigner(byKind, kind, signerNode, candidate
     perSigner = new Map();
     byKind.set(kind, perSigner);
   }
+  const entry = candidate.ledgerIndex === ledgerIndex ? candidate : { ...candidate, ledgerIndex };
   const prev = perSigner.get(signerNode);
   if (!prev) {
-    perSigner.set(signerNode, candidate);
+    perSigner.set(signerNode, entry);
     return true;
   }
-  const candTs = typeof candidate.timestamp === "string" ? candidate.timestamp : "";
-  const prevTs = typeof prev.timestamp === "string" ? prev.timestamp : "";
-  const candMs = Date.parse(candTs);
-  const prevMs = Date.parse(prevTs);
-  const candWins =
-    !Number.isNaN(candMs) && !Number.isNaN(prevMs)
-      ? candMs >= prevMs
-      : candTs >= prevTs;
-  if (candWins) {
-    perSigner.set(signerNode, candidate);
+  if (!Number.isInteger(prev.ledgerIndex) || ledgerIndex > prev.ledgerIndex) {
+    perSigner.set(signerNode, entry);
     return true;
   }
   return false;

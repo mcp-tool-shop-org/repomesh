@@ -690,15 +690,17 @@ export function buildTrust(opts = {}) {
   // REG-004: verify EVERY event's signature up front; keep only those that pass. A forged or
   // unauthorized event never contributes to any score. (keyId collisions throw and halt the build.)
   const verifiedEvents = [];
-  for (const ev of events) {
+  for (let ledgerIndex = 0; ledgerIndex < events.length; ledgerIndex++) {
+    const ev = events[ledgerIndex];
     const v = verifyEventSignature(ev, ctx);
     if (v.ok) {
-      verifiedEvents.push({ ev, signerNode: v.signerNode });
+      verifiedEvents.push({ ev, signerNode: v.signerNode, ledgerIndex });
     } else {
       console.warn(`Warning: dropping ${ev.type} ${ev.repo}@${ev.version} — signature not verified (${v.reason}).`);
     }
   }
   const signerByEvent = new Map(verifiedEvents.map(({ ev, signerNode }) => [ev, signerNode]));
+  const ledgerIndexByEvent = new Map(verifiedEvents.map(({ ev, ledgerIndex }) => [ev, ledgerIndex]));
   const okEvents = verifiedEvents.map(({ ev }) => ev);
 
   // Index releases (verified only)
@@ -727,7 +729,7 @@ export function buildTrust(opts = {}) {
   }
 
   // Collect ALL attestation sources per (release, check kind) — from verified AttestationPublished.
-  // Per (kind, signerNode), the latest timestamp wins (ties go to the later ledger position).
+  // Per (kind, signerNode), the event with the greater ledger index wins (timestamp is data only).
   const manifestByNode = new Map(nodeManifests.map(({ id, manifest }) => [id, manifest]));
   const rawSources = {};
   for (const ev of okEvents) {
@@ -735,6 +737,7 @@ export function buildTrust(opts = {}) {
     const key = `${ev.repo}@${ev.version}`;
     if (!releases[key]) continue;
     const signerNode = signerByEvent.get(ev) || "unknown";
+    const ledgerIndex = ledgerIndexByEvent.get(ev);
     const signerKind = manifestByNode.get(signerNode)?.kind || null;
     const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
     const evAttTypes = new Set(evAttestations.map((a) => a?.type).filter(Boolean));
@@ -765,6 +768,7 @@ export function buildTrust(opts = {}) {
             node: signerNode,
             timestamp: ev.timestamp,
             signatureValid: true,
+            ledgerIndex,
           });
         } else if (ATTESTATION_NEARMISS_RE.test(line)) {
           // ANC-B10: looks like an attestation result line but the full pattern didn't match (bad
@@ -805,6 +809,7 @@ export function buildTrust(opts = {}) {
             node: signerNode,
             timestamp: ev.timestamp,
             signatureValid: true,
+            ledgerIndex,
           });
         }
       }

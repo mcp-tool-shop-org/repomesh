@@ -21,6 +21,7 @@ import {
   __deriveLegacyForTests,
   mergeStricterWindow,
   isBundledTrustedAnchorEvent,
+  selectLatestVerdictPerSigner,
 } from "../lib/key-window.mjs";
 
 // --- Fixtures -----------------------------------------------------------------------------
@@ -903,5 +904,95 @@ describe("isBundledTrustedAnchorEvent — anchor keys honour their key windows",
       revokedAt: "not-a-date",
     };
     assert.equal(checkWithMaintainer(m, makeAnchor("anchor-broken", "2026-06-10T00:00:00.000Z")), false);
+  });
+});
+
+describe("selectLatestVerdictPerSigner — ledger position wins (never timestamp)", () => {
+  it("event-54 shape: a candidate with a greater ledgerIndex wins even when its timestamp is earlier", () => {
+    const byKind = new Map();
+    assert.equal(
+      selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+        result: "pass",
+        timestamp: "2026-06-21T01:13:55.000Z",
+        signatureValid: true,
+        ledgerIndex: 53,
+      }),
+      true,
+    );
+    assert.equal(
+      selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+        result: "fail",
+        timestamp: "2026-04-12T03:18:12.425Z",
+        signatureValid: true,
+        ledgerIndex: 54,
+      }),
+      true,
+      "later ledgerIndex (54 > 53) must win despite earlier self-asserted timestamp",
+    );
+    assert.equal(byKind.get("repro.build").get("mcp-tool-shop-org/repomesh").result, "fail");
+  });
+
+  it("event-54 mirror: a candidate with a smaller ledgerIndex loses even when its timestamp is later", () => {
+    const byKind = new Map();
+    assert.equal(
+      selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+        result: "fail",
+        timestamp: "2026-04-12T03:18:12.425Z",
+        signatureValid: true,
+        ledgerIndex: 54,
+      }),
+      true,
+    );
+    assert.equal(
+      selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+        result: "pass",
+        timestamp: "2026-06-21T01:13:55.000Z",
+        signatureValid: true,
+        ledgerIndex: 53,
+      }),
+      false,
+      "smaller ledgerIndex (53 < 54) must lose despite later self-asserted timestamp",
+    );
+    assert.equal(byKind.get("repro.build").get("mcp-tool-shop-org/repomesh").result, "fail");
+  });
+
+  it("fails closed when candidate lacks a valid non-negative integer ledgerIndex", () => {
+    const byKind = new Map();
+    for (const badIdx of [undefined, null, -1, 1.5, NaN, Infinity, "54", {}]) {
+      assert.equal(
+        selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+          result: "pass",
+          timestamp: "2026-06-21T01:13:55.000Z",
+          signatureValid: true,
+          ledgerIndex: badIdx,
+        }),
+        false,
+        `invalid ledgerIndex (${String(badIdx)}) must never win on an empty map`,
+      );
+    }
+    assert.equal(byKind.get("repro.build"), undefined);
+
+    assert.equal(
+      selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+        result: "pass",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        signatureValid: true,
+        ledgerIndex: 0,
+      }),
+      true,
+    );
+    for (const badIdx of [undefined, null, -1, 1.5, NaN, Infinity, "54"]) {
+      assert.equal(
+        selectLatestVerdictPerSigner(byKind, "repro.build", "mcp-tool-shop-org/repomesh", {
+          result: "fail",
+          timestamp: "2026-12-31T23:59:59.000Z",
+          signatureValid: true,
+          ledgerIndex: badIdx,
+        }),
+        false,
+        `invalid ledgerIndex (${String(badIdx)}) must never override an existing entry`,
+      );
+    }
+    assert.equal(byKind.get("repro.build").get("mcp-tool-shop-org/repomesh").result, "pass");
   });
 });

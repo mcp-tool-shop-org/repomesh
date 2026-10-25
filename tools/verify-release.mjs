@@ -9,7 +9,7 @@
 //
 // Checks (post-amend, contract D1/D4/D5):
 //   1. ReleasePublished event exists and is signed by a maintainer OF ITS OWN REPO (repo-bound, D1).
-//   2. Profile-required attestations are present, signed by a TRUSTED attestor, selected-latest
+//   2. Profile-required attestations are present, signed by a TRUSTED attestor, selected-latest (by ledger index)
 //      result === pass; AND the release has >=1 INDEPENDENT witness (an attestor whose
 //      signerNode !== the release signer, OR a verified/--anchored-or-local-accepted anchor)
 //      UNCONDITIONALLY — regardless of profile. With no independent witness the verdict is
@@ -714,14 +714,16 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   }
 
   // 3. Find + verify attestations, then run the profile-driven gate (D5).
-  const attestationEvents = events.filter(ev =>
-    ev.type === "AttestationPublished" && ev.repo === repo && ev.version === version
-  );
+  const attestationEvents = events
+    .map((ev, ledgerIndex) => ({ att: ev, ledgerIndex }))
+    .filter(({ att }) =>
+      att.type === "AttestationPublished" && att.repo === repo && att.version === version
+    );
 
-  // Index every (type, signerNode) → list of {result, signatureValid, timestamp}. Verify each
-  // attestation's signature (third-party path). Select LATEST by timestamp per (type, signerNode)
-  // via the shared selectLatestVerdictPerSigner helper (ties go to the later ledger position;
-  // invalid-signature events never compete).
+  // Index every (type, signerNode) → list of {result, signatureValid, timestamp, ledgerIndex}. Verify each
+  // attestation's signature (third-party path). Select latest by ledger index per (type, signerNode)
+  // via the shared selectLatestVerdictPerSigner helper (greater ledger index wins; timestamp is data
+  // only; invalid-signature or unindexed events never compete).
   const byType = new Map();
   const invalidTypes = new Set();
   const attestTypes = new Set();
@@ -730,7 +732,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   // Mirrors the published packages copy: independence is decided over verified
   // attestation signers, not just the presence of attestation records.
   const independentSigners = new Set();
-  for (const att of attestationEvents) {
+  for (const { att, ledgerIndex } of attestationEvents) {
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3).
     const sigOk = verifySignature(att, events);
     const signerNode = sigOk.ok ? sigOk.nodeId : null;
@@ -755,6 +757,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
         signatureValid: sigOk.ok,
         signerNode,
         timestamp: att.timestamp || "",
+        ledgerIndex,
       };
       selectLatestVerdictPerSigner(byType, a.type, signerNode, rec);
       if (
@@ -772,7 +775,8 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   const selected = [];
   for (const [, perSigner] of byType) {
     for (const [, rec] of perSigner) {
-      selected.push(rec);
+      const { ledgerIndex: _ledgerIndex, ...rest } = rec;
+      selected.push(rest);
     }
   }
   result.attestations = selected;
