@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Docs
 
-- **Release docs.** The README and handbook say what is new in 2.4 and 2.5, list Cognate's run attestations, move `PolicyViolation` to the emitted types (`check-policy.mjs` emits it), and describe the CI test gate. The handbook's node-kind table now follows `verifier.policy.json`, and a new page covers 2.4 and 2.5. The README tagline and the landing page match the repository description.
+- **Release docs.** The README and handbook say what is new in 2.4 and 2.5, list Cognate's run attestations, note that `check-policy.mjs` can build a `PolicyViolation` though none is on the ledger yet, and describe the CI test gate. The handbook's node-kind table now follows `verifier.policy.json`, and a new page covers 2.4 and 2.5. The README tagline and the landing page match the repository description.
 
 ### Added
 

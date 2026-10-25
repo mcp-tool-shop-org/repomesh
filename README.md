@@ -236,7 +236,6 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `attestation.dispute` | A trusted node disputes an attestation (downgrades the verdict) |
 | `KeyRotation` | A maintainer key is rotated to a successor (prospective — past signatures stay valid) |
 | `KeyRevocation` | A maintainer key is revoked (compromise = retroactive invalidity, RFC 5280) |
-| `PolicyViolation` | `policy/scripts/check-policy.mjs` finds a violation (none on the ledger yet) |
 
 `AttestationPublished` also carries Cognate's run attestations (`run.preregistered`, `run.outcome`,
 `cognate.root.anchored`, since 2.4.0), signed only by its `governance` node.
@@ -249,6 +248,7 @@ implying coverage that does not exist (front-door honesty for a trust product).
 | `HealthCheckFailed` | A node fails its own health checks |
 | `DependencyVulnFound` | A vulnerability is found in dependencies |
 | `InterfaceUpdated` | An interface schema changes |
+| `PolicyViolation` | A network policy is violated. `policy/scripts/check-policy.mjs` can build and sign one; none is on the ledger yet |
 
 ## Key Rotation & Revocation
 
