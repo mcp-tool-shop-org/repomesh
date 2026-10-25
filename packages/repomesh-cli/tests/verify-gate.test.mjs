@@ -245,4 +245,29 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     const blob = JSON.stringify(result).toLowerCase();
     assert.match(blob, /unverified/, "self-signed-only should be reported UNVERIFIED");
   });
+
+  it("per-type note matching: a first-line pass for another type does NOT satisfy a listed type whose note fails or is absent", async () => {
+    const { attestor, release } = setupRegulatedRelease();
+    const events = [release];
+    for (const t of ["sbom.present", "provenance.present", "signature.chain", "license.audit"]) {
+      events.push(attestation({ type: t, result: "pass", repo: "org/app", ts: "2026-01-02T00:00:00Z", keyId: "ci-attestor-2026", key: attestor.privateKey }));
+    }
+    events.push(signEvent({
+      type: "AttestationPublished", repo: "org/app", version: "1.0.0",
+      commit: "abcdef0", timestamp: "2026-01-02T00:00:00Z",
+      artifacts: [{ name: "att", sha256: "b".repeat(64), uri: "x" }],
+      attestations: [
+        { type: "repro.build", uri: "https://example/repro.build" },
+        { type: "security.scan", uri: "https://example/security.scan" },
+      ],
+      notes: "repro.build: pass — reproducible build verified\nsecurity.scan: fail — vulnerability detected",
+    }, "ci-attestor-2026", attestor.privateKey));
+    writeEvents(events);
+    const { exitCode, result } = await runVerify({ repo: "org/app", version: "1.0.0" });
+    const scanAtt = (result?.attestations || []).find((a) => a.type === "security.scan");
+    assert.equal(scanAtt?.result, "fail", "security.scan must match its own note line (fail), not the first line (repro.build: pass)");
+    assert.equal(result?.ok, false, "gate must fail when security.scan note is fail behind a first-line pass for another type");
+    assert.ok(!(result?.gate?.satisfied || []).includes("security.scan"), "security.scan must not be reported satisfied");
+    assert.equal(exitCode, 1);
+  });
 });

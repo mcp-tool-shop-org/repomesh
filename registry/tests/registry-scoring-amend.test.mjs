@@ -589,4 +589,38 @@ describe("build-trust scores only verdicts the signer is authorised for", () => 
       "warning must name signer and kind for dropped unlisted note kind",
     );
   });
+
+  it("drops URI verdicts whose kind does not match the attestation entry type or is unauthorised for the signer", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const mismatchedUriEv = sign(attestation([
+      { type: "license.audit", uri: "repomesh:attestor:sbom.present:pass" },
+      { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      notes: "license.audit: pass — ok",
+    }), "att-key", AK.privateKey);
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    let entry;
+    try {
+      entry = entryFor(sandbox([rel, mismatchedUriEv], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run());
+    } finally {
+      console.warn = origWarn;
+    }
+
+    assert.equal(entry.assuranceBreakdown["license.audit"].result, "pass", "authorised license.audit note must still count");
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "missing", "mismatched URI kind repro.build must be dropped");
+    assert.equal(entry.assuranceConsensus["repro.build"], undefined, "repro.build must have no recorded sources from mismatched URI");
+    assert.equal(entry.attestationSources["sbom.present"], undefined, "sbom.present must have no recorded sources from mismatched URI");
+    assert.equal(entry.assuranceScore, 30, "assuranceScore must reflect only license.audit pass (30)");
+    assert.ok(
+      warnings.some((w) => w.includes(ATTESTOR) && w.includes("sbom.present") && w.includes("URI verdict")),
+      "warning must name signer and kind for dropped sbom.present URI verdict",
+    );
+    assert.ok(
+      warnings.some((w) => w.includes(ATTESTOR) && w.includes("repro.build") && w.includes("URI verdict")),
+      "warning must name signer and kind for dropped repro.build URI verdict",
+    );
+  });
 });

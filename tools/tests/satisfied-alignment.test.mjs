@@ -131,4 +131,54 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("per-type note matching: both tools and CLI match the note line for each attestation type rather than the first note line", async () => {
+    const root = buildRegulatedRoot();
+    try {
+      const ledgerPath = path.join(root, "ledger", "events", "events.jsonl");
+      const rawEvents = fs.readFileSync(ledgerPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      const kept = rawEvents.filter(
+        (e) => e.type === "ReleasePublished" || !e.attestations?.some((a) => a.type === "security.scan" || a.type === "repro.build"),
+      );
+      const att = makeKeypair();
+      const attNodePath = path.join(root, "ledger", "nodes", "mcp-tool-shop-org", "repomesh-security-verifier", "node.json");
+      const attNode = JSON.parse(fs.readFileSync(attNodePath, "utf8"));
+      attNode.maintainers[0].publicKey = att.publicKeyPem;
+      fs.writeFileSync(attNodePath, JSON.stringify(attNode, null, 2));
+      const resigned = kept.map((ev) =>
+        ev.type === "AttestationPublished" ? signEvent(ev, att.privateKeyPem, "ci-att-2026") : ev,
+      );
+      resigned.push(signEvent({
+        type: "AttestationPublished", repo: "org/app", version: "1.0.0", commit: "abcdef0",
+        timestamp: "2026-01-02T00:00:00Z", artifacts: [{ name: "att", sha256: "b".repeat(64), uri: "x" }],
+        attestations: [
+          { type: "repro.build", uri: "x" },
+          { type: "security.scan", uri: "x" },
+        ],
+        notes: "repro.build: pass — first line\nsecurity.scan: fail — second line",
+      }, att.privateKeyPem, "ci-att-2026"));
+      fs.writeFileSync(ledgerPath, resigned.map((e) => JSON.stringify(e)).join("\n") + "\n");
+
+      let toolsResult;
+      try {
+        toolsResult = runToolsCopy(root);
+      } catch (e) {
+        const blobs = String(e.stdout || "").match(/\{[\s\S]*\}/g);
+        toolsResult = JSON.parse(blobs[blobs.length - 1]);
+      }
+      const pkgResult = await runPackagesCopy(root);
+
+      const toolsScan = (toolsResult.attestations || []).find((a) => a.type === "security.scan");
+      const pkgScan = (pkgResult.attestations || []).find((a) => a.type === "security.scan");
+      assert.equal(toolsScan?.result, "fail", "tools/verify-release.mjs must read security.scan's own note line (fail)");
+      assert.equal(pkgScan?.result, "fail", "CLI verify-release.mjs must read security.scan's own note line (fail)");
+      assert.equal(toolsResult.ok, false);
+      assert.equal(pkgResult.ok, false);
+      assert.ok((toolsResult.gate?.failed || []).includes("security.scan"));
+      assert.ok(!(toolsResult.gate?.satisfied || []).includes("security.scan"));
+      assert.ok(!(pkgResult.gate?.satisfied || []).includes("security.scan"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
