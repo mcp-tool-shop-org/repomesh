@@ -48,7 +48,7 @@ import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
   BUNDLED_TRUSTED_ATTESTORS, BUNDLED_TRUSTED_RUN_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
-  BUNDLED_RUN_ATTESTATION_TYPES,
+  BUNDLED_RUN_ATTESTATION_TYPES, BUNDLED_CHECK_POLICIES,
   preloadVerifierPolicy, readVerifierPolicy, checkPolicyForCli,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
@@ -1032,6 +1032,7 @@ export async function computeVerifyResult({
         sigOk.ok &&
         signerNode &&
         signerNode !== releaseSignerNode &&
+        Object.hasOwn(BUNDLED_CHECK_POLICIES, t) &&
         isSignerTrustedForCheck(signerNode, checkPolicyForCli(t, policyState))
       ) {
         independentSigners.add(signerNode);

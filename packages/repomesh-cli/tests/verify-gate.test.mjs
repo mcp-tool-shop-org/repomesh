@@ -484,17 +484,18 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
         },
       },
     });
-    assert.equal(customTrusted.mode, "trusted-set");
-    assert.deepEqual(customTrusted.trustedNodes, ["mcp-tool-shop-org/repomesh"]);
+    assert.deepEqual(customTrusted, { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", customTrusted), false);
 
     const customOpen = remoteDefaults.resolveCheckPolicy("custom.open", {
       checks: { "custom.open": { mode: "open" } },
     });
-    assert.equal(customOpen.mode, "open");
-    assert.deepEqual(customOpen.trustedNodes, []);
+    assert.deepEqual(customOpen, { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", customOpen), false);
 
-    assert.equal(remoteDefaults.resolveCheckPolicy("", null), null);
-    assert.equal(remoteDefaults.resolveCheckPolicy("unknown.check", null), null);
+    assert.deepEqual(remoteDefaults.resolveCheckPolicy("", null), { mode: "trusted-set", trustedNodes: [] });
+    assert.deepEqual(remoteDefaults.resolveCheckPolicy("unknown.check", null), { mode: "trusted-set", trustedNodes: [] });
+    assert.equal(isSignerTrustedForCheck("mcp-tool-shop-org/repomesh", remoteDefaults.resolveCheckPolicy("unknown.check", null)), false);
   });
 
   it("CLI-003 mirror: fail then a later pass from the same trusted signer resolves to PASS", async () => {
@@ -638,4 +639,51 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     assert.deepEqual(checkPolicyForCli("repro.build", { ok: false }), { mode: "open", trustedNodes: [] });
     assert.deepEqual(checkPolicyForCli("sbom.present", { ok: false }), { mode: "trusted-set", trustedNodes: [] });
   });
+
+  for (const unbundledType of ["custom.unbundled", "Repro.Build"]) {
+    it(`unbundled check type (${unbundledType}) resolves closed for independence in remote mode and CLI --local mode`, async () => {
+      const rel = makeKeypair();
+      const lic = makeKeypair();
+      writeNode("org/app", "compute", "ci-app-2026", rel.publicPem, "baseline");
+      writeNode("mcp-tool-shop-org/repomesh-license-verifier", "attestor", "ci-license-2026", lic.publicPem);
+      const release = signEvent({
+        type: "ReleasePublished", repo: "org/app", version: "1.0.0",
+        commit: "abcdef0", timestamp: "2026-01-01T00:00:00Z",
+        artifacts: [{ name: "a", sha256: "a".repeat(64), uri: "x" }], attestations: [],
+      }, "ci-app-2026", rel.privateKey);
+      // Crafted event bypassing schema ingest with an unbundled check type
+      const crafted = attestation({
+        type: unbundledType,
+        result: "pass",
+        repo: "org/app",
+        ts: "2026-01-02T00:01:00Z",
+        keyId: "ci-license-2026",
+        key: lic.privateKey,
+      });
+      writeEvents([release, crafted]);
+
+      // 1. Remote mode (no fetched policy or with default policy)
+      const remoteRes = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+      assert.equal(remoteRes.result?.ok, false, `remote (${unbundledType}): unbundled type must not count toward independence`);
+      assert.deepEqual(remoteRes.result?.gate?.independentAttestors, [], `remote (${unbundledType}): independentAttestors must be empty`);
+      assert.equal(remoteRes.result?.gate?.status, "UNVERIFIED", `remote (${unbundledType}): gate.status must be UNVERIFIED`);
+      assert.equal(remoteRes.exitCode, 3, `remote (${unbundledType}): exitCode must be 3`);
+
+      // 2. CLI --local mode even when local policy declares the unbundled check as mode: "open"
+      const repoPolicy = JSON.parse(
+        fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"),
+      );
+      repoPolicy.checks = {
+        ...repoPolicy.checks,
+        [unbundledType]: { mode: "open" },
+      };
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), JSON.stringify(repoPolicy), "utf8");
+
+      const localRes = await runVerify({ repo: "org/app", version: "1.0.0", local: true, localDir: tmpRoot });
+      assert.equal(localRes.result?.ok, false, `local (${unbundledType}): unbundled type must not count toward independence`);
+      assert.deepEqual(localRes.result?.gate?.independentAttestors, [], `local (${unbundledType}): independentAttestors must be empty`);
+      assert.equal(localRes.result?.gate?.status, "UNVERIFIED", `local (${unbundledType}): gate.status must be UNVERIFIED`);
+      assert.equal(localRes.exitCode, 3, `local (${unbundledType}): exitCode must be 3`);
+    });
+  }
 });

@@ -483,4 +483,49 @@ describe("D19: the two verify-release copies report the same satisfied array", (
     });
   }
 
+  for (const unbundledType of ["custom.unbundled", "Repro.Build"]) {
+    it(`tools unbundled check type (${unbundledType}): resolves closed for independence even if policy declares it open`, () => {
+      const { spawnSync } = require("node:child_process");
+      const root = buildPolicyScopedRoot(({ mkAtt, lic }) => [
+        mkAtt(unbundledType, "pass", lic.privateKeyPem, "ci-license-2026", "2026-01-02T00:01:00Z"),
+      ]);
+      try {
+        // Switch org/app to baseline profile so no required attestation checks are missing;
+        // only the independence gate stands between UNVERIFIED and PASS.
+        const appProfilePath = path.join(root, "ledger", "nodes", "org", "app", "repomesh.profile.json");
+        fs.writeFileSync(appProfilePath, JSON.stringify({ profileId: "baseline", profileVersion: "v1" }), "utf8");
+
+        // Keep only the ReleasePublished event + the crafted unbundled attestation event
+        const ledgerPath = path.join(root, "ledger", "events", "events.jsonl");
+        const lines = fs.readFileSync(ledgerPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+        const filtered = lines.filter(
+          (ev) => ev.type === "ReleasePublished" || (ev.attestations || []).some((a) => a.type === unbundledType),
+        );
+        fs.writeFileSync(ledgerPath, filtered.map((ev) => JSON.stringify(ev)).join("\n") + "\n", "utf8");
+
+        // Even if verifier.policy.json declares the unbundled check as mode: "open", it must stay closed
+        const policyPath = path.join(root, "verifier.policy.json");
+        const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+        policy.checks = {
+          ...policy.checks,
+          [unbundledType]: { mode: "open" },
+        };
+        fs.writeFileSync(policyPath, JSON.stringify(policy, null, 2), "utf8");
+
+        const r = spawnSync(
+          process.execPath,
+          [path.join(REPO_ROOT, "tools", "verify-release.mjs"), "--repo", "org/app", "--version", "1.0.0", "--json"],
+          { cwd: REPO_ROOT, env: { ...process.env, REPOMESH_ROOT: root }, encoding: "utf8" },
+        );
+        const blobs = String(r.stdout || "").match(/\{[\s\S]*\}/g);
+        const out = blobs ? JSON.parse(blobs[blobs.length - 1]) : null;
+        assert.notEqual(r.status, 0, `${unbundledType}: must not exit 0`);
+        assert.equal(out?.ok, false, `${unbundledType}: out.ok must be false`);
+        assert.equal(out?.gate?.independentAttestor, false, `${unbundledType}: gate.independentAttestor must be false`);
+        assert.equal(out?.gate?.verdict, "UNVERIFIED", `${unbundledType}: gate.verdict must be UNVERIFIED`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
 });

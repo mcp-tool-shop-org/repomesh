@@ -25,6 +25,7 @@ import { merkleRootForAlgo } from "../anchor/xrpl/scripts/merkle.mjs";
 import { verifyAnchorTx } from "../anchor/xrpl/scripts/verify-anchor.mjs";
 import { resolveTrustedAnchorAccounts } from "../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
 import {
+  BUNDLED_CHECK_POLICIES,
   validateVerifierPolicyShape,
   readVerifierPolicyStateSync,
   checkPolicyForCli as checkPolicyForTools,
@@ -760,6 +761,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
         sigOk.ok &&
         signerNode &&
         signerNode !== result.release.signerNode &&
+        Object.hasOwn(BUNDLED_CHECK_POLICIES, a.type) &&
         isSignerTrustedForCheck(signerNode, checkPolicyForTools(a.type, policyState))
       ) {
         independentSigners.add(signerNode);
