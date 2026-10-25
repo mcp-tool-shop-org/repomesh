@@ -48,7 +48,8 @@ import {
   DEFAULT_LEDGER_URL, DEFAULT_NODES_URL,
   DEFAULT_MANIFESTS_URL, DEFAULT_ANCHORS_URL,
   BUNDLED_TRUSTED_ATTESTORS, BUNDLED_TRUSTED_RUN_ATTESTORS, BUNDLED_ATTESTOR_KINDS,
-  BUNDLED_RUN_ATTESTATION_TYPES, resolveCheckPolicy,
+  BUNDLED_RUN_ATTESTATION_TYPES,
+  preloadVerifierPolicy, readVerifierPolicy, checkPolicyForCli,
 } from "../remote-defaults.mjs";
 import { canonicalize } from "./canonicalize.mjs";
 import { merkleRootForAlgo, isSupportedMerkleAlgo } from "./merkle.mjs";
@@ -141,20 +142,12 @@ function extractKeyFromNode(node, keyId) {
 // if their id is allowlisted. Mirrors tools/verify-release.mjs effectiveTrustedAttestors().
 function effectiveTrustedAttestors(opts) {
   const bundled = new Set(BUNDLED_TRUSTED_ATTESTORS);
-  // Best-effort: read a LOCAL verifier.policy.json (a checkout/clone) and INTERSECT. Remote policy
-  // is intentionally NOT trusted to widen, so we never fetch it to expand the set; absence => bundled.
-  if (opts?.local && opts?.root) {
-    try {
-      const p = path.join(opts.root, "verifier.policy.json");
-      if (fs.existsSync(p)) {
-        const policy = parseStrictJson(fs.readFileSync(p, "utf8"));
-        const fetched = Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : null;
-        if (fetched) {
-          // narrow-only: keep just the bundled nodes the policy ALSO lists.
-          return new Set([...bundled].filter(id => fetched.includes(id)));
-        }
-      }
-    } catch (e) { debugLog(`verifier.policy.json read failed (using bundled allowlist): ${e.message}`); }
+  // Read a validated local or fetched verifier.policy.json and INTERSECT (narrow-only).
+  const policy = readVerifierPolicy(opts);
+  const fetched = Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : null;
+  if (fetched) {
+    // narrow-only: keep just the bundled nodes the policy ALSO lists.
+    return new Set([...bundled].filter(id => fetched.includes(id)));
   }
   return bundled;
 }
@@ -348,22 +341,9 @@ async function buildKeyWindowCtx(ev, events, opts, { online } = {}) {
 // revoke); absence => no governance signer, only Path A (surviving same-node) authorizes.
 function readTrustedPolicyNodes(opts) {
   if (!opts?.local || !opts?.root) return new Set();
-  try {
-    const p = path.join(opts.root, "verifier.policy.json");
-    if (!fs.existsSync(p)) return new Set();
-    const policy = parseStrictJson(fs.readFileSync(p, "utf8"));
-    const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
-    return new Set(ids.filter(id => typeof id === "string"));
-  } catch (e) { debugLog(`trustedPolicy read failed: ${e.message}`); return new Set(); }
-}
-
-function readVerifierPolicy(opts) {
-  if (!opts?.local || !opts?.root) return null;
-  try {
-    const p = path.join(opts.root, "verifier.policy.json");
-    if (!fs.existsSync(p)) return null;
-    return parseStrictJson(fs.readFileSync(p, "utf8"));
-  } catch (e) { debugLog(`verifier.policy.json read failed: ${e.message}`); return null; }
+  const policy = readVerifierPolicy(opts);
+  const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
+  return new Set(ids.filter(id => typeof id === "string"));
 }
 
 // Resolve a maintainer object {keyId,publicKey,...} by keyId from a loaded node.json (local or cached remote).
@@ -845,14 +825,14 @@ function requiredAttestationTypes(profileDef) {
 //   - otherwise                                     -> isRepoMeshCheckout() auto-detect, root = cwd
 // This fixes the doc/impl drift where `local` was unconditionally overwritten by the auto-detect.
 export async function computeVerifyResult({
-  repo, version, anchored, anchoredOrLocal, ledgerUrl, nodesUrl, manifestsUrl,
+  repo, version, anchored, anchoredOrLocal, ledgerUrl, nodesUrl, manifestsUrl, policyUrl,
   local, localDir, human = false,
   preloadedEvents = null,
 }) {
   const explicitLocal = local === true || localDir !== undefined && localDir !== null;
   const useLocal = explicitLocal ? true : isRepoMeshCheckout();
   const root = explicitLocal ? (localDir || process.cwd()) : process.cwd();
-  const opts = { local: useLocal, root, ledgerUrl, nodesUrl, manifestsUrl };
+  const opts = { local: useLocal, root, ledgerUrl, nodesUrl, manifestsUrl, policyUrl };
 
   if (human) progress("1/4", "Loading events...");
   let events;
@@ -1019,7 +999,7 @@ export async function computeVerifyResult({
   const byType = new Map();
   const invalidTypes = new Set();
   const independentSigners = new Set();
-  const verifierPolicy = readVerifierPolicy(opts);
+  const policyState = await preloadVerifierPolicy(opts);
 
   for (const att of rawAttestations) {
     // Key-lifecycle window gate also applies to attestation signers (contract §5.3): a windowed
@@ -1052,7 +1032,7 @@ export async function computeVerifyResult({
         sigOk.ok &&
         signerNode &&
         signerNode !== releaseSignerNode &&
-        isSignerTrustedForCheck(signerNode, resolveCheckPolicy(t, verifierPolicy))
+        isSignerTrustedForCheck(signerNode, checkPolicyForCli(t, policyState))
       ) {
         independentSigners.add(signerNode);
       }
@@ -1090,11 +1070,21 @@ export async function computeVerifyResult({
     independentAttestors: [...independentSigners],
     status: "PASS",
   };
+  if (!policyState.ok) {
+    gate.policyError = policyState.error;
+    result.policyError = policyState.error;
+    gate.failures.push({
+      check: "verifier.policy",
+      type: "verifier.policy",
+      reason: policyState.error.reason,
+      hint: policyState.error.hint,
+    });
+  }
 
   // For each required attestation type: must be PRESENT, with a selected result `pass`
   // AND signatureValid:true from at least one signer allowed for that check. Any selected fail/invalid -> fail.
   for (const type of required) {
-    const checkPolicy = resolveCheckPolicy(type, verifierPolicy);
+    const checkPolicy = checkPolicyForCli(type, policyState);
     const perSigner = byType.get(type);
     const relevant = perSigner
       ? [...perSigner.values()].filter(
@@ -1139,7 +1129,7 @@ export async function computeVerifyResult({
     if (
       a.signatureValid &&
       a.result === "fail" &&
-      isSignerTrustedForCheck(a.signerNode, resolveCheckPolicy(a.type, verifierPolicy))
+      isSignerTrustedForCheck(a.signerNode, checkPolicyForCli(a.type, policyState))
     ) {
       const reason = "attestation result=fail";
       gate.failures.push({ check: a.type, type: a.type, reason, hint: hintForFailure({ type: a.type, reason }) });
@@ -1430,6 +1420,7 @@ export async function verifyRelease(args = {}) {
     ledgerUrl: args.ledgerUrl,
     nodesUrl: args.nodesUrl,
     manifestsUrl: args.manifestsUrl,
+    policyUrl: args.policyUrl,
     local: args.local,
     localDir: args.localDir,
     human,

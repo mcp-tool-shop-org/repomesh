@@ -100,7 +100,7 @@ function runToolsCopy(root) {
 }
 
 async function runPackagesCopy(root) {
-  const { verifyRelease } = await import(toURL(path.resolve(pkgSrc, "verify", "verify-release.mjs")) + `?t=${Date.now()}`);
+  const { verifyRelease } = await import(toURL(path.resolve(pkgSrc, "verify", "verify-release.mjs")));
   const origExit = process.exit, origCwd = process.cwd, origLog = console.log, origErr = console.error;
   let out = "";
   process.exit = () => { throw new Error("__EXIT__"); };
@@ -444,4 +444,43 @@ describe("D19: the two verify-release copies report the same satisfied array", (
       "invalid-sig: tools must not include invalid-signature event in selected attestations",
     );
   });
+
+  for (const [label, rawPolicy] of [
+    ["empty object {}", "{}"],
+    ["{\"checks\":null}", "{\"checks\":null}"],
+    ["checks as an array", JSON.stringify({ trustedAttestors: [], checks: [] })],
+    ["malformed check entry", JSON.stringify({ trustedAttestors: [], checks: { "security.scan": "x" } })],
+  ]) {
+    it(`tools wrong-shape policy (${label}): raises structured policyError and fails closed`, () => {
+      const { spawnSync } = require("node:child_process");
+      const root = buildPolicyScopedRoot(({ mkAtt, sec }) => [
+        mkAtt("security.scan", "pass", sec.privateKeyPem, "ci-security-2026", "2026-01-02T00:01:00Z"),
+      ]);
+      try {
+        fs.writeFileSync(path.join(root, "verifier.policy.json"), rawPolicy, "utf8");
+        const r = spawnSync(
+          process.execPath,
+          [path.join(REPO_ROOT, "tools", "verify-release.mjs"), "--repo", "org/app", "--version", "1.0.0", "--json"],
+          { cwd: REPO_ROOT, env: { ...process.env, REPOMESH_ROOT: root }, encoding: "utf8" },
+        );
+        const blobs = String(r.stdout || "").match(/\{[\s\S]*\}/g);
+        const out = blobs ? JSON.parse(blobs[blobs.length - 1]) : null;
+        assert.notEqual(r.status, 0, `${label}: must exit non-zero`);
+        assert.equal(out?.ok, false, `${label}: out.ok must be false`);
+        assert.equal(out?.gate?.verdict, "FAIL", `${label}: gate.verdict must be FAIL`);
+        assert.deepEqual(
+          out?.gate?.satisfied,
+          ["signature.chain", "repro.build"],
+          `${label}: trusted-set checks must fail closed when policy shape is malformed`,
+        );
+        assert.ok(out?.gate?.policyError?.code, `${label}: gate.policyError.code must be present`);
+        assert.ok(out?.gate?.policyError?.reason, `${label}: gate.policyError.reason must be present`);
+        assert.ok(out?.gate?.policyError?.hint, `${label}: gate.policyError.hint must be present`);
+        assert.ok(out?.policyError?.code, `${label}: top-level policyError.code must be present`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
 });

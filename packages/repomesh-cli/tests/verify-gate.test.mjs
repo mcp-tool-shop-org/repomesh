@@ -551,4 +551,91 @@ describe("D5: attestation gate (CLI-001 + CLI-003)", () => {
     assert.equal(scanAtts[0].result, "pass");
     assert.equal(exitCode, 0);
   });
+
+  for (const [label, rawPolicy] of [
+    ["empty object {}", "{}"],
+    ["{\"checks\":null}", "{\"checks\":null}"],
+    ["checks as an array", JSON.stringify({ trustedAttestors: [], checks: [] })],
+    ["malformed check entry", JSON.stringify({ trustedAttestors: [], checks: { "security.scan": "x" } })],
+  ]) {
+    it(`CLI local wrong-shape verifier.policy.json (${label}): raises structured policyError and fails closed`, async () => {
+      const { release, baseAtts, sec } = setupPolicyScopedRelease();
+      writeEvents([
+        release,
+        ...baseAtts,
+        attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      ]);
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), rawPolicy, "utf8");
+
+      const localRes = await runVerify({ repo: "org/app", version: "1.0.0", local: true, localDir: tmpRoot });
+      assert.equal(localRes.result?.ok, false, `local ${label}: result.ok must be false`);
+      assert.equal(localRes.result?.gate?.status, "FAIL", `local ${label}: gate.status must be FAIL`);
+      assert.equal(localRes.exitCode, 1, `local ${label}: exitCode must be 1`);
+      assert.ok(localRes.result?.policyError?.code, `local ${label}: result.policyError.code must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.code, `local ${label}: gate.policyError.code must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.reason, `local ${label}: gate.policyError.reason must be present`);
+      assert.ok(localRes.result?.gate?.policyError?.hint, `local ${label}: gate.policyError.hint must be present`);
+    });
+
+    it(`CLI fetched wrong-shape verifier.policy.json (${label}): raises structured policyError and fails closed`, async () => {
+      const { release, baseAtts, sec } = setupPolicyScopedRelease();
+      writeEvents([
+        release,
+        ...baseAtts,
+        attestation({ type: "security.scan", result: "pass", repo: "org/app", ts: "2026-01-02T00:01:00Z", keyId: "ci-security-2026", key: sec.privateKey }),
+      ]);
+      fs.writeFileSync(join(tmpRoot, "verifier.policy.json"), rawPolicy, "utf8");
+
+      const remoteRes = await runVerifyRemote({ repo: "org/app", version: "1.0.0" });
+      assert.equal(remoteRes.result?.ok, false, `fetched ${label}: result.ok must be false`);
+      assert.equal(remoteRes.result?.gate?.status, "FAIL", `fetched ${label}: gate.status must be FAIL`);
+      assert.equal(remoteRes.exitCode, 1, `fetched ${label}: exitCode must be 1`);
+      assert.ok(remoteRes.result?.policyError?.code, `fetched ${label}: result.policyError.code must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.code, `fetched ${label}: gate.policyError.code must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.reason, `fetched ${label}: gate.policyError.reason must be present`);
+      assert.ok(remoteRes.result?.gate?.policyError?.hint, `fetched ${label}: gate.policyError.hint must be present`);
+    });
+  }
+
+  it("validateVerifierPolicyShape and policy loader helpers reject every malformed field shape", async () => {
+    const {
+      validateVerifierPolicyShape,
+      deriveRemotePolicyUrl,
+      readVerifierPolicyStateSync,
+      preloadVerifierPolicy,
+      checkPolicyForCli,
+    } = await importFromSrc("remote-defaults.mjs");
+    const valid = JSON.parse(
+      fs.readFileSync(resolve(__dirname, "..", "..", "..", "verifier.policy.json"), "utf8"),
+    );
+    assert.equal(validateVerifierPolicyShape(valid).ok, true);
+    const badCases = [
+      null,
+      { ...valid, trustedAttestors: ["bad"] },
+      { ...valid, trustedRunAttestors: ["bad"] },
+      { ...valid, trustedPolicy: ["bad"] },
+      { ...valid, v: 0 },
+      { ...valid, description: 123 },
+      { ...valid, nodeKinds: [] },
+      { ...valid, scoreableResults: [""] },
+      { ...valid, conflictPolicies: [] },
+      { ...valid, profileOverrides: [] },
+      { ...valid, checks: { "a": null } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], category: "bad" } } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], weights: [] } } },
+      { ...valid, checks: { "a": { mode: "trusted-set", trustedNodes: ["org/r"], attestorGated: "no" } } },
+    ];
+    for (const c of badCases) {
+      assert.equal(validateVerifierPolicyShape(c).ok, false);
+    }
+    assert.equal(deriveRemotePolicyUrl({ ledgerUrl: "http://x/ledger/events/events.jsonl" }).url, "http://x/verifier.policy.json");
+    assert.equal(deriveRemotePolicyUrl({ ledgerUrl: "http://x/custom.jsonl" }).url, null);
+    assert.equal(deriveRemotePolicyUrl({}).explicit, false);
+    assert.equal(readVerifierPolicyStateSync(null).ok, true);
+    assert.equal((await preloadVerifierPolicy(null)).ok, true);
+    assert.equal((await preloadVerifierPolicy({ ledgerUrl: "http://x/custom.jsonl" })).ok, true);
+    assert.equal((await preloadVerifierPolicy({ policyUrl: "http://127.0.0.1:1/nope.json" }, { retries: 0, timeoutMs: 50 })).ok, false);
+    assert.deepEqual(checkPolicyForCli("repro.build", { ok: false }), { mode: "open", trustedNodes: [] });
+    assert.deepEqual(checkPolicyForCli("sbom.present", { ok: false }), { mode: "trusted-set", trustedNodes: [] });
+  });
 });

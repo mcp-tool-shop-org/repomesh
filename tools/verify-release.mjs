@@ -25,8 +25,9 @@ import { merkleRootForAlgo } from "../anchor/xrpl/scripts/merkle.mjs";
 import { verifyAnchorTx } from "../anchor/xrpl/scripts/verify-anchor.mjs";
 import { resolveTrustedAnchorAccounts } from "../packages/repomesh-cli/src/trusted-anchor-accounts.mjs";
 import {
-  BUNDLED_CHECK_POLICIES,
-  resolveCheckPolicy,
+  validateVerifierPolicyShape,
+  readVerifierPolicyStateSync,
+  checkPolicyForCli as checkPolicyForTools,
 } from "../packages/repomesh-cli/src/remote-defaults.mjs";
 // Key-lifecycle trust predicate + trusted-time resolver (the shared stable secret, contract §5).
 // tools/ runs OFFLINE over the local ledger => the SYNC resolver only (no XRPL close-time rung).
@@ -91,10 +92,12 @@ const BUNDLED_RUN_ATTESTATION_TYPES = new Set(["run.preregistered", "run.outcome
 // effectiveTrustedAttestors(). Absence of policy => bundled set.
 function effectiveTrustedAttestors() {
   const bundled = new Set(BUNDLED_TRUSTED_ATTESTORS);
-  const policyPath = path.join(ROOT, "verifier.policy.json");
+  const policyPath = resolveVerifierPolicyPath();
   if (fs.existsSync(policyPath)) {
     try {
       const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+      const shapeCheck = validateVerifierPolicyShape(policy);
+      if (!shapeCheck.ok) throw new Error(shapeCheck.reason);
       const fetched = Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : null;
       if (fetched) return new Set([...bundled].filter(id => fetched.includes(id)));
     } catch (e) {
@@ -119,46 +122,15 @@ function resolveVerifierPolicyPath() {
 }
 
 function readVerifierPolicy() {
-  const policyPath = resolveVerifierPolicyPath();
-  if (!fs.existsSync(policyPath)) {
-    const error = {
-      code: "VERIFIER_POLICY_MISSING",
-      reason: `verifier.policy.json not found at ${policyPath}`,
-      hint: "Restore verifier.policy.json at the checkout root or set REPOMESH_VERIFIER_POLICY_PATH to a valid policy file.",
-    };
-    console.error(`Error [${error.code}]: ${error.reason}. Hint: ${error.hint}`);
-    return { ok: false, policy: null, error };
+  const state = readVerifierPolicyStateSync({
+    local: true,
+    policyPath: resolveVerifierPolicyPath(),
+    requirePresent: true,
+  });
+  if (!state.ok) {
+    console.error(`Error [${state.error.code}]: ${state.error.reason}. Hint: ${state.error.hint}`);
   }
-  try {
-    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
-    if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
-      throw new Error("policy root must be a JSON object");
-    }
-    return { ok: true, policy, error: null };
-  } catch (e) {
-    const error = {
-      code: "VERIFIER_POLICY_UNREADABLE",
-      reason: `verifier.policy.json at ${policyPath} could not be parsed: ${e.message}`,
-      hint: "Fix the JSON syntax in verifier.policy.json or restore it from a clean checkout.",
-    };
-    console.error(`Error [${error.code}]: ${error.reason}. Hint: ${error.hint}`);
-    return { ok: false, policy: null, error };
-  }
-}
-
-function checkPolicyForTools(checkType, policyState) {
-  if (typeof checkType !== "string" || !checkType) return null;
-  if (!policyState.ok) {
-    // Missing or unreadable verifier.policy.json: fail closed for every trusted-set check.
-    const bundled = Object.hasOwn(BUNDLED_CHECK_POLICIES, checkType)
-      ? BUNDLED_CHECK_POLICIES[checkType]
-      : null;
-    if (bundled && bundled.mode === "open") {
-      return { mode: "open", trustedNodes: [] };
-    }
-    return { mode: "trusted-set", trustedNodes: [] };
-  }
-  return resolveCheckPolicy(checkType, policyState.policy);
+  return state;
 }
 
 // A resolved third-party signer is trusted for release verification iff its node id is in the
@@ -278,10 +250,12 @@ function findPublicKeyAcrossNodes(keyId, keyCtx) {
 // Read trustedPolicy node ids from the LOCAL verifier.policy.json at ROOT (the governance floor,
 // §4.3). Absence => no governance signer; only Path A (surviving same-node) authorizes.
 function readTrustedPolicyNodes() {
-  const policyPath = path.join(ROOT, "verifier.policy.json");
+  const policyPath = resolveVerifierPolicyPath();
   if (!fs.existsSync(policyPath)) return new Set();
   try {
     const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    const shapeCheck = validateVerifierPolicyShape(policy);
+    if (!shapeCheck.ok) throw new Error(shapeCheck.reason);
     const ids = Array.isArray(policy?.trustedPolicy) ? policy.trustedPolicy : [];
     return new Set(ids.filter(id => typeof id === "string"));
   } catch (e) {
@@ -883,7 +857,7 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
   // (or --anchored-or-local accepted) anchor can legitimately PASS — exactly like the
   // published packages copy. A self-signed release with no independent witness and no
   // anchor is reported UNVERIFIED, never PASS — UNCONDITIONALLY (profile-independent).
-  if (gate.failed.length > 0 || gate.missing.length > 0) {
+  if (gate.failed.length > 0 || gate.missing.length > 0 || policyState.error?.code === "VERIFIER_POLICY_UNREADABLE") {
     gate.verdict = "FAIL";
     result.ok = false;
   } else {
