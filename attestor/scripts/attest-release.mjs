@@ -89,7 +89,8 @@ function findNodeManifest(repoId) {
 
 function loadTrustedAttestors() {
   try {
-    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
     return new Set(Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
   } catch {
     return new Set();
@@ -98,7 +99,8 @@ function loadTrustedAttestors() {
 
 function loadTrustedRunAttestors() {
   try {
-    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
     return new Set(Array.isArray(policy?.trustedRunAttestors) ? policy.trustedRunAttestors : []);
   } catch {
     return new Set();
@@ -106,14 +108,13 @@ function loadTrustedRunAttestors() {
 }
 
 function findNodeManifestForAnchor(repoId) {
-  const fromNodesDir = findNodeManifest(repoId);
-  if (fromNodesDir) return fromNodesDir;
   const [org, repo] = String(repoId || "").split("/");
   if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) return null;
-  const fallbackPath = path.join(ROOT, "ledger", "nodes", org, repo, "node.json");
-  if (!fs.existsSync(fallbackPath)) return null;
+  const nodesDir = process.env.REPOMESH_NODES_PATH || NODES_DIR;
+  const p = path.join(nodesDir, org, repo, "node.json");
+  if (!fs.existsSync(p)) return null;
   try {
-    return JSON.parse(fs.readFileSync(fallbackPath, "utf8"));
+    return JSON.parse(fs.readFileSync(p, "utf8"));
   } catch {
     return null;
   }
@@ -124,7 +125,8 @@ function findNodeManifestForAnchor(repoId) {
 // validate-ledger's resolution (`policy.trustedPolicy || policy.trustedAttestors`).
 function loadTrustedPolicy() {
   try {
-    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
     const list = Array.isArray(policy?.trustedPolicy)
       ? policy.trustedPolicy
       : (Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
@@ -268,6 +270,7 @@ export function buildAttestorTimeCtx(events) {
       trustedAttestors: trusted,
       trustedRunAttestors,
       loadNode: findNodeManifestForAnchor,
+      verifySignature: (pem, ev) => verifyEventSig(ev, pem),
     });
   }
 

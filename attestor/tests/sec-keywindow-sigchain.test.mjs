@@ -23,6 +23,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, "..", "..");
+const VALIDATOR = path.join(REPO_ROOT, "ledger", "scripts", "validate-ledger.mjs");
+const LEDGER_VERIFY_RELEASE = path.join(REPO_ROOT, "ledger", "scripts", "verify-release.mjs");
 
 // Point the attestor at a crafted nodes dir BEFORE import (NODES_DIR is read at module load).
 const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-kw-sig-"));
@@ -54,13 +61,27 @@ function canonicalHashOf(ev) {
   return crypto.createHash("sha256").update(JSON.stringify(canonicalize(stripped)), "utf8").digest("hex");
 }
 
-// Write a node.json maintainer (optionally windowed) for REPO.
+const anchorKp = crypto.generateKeyPairSync("ed25519");
+const anchorPubPem = anchorKp.publicKey.export({ type: "spki", format: "pem" }).toString();
+
+// Write a node.json maintainer (optionally windowed) for REPO, plus the trusted anchor node.
 function writeNode(maintainer) {
   const [org, repoName] = REPO.split("/");
   fs.mkdirSync(path.join(NODES, org, repoName), { recursive: true });
   fs.writeFileSync(
     path.join(NODES, org, repoName, "node.json"),
     JSON.stringify({ id: REPO, maintainers: [maintainer] }),
+    "utf8"
+  );
+  const [aOrg, aRepo] = ANCHOR_REPO.split("/");
+  fs.mkdirSync(path.join(NODES, aOrg, aRepo), { recursive: true });
+  fs.writeFileSync(
+    path.join(NODES, aOrg, aRepo, "node.json"),
+    JSON.stringify({
+      id: ANCHOR_REPO,
+      kind: "attestor",
+      maintainers: [{ name: "Anchor", keyId: "anchor-key", publicKey: anchorPubPem, contact: "a@example.com" }],
+    }),
     "utf8"
   );
 }
@@ -86,7 +107,7 @@ function makeSignedRelease({ privateKey, keyId, timestamp }) {
 
 // A bundled-trusted ledger.anchor AttestationPublished whose partition timestamp-range covers the
 // release event, with a chosen anchor timestamp = the trusted offline clock.
-function makeTrustedAnchorEvent({ anchorTs, partitionStart, partitionEnd, anchorPrivateKey, anchorKeyId }) {
+function makeTrustedAnchorEvent({ anchorTs, partitionStart, partitionEnd, anchorPrivateKey = anchorKp.privateKey, anchorKeyId }) {
   const meta = {
     txHash: "TX-FORGE",
     network: "testnet",
@@ -268,6 +289,232 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
     const r = checkSignatureChain(rel, ctx);
     assert.equal(r.result, "fail", "a governance-kind node's anchor must not be trusted as a clock");
     assert.equal(r.code, "key-time-invalid");
+  });
+
+  it("forged-signature anchor on a trusted repo does NOT rescue a compromised key in attestor/scripts/attest-release.mjs", () => {
+    writeNode({
+      name: "Compromised Dev",
+      keyId: "compromised-key",
+      publicKey: pubPem,
+      revokedAt: "2026-06-20T09:00:00.000Z",
+      revocationReason: "compromise",
+      invalidAfter: C,
+    });
+    const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
+    const forgedSigAnchor = makeTrustedAnchorEvent({
+      anchorTs: "2026-06-17T00:00:00.000Z",
+      partitionStart: "2026-05-01T00:00:00.000Z",
+      partitionEnd: "2026-06-30T00:00:00.000Z",
+      anchorPrivateKey: null,
+      anchorKeyId: "anchor-key",
+    });
+    forgedSigAnchor.signature.value = "AAAA";
+    const ctx = buildAttestorTimeCtx([rel, forgedSigAnchor]);
+    assert.equal(ctx.isBundledTrustedAnchor(forgedSigAnchor), false, "anchor with a forged signature must be refused");
+    const r = checkSignatureChain(rel, ctx);
+    assert.equal(r.result, "fail", "an anchor with a forged signature must not rescue a compromised key");
+    assert.equal(r.code, "key-time-invalid");
+  });
+
+  it("anchor carrying the keyId of a governance node outside trustedAttestors does NOT rescue a compromised key in attestor/scripts/attest-release.mjs", () => {
+    writeNode({
+      name: "Compromised Dev",
+      keyId: "compromised-key",
+      publicKey: pubPem,
+      revokedAt: "2026-06-20T09:00:00.000Z",
+      revocationReason: "compromise",
+      invalidAfter: C,
+    });
+    const gov2Kp = crypto.generateKeyPairSync("ed25519");
+    const gov2Pem = gov2Kp.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const gov2Dir = path.join(NODES, "test-org", "gov2");
+    fs.mkdirSync(gov2Dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(gov2Dir, "node.json"),
+      JSON.stringify({
+        id: "test-org/gov2",
+        kind: "governance",
+        description: "untrusted governance node",
+        maintainers: [{ name: "Gov2", keyId: "gov2-key", publicKey: gov2Pem, contact: "g2@example.com" }],
+      }, null, 2),
+      "utf8",
+    );
+    const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
+    const gov2KeyAnchor = makeTrustedAnchorEvent({
+      anchorTs: "2026-06-17T00:00:00.000Z",
+      partitionStart: "2026-05-01T00:00:00.000Z",
+      partitionEnd: "2026-06-30T00:00:00.000Z",
+      anchorPrivateKey: gov2Kp.privateKey,
+      anchorKeyId: "gov2-key",
+    });
+    const ctx = buildAttestorTimeCtx([rel, gov2KeyAnchor]);
+    assert.equal(ctx.isBundledTrustedAnchor(gov2KeyAnchor), false, "anchor with governance keyId outside trustedAttestors must be refused");
+    const r = checkSignatureChain(rel, ctx);
+    assert.equal(r.result, "fail", "an anchor with a governance keyId outside trustedAttestors must not rescue a compromised key");
+    assert.equal(r.code, "key-time-invalid");
+  });
+
+  it("shared anchor-trust parity: validate-ledger, ledger/scripts/verify-release.mjs, and attestor/scripts/attest-release.mjs return identical answers across all anchor cases", () => {
+    const regKp = crypto.generateKeyPairSync("ed25519");
+    const cogKp = crypto.generateKeyPairSync("ed25519");
+    const gov2Kp = crypto.generateKeyPairSync("ed25519");
+    const missingKp = crypto.generateKeyPairSync("ed25519");
+    const regPem = regKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const cogPem = cogKp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+    const gov2Pem = gov2Kp.publicKey.export({ type: "spki", format: "pem" }).toString().trim();
+
+    function fullManifest(id, kind, maintainers) {
+      return {
+        id,
+        kind,
+        description: `${kind} node`,
+        provides: [`${kind}.test.v1`],
+        consumes: [],
+        interfaces: [{ name: "iface", version: "v1", schemaPath: "./schemas/event.schema.json" }],
+        invariants: { deterministicBuild: false, signedReleases: false, semver: true, changelog: true },
+        maintainers,
+        tags: ["test"],
+      };
+    }
+
+    const nodes = [
+      fullManifest(REPO, "compute", [{
+        name: "Compromised Dev",
+        keyId: "compromised-key",
+        publicKey: pubPem.trim(),
+        contact: "dev@example.com",
+        revokedAt: "2026-06-20T09:00:00.000Z",
+        revocationReason: "compromise",
+        invalidAfter: C,
+      }]),
+      fullManifest("mcp-tool-shop-org/repomesh", "registry", [{
+        name: "Registry",
+        keyId: "ci-repomesh-2026",
+        publicKey: regPem,
+        contact: "reg@example.com",
+      }]),
+      fullManifest("mcp-tool-shop-org/cognate", "governance", [{
+        name: "Cognate",
+        keyId: "ci-cognate-2026",
+        publicKey: cogPem,
+        contact: "cog@example.com",
+      }]),
+      fullManifest("test-org/gov2", "governance", [{
+        name: "Gov2",
+        keyId: "gov2-key",
+        publicKey: gov2Pem,
+        contact: "gov2@example.com",
+      }]),
+    ];
+
+    // Write nodes into NODES (and remove ANCHOR_REPO so A6_missing_manifest is genuinely missing).
+    fs.rmSync(path.join(NODES, "mcp-tool-shop-org", "repomesh-xrpl-anchor"), { recursive: true, force: true });
+    for (const n of nodes) {
+      const [o, rName] = n.id.split("/");
+      fs.mkdirSync(path.join(NODES, o, rName), { recursive: true });
+      fs.writeFileSync(path.join(NODES, o, rName, "node.json"), JSON.stringify(n, null, 2), "utf8");
+    }
+
+    const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
+    const leaf = rel.signature.canonicalHash;
+
+    function buildAnchorCase(repoId, keyId, privKey) {
+      const meta = {
+        txHash: "TX-SHARED",
+        network: "testnet",
+        partitionId: "p-shared",
+        partitionStart: "2026-05-01T00:00:00.000Z",
+        partitionEnd: "2026-06-30T00:00:00.000Z",
+        range: [leaf, leaf],
+        merkleRoot: "d".repeat(64),
+      };
+      const ev = {
+        type: "AttestationPublished",
+        repo: repoId,
+        version: "0.0.0-anchor",
+        commit: "c".repeat(40),
+        timestamp: "2026-06-17T00:00:00.000Z",
+        artifacts: [{ name: "anchor.json", sha256: "d".repeat(64), uri: "https://example.com/anchor.json" }],
+        attestations: [{ type: "ledger.anchor", uri: "xrpl:tx:TX-SHARED" }],
+        notes: `ledger.anchor: pass\n${JSON.stringify(meta)}`,
+        signature: { alg: "ed25519", keyId, value: "AAAA", canonicalHash: "" },
+      };
+      const hash = canonicalHashOf(ev);
+      ev.signature.canonicalHash = hash;
+      if (privKey) {
+        ev.signature.value = crypto.sign(null, Buffer.from(hash, "hex"), privKey).toString("base64");
+      }
+      return ev;
+    }
+
+    const cases = [
+      { name: "A1_valid_registry", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", regKp.privateKey), expected: true },
+      { name: "A2_governance_repo", ev: buildAnchorCase("mcp-tool-shop-org/cognate", "ci-cognate-2026", cogKp.privateKey), expected: false },
+      { name: "A3_governance_keyId_in_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-cognate-2026", cogKp.privateKey), expected: false },
+      { name: "A4_forged_signature", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "ci-repomesh-2026", null), expected: false },
+      { name: "A5_governance_keyId_outside_trusted", ev: buildAnchorCase("mcp-tool-shop-org/repomesh", "gov2-key", gov2Kp.privateKey), expected: false },
+      { name: "A6_missing_manifest", ev: buildAnchorCase(ANCHOR_REPO, "ci-repomesh-xrpl-anchor-2026", missingKp.privateKey), expected: false },
+    ];
+
+    const sbDir = fs.mkdtempSync(path.join(os.tmpdir(), "rm-shared-anchor-"));
+    try {
+      const manifestsDir = path.join(sbDir, "manifests");
+      fs.mkdirSync(manifestsDir, { recursive: true });
+      const vrRoot = path.join(sbDir, "vr");
+      const vrScripts = path.join(vrRoot, "ledger", "scripts");
+      const vrEvents = path.join(vrRoot, "ledger", "events");
+      const vrNodes = path.join(vrRoot, "ledger", "nodes");
+      const vrLib = path.join(vrRoot, "verifiers", "lib");
+      fs.mkdirSync(vrScripts, { recursive: true });
+      fs.mkdirSync(vrEvents, { recursive: true });
+      fs.mkdirSync(vrLib, { recursive: true });
+      fs.cpSync(NODES, vrNodes, { recursive: true });
+      fs.copyFileSync(LEDGER_VERIFY_RELEASE, path.join(vrScripts, "verify-release.mjs"));
+      fs.copyFileSync(path.join(REPO_ROOT, "ledger", "scripts", "canonicalize.mjs"), path.join(vrScripts, "canonicalize.mjs"));
+      fs.copyFileSync(path.join(REPO_ROOT, "verifiers", "lib", "key-window.mjs"), path.join(vrLib, "key-window.mjs"));
+      fs.copyFileSync(path.join(REPO_ROOT, "verifier.policy.json"), path.join(vrRoot, "verifier.policy.json"));
+
+      const validateLedgerAnswers = {};
+      const ledgerVerifyAnswers = {};
+      const attestorAnswers = {};
+
+      for (const c of cases) {
+        const basePath = path.join(sbDir, `base-${c.name}.jsonl`);
+        const headPath = path.join(sbDir, `head-${c.name}.jsonl`);
+        fs.writeFileSync(basePath, JSON.stringify(c.ev) + "\n", "utf8");
+        fs.writeFileSync(headPath, [c.ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+
+        const vlRes = spawnSync(process.execPath, [VALIDATOR], {
+          env: {
+            ...process.env,
+            BASE_LEDGER: basePath,
+            HEAD_LEDGER: headPath,
+            REPOMESH_NODES_PATH: NODES,
+            REPOMESH_MANIFESTS_PATH: manifestsDir,
+          },
+          encoding: "utf8",
+        });
+        validateLedgerAnswers[c.name] = vlRes.status === 0;
+
+        fs.writeFileSync(path.join(vrEvents, "events.jsonl"), [c.ev, rel].map((e) => JSON.stringify(e)).join("\n") + "\n", "utf8");
+        const vrRes = spawnSync(process.execPath, [path.join(vrScripts, "verify-release.mjs"), "--repo", REPO, "--version", "1.0.0"], {
+          env: { ...process.env, REPOMESH_VERIFIER_POLICY_PATH: path.join(vrRoot, "verifier.policy.json") },
+          encoding: "utf8",
+        });
+        ledgerVerifyAnswers[c.name] = vrRes.status === 0;
+
+        const ctx = buildAttestorTimeCtx([c.ev, rel]);
+        const attRes = checkSignatureChain(rel, ctx);
+        attestorAnswers[c.name] = ctx.isBundledTrustedAnchor(c.ev) && attRes.result === "pass";
+      }
+
+      const expectedMap = Object.fromEntries(cases.map((c) => [c.name, c.expected]));
+      assert.deepEqual(validateLedgerAnswers, expectedMap, "validate-ledger answers must match expected anchor trust decisions");
+      assert.deepEqual(ledgerVerifyAnswers, validateLedgerAnswers, "ledger/scripts/verify-release.mjs must agree with validate-ledger on every anchor case");
+      assert.deepEqual(attestorAnswers, validateLedgerAnswers, "attestor/scripts/attest-release.mjs must agree with validate-ledger on every anchor case");
+    } finally {
+      fs.rmSync(sbDir, { recursive: true, force: true });
+    }
   });
 
   // --- §9.5 routine rotation is prospective; pre-R signatures stay valid ----------------------

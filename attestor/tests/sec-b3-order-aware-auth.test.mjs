@@ -73,11 +73,25 @@ function sign(ev, priv, keyId) {
   return ev;
 }
 
-// Write node.json for REPO with the given maintainers array (each as-is).
+const anchorKp = crypto.generateKeyPairSync("ed25519");
+const anchorPubPem = anchorKp.publicKey.export({ type: "spki", format: "pem" }).toString();
+
+// Write node.json for REPO with the given maintainers array (each as-is), plus the trusted anchor node.
 function writeNode(maintainers) {
   const [org, repoName] = REPO.split("/");
   fs.mkdirSync(path.join(NODES, org, repoName), { recursive: true });
   fs.writeFileSync(path.join(NODES, org, repoName, "node.json"), JSON.stringify({ id: REPO, maintainers }), "utf8");
+  const [aOrg, aRepo] = ANCHOR_REPO.split("/");
+  fs.mkdirSync(path.join(NODES, aOrg, aRepo), { recursive: true });
+  fs.writeFileSync(
+    path.join(NODES, aOrg, aRepo, "node.json"),
+    JSON.stringify({
+      id: ANCHOR_REPO,
+      kind: "attestor",
+      maintainers: [{ name: "Anchor", keyId: "anchor-key", publicKey: anchorPubPem, contact: "a@example.com" }],
+    }),
+    "utf8"
+  );
 }
 
 // A bundled-trusted ledger.anchor AttestationPublished whose partition timestamp-range covers the K_b
@@ -92,7 +106,9 @@ function makeTrustedAnchorEvent({ anchorTs, partitionStart, partitionEnd }) {
     notes: `ledger.anchor: pass\n${JSON.stringify(meta)}`,
     signature: { alg: "ed25519", keyId: "anchor-key", value: "", canonicalHash: "" },
   };
-  ev.signature.canonicalHash = canonicalHashOf(ev);
+  const hash = canonicalHashOf(ev);
+  ev.signature.value = crypto.sign(null, Buffer.from(hash, "hex"), anchorKp.privateKey).toString("base64");
+  ev.signature.canonicalHash = hash;
   return ev;
 }
 

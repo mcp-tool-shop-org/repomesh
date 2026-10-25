@@ -14,6 +14,7 @@
 // PURE: no top-level I/O, no fs/network. Anchor lookups + the bundled-trusted check + the
 // XRPL close-time fetch are all supplied by the caller via `ctx`, so this module stays fully
 // unit-testable and importable from both the root scripts and the standalone CLI.
+import crypto from "node:crypto";
 
 // canonicalReason(r) -> 'compromise' | 'rotation' | 'retirement' | null  (VER-A-002).
 // Trim + lowercase, then map. The trust model only RECOGNIZES the three lowercase reasons; the
@@ -541,7 +542,8 @@ export function mergeStricterWindow(maintainer, constraint) {
 
 // isBundledTrustedAnchorEvent(anchorEvent, opts) -> boolean
 // Shared anchor-trust gate across validate-ledger.mjs, ledger/scripts/verify-release.mjs, and
-// attestor/scripts/attest-release.mjs. Governance nodes and run-scoped attestors never anchor trust.
+// attestor/scripts/attest-release.mjs. Governance nodes and run-scoped attestors never anchor trust,
+// and the anchor's signature must verify against a non-governance trustedAttestors maintainer key.
 export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   if (!anchorEvent || typeof anchorEvent !== "object") return false;
   const trusted =
@@ -553,7 +555,21 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
       ? opts.trustedRunAttestors
       : new Set(Array.isArray(opts.trustedRunAttestors) ? opts.trustedRunAttestors : []);
   const loadNode = typeof opts.loadNode === "function" ? opts.loadNode : () => null;
-  const verifySignature = typeof opts.verifySignature === "function" ? opts.verifySignature : null;
+  const verifySignature =
+    typeof opts.verifySignature === "function"
+      ? opts.verifySignature
+      : (pem, ev) => {
+          try {
+            return crypto.verify(
+              null,
+              Buffer.from(ev.signature.canonicalHash, "hex"),
+              pem,
+              Buffer.from(ev.signature.value, "base64")
+            );
+          } catch {
+            return false;
+          }
+        };
 
   const repo = typeof anchorEvent.repo === "string" ? anchorEvent.repo : "";
   if (repo) {
@@ -563,36 +579,18 @@ export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
   }
 
   const keyId = anchorEvent?.signature?.keyId;
-  if (verifySignature) {
-    if (!keyId) return false;
-    for (const id of trusted) {
-      if (runAttestors.has(id)) continue;
-      const node = loadNode(id);
-      if (!node || node.kind === "governance") continue;
-      const m = (node.maintainers || []).find((x) => x.keyId === keyId);
-      if (!m?.publicKey) continue;
-      const pem = String(m.publicKey).trim();
-      if (!pem.includes("BEGIN PUBLIC KEY")) continue;
-      if (verifySignature(pem, anchorEvent)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  if (!repo || !trusted.has(repo)) return false;
-  const node = loadNode(repo);
-  if (node && node.kind === "governance") return false;
-  if (keyId) {
-    for (const id of trusted) {
-      const candidate = loadNode(id);
-      if (
-        candidate?.kind === "governance" &&
-        (candidate.maintainers || []).some((x) => x.keyId === keyId)
-      ) {
-        return false;
-      }
+  if (!keyId) return false;
+  for (const id of trusted) {
+    if (runAttestors.has(id)) continue;
+    const node = loadNode(id);
+    if (!node || node.kind === "governance") continue;
+    const m = (node.maintainers || []).find((x) => x.keyId === keyId);
+    if (!m?.publicKey) continue;
+    const pem = String(m.publicKey).trim();
+    if (!pem.includes("BEGIN PUBLIC KEY")) continue;
+    if (verifySignature(pem, anchorEvent)) {
+      return true;
     }
   }
-  return true;
+  return false;
 }
