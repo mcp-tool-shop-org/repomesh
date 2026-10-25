@@ -919,10 +919,17 @@ export async function computeVerifyResult({
     const signerNode = sigOk.ok ? sigOk.nodeId : null;
     const ts = att.timestamp || "";
     const types = new Set((att.attestations || []).map(a => a.type));
+    const noteLines = String(att.notes || "").split("\n").filter(Boolean);
     for (const t of types) {
-      // result is encoded in notes like "type: pass|warn|fail — ..."
-      const noteMatch = att.notes?.match(/^([^:]+):\s*(pass|warn|fail)/);
-      const attResult = noteMatch ? noteMatch[2] : "unknown";
+      // result is encoded in notes like "type: pass|warn|fail — ..." matching this attestation's type
+      let attResult = "unknown";
+      for (const line of noteLines) {
+        const noteMatch = line.match(/^([^:]+):\s*(pass|warn|fail)/);
+        if (noteMatch && noteMatch[1].trim() === t) {
+          attResult = noteMatch[2];
+          break;
+        }
+      }
       const signerKey = signerNode || `__invalid__${att.signature?.keyId || "?"}`;
       if (!byType.has(t)) byType.set(t, new Map());
       const perSigner = byType.get(t);

@@ -696,10 +696,17 @@ export async function verifyRelease({ repo, version, anchored, anchoredOrLocal, 
     if (sigOk.ok && signerNode && signerNode !== result.release.signerNode) {
       independentSigners.add(signerNode);
     }
-    const noteMatch = att.notes?.match(/^([^:]+):\s*(pass|warn|fail)/);
-    const attResult = noteMatch ? noteMatch[2] : "unknown";
+    const noteLines = String(att.notes || "").split("\n").filter(Boolean);
     for (const a of (att.attestations || [])) {
       if (a.type === "ledger.anchor") continue; // anchor handled separately
+      let attResult = "unknown";
+      for (const line of noteLines) {
+        const noteMatch = line.match(/^([^:]+):\s*(pass|warn|fail)/);
+        if (noteMatch && noteMatch[1].trim() === a.type) {
+          attResult = noteMatch[2];
+          break;
+        }
+      }
       attestTypes.add(a.type);
       const key = `${a.type}|${signerNode}`;
       const prev = byTypeSigner.get(key);
