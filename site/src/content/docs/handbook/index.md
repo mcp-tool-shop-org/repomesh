@@ -9,7 +9,7 @@ RepoMesh turns a collection of repositories into a **cooperative network**.
 Every repo becomes a node. Every release becomes a signed event.
 Every claim is independently verifiable.
 
-Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Six registered nodes do not make six operators. An independent witness would be a party this organization does not operate.
+Today one GitHub organization, mcp-tool-shop-org, operates the log, the attestors, the policy check, and the XRPL anchor. Seven registered nodes do not make seven operators. An independent witness would be a party this organization does not operate.
 
 Attestia, Cognate, and RepoMesh are three products. RepoMesh keeps this RFC 6962 ledger and the XRPL trust clock. Attestia proves that an event, a transaction, or a state transition happened, and the domain it ships is financial truth. Cognate is the AI governance domain on Attestia's event store and Merkle proofs, and it calls RepoMesh to check a release. Attestia's Merkle tree is not this ledger.
 
@@ -47,4 +47,5 @@ RepoMesh is designed for organizations that manage multiple repositories and nee
 | [Ledger](/repomesh/handbook/ledger/) | Append-only event log, event types, node kinds |
 | [Verification](/repomesh/handbook/verification/) | Release verification, attestations, trust badges, CI gates |
 | [Architecture](/repomesh/handbook/architecture/) | Repo structure, XRPL anchoring, overrides system |
+| [What's new](/repomesh/handbook/whats-new/) | 2.4 and 2.5: Cognate run attestations, the signing check, the testnet guard, the CI gate |
 | [Beginners](/repomesh/handbook/beginners/) | Plain-language introduction for newcomers to trust infrastructure |
