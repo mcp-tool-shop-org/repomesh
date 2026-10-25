@@ -538,3 +538,61 @@ export function mergeStricterWindow(maintainer, constraint) {
   else delete out.revocationReason;
   return out;
 }
+
+// isBundledTrustedAnchorEvent(anchorEvent, opts) -> boolean
+// Shared anchor-trust gate across validate-ledger.mjs, ledger/scripts/verify-release.mjs, and
+// attestor/scripts/attest-release.mjs. Governance nodes and run-scoped attestors never anchor trust.
+export function isBundledTrustedAnchorEvent(anchorEvent, opts = {}) {
+  if (!anchorEvent || typeof anchorEvent !== "object") return false;
+  const trusted =
+    opts.trustedAttestors instanceof Set
+      ? opts.trustedAttestors
+      : new Set(Array.isArray(opts.trustedAttestors) ? opts.trustedAttestors : []);
+  const runAttestors =
+    opts.trustedRunAttestors instanceof Set
+      ? opts.trustedRunAttestors
+      : new Set(Array.isArray(opts.trustedRunAttestors) ? opts.trustedRunAttestors : []);
+  const loadNode = typeof opts.loadNode === "function" ? opts.loadNode : () => null;
+  const verifySignature = typeof opts.verifySignature === "function" ? opts.verifySignature : null;
+
+  const repo = typeof anchorEvent.repo === "string" ? anchorEvent.repo : "";
+  if (repo) {
+    if (runAttestors.has(repo)) return false;
+    const repoNode = loadNode(repo);
+    if (repoNode && repoNode.kind === "governance") return false;
+  }
+
+  const keyId = anchorEvent?.signature?.keyId;
+  if (verifySignature) {
+    if (!keyId) return false;
+    for (const id of trusted) {
+      if (runAttestors.has(id)) continue;
+      const node = loadNode(id);
+      if (!node || node.kind === "governance") continue;
+      const m = (node.maintainers || []).find((x) => x.keyId === keyId);
+      if (!m?.publicKey) continue;
+      const pem = String(m.publicKey).trim();
+      if (!pem.includes("BEGIN PUBLIC KEY")) continue;
+      if (verifySignature(pem, anchorEvent)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (!repo || !trusted.has(repo)) return false;
+  const node = loadNode(repo);
+  if (node && node.kind === "governance") return false;
+  if (keyId) {
+    for (const id of trusted) {
+      const candidate = loadNode(id);
+      if (
+        candidate?.kind === "governance" &&
+        (candidate.maintainers || []).some((x) => x.keyId === keyId)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

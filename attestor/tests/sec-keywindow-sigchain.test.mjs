@@ -235,6 +235,41 @@ describe("contract site 10 — attestor sig-chain key-window gate", () => {
     assert.equal(r.code, "key-time-invalid");
   });
 
+  it("governance-kind node's anchor does NOT rescue a compromised key in attestor/scripts/attest-release.mjs", () => {
+    writeNode({
+      name: "Compromised Dev",
+      keyId: "compromised-key",
+      publicKey: pubPem,
+      revokedAt: "2026-06-20T09:00:00.000Z",
+      revocationReason: "compromise",
+      invalidAfter: C,
+    });
+    const govDir = path.join(NODES, "mcp-tool-shop-org", "cognate");
+    fs.mkdirSync(govDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(govDir, "node.json"),
+      JSON.stringify({
+        id: "mcp-tool-shop-org/cognate",
+        kind: "governance",
+        description: "governance node",
+        maintainers: [{ name: "Cognate", keyId: "ci-cognate-2026", publicKey: pubPem, contact: "c@example.com" }],
+      }, null, 2),
+      "utf8",
+    );
+    const rel = makeSignedRelease({ privateKey: kp.privateKey, keyId: "compromised-key", timestamp: "2026-06-15T00:00:00.000Z" });
+    const govAnchor = makeTrustedAnchorEvent({
+      anchorTs: "2026-06-17T00:00:00.000Z",
+      partitionStart: "2026-05-01T00:00:00.000Z",
+      partitionEnd: "2026-06-30T00:00:00.000Z",
+      anchorKeyId: "ci-cognate-2026",
+    });
+    govAnchor.repo = "mcp-tool-shop-org/cognate";
+    const ctx = buildAttestorTimeCtx([rel, govAnchor]);
+    const r = checkSignatureChain(rel, ctx);
+    assert.equal(r.result, "fail", "a governance-kind node's anchor must not be trusted as a clock");
+    assert.equal(r.code, "key-time-invalid");
+  });
+
   // --- §9.5 routine rotation is prospective; pre-R signatures stay valid ----------------------
   it("routine rotation: a signature BEFORE validUntil(R) stays VALID (trusts the self time)", () => {
     const R = "2026-06-14T12:00:00.000Z";

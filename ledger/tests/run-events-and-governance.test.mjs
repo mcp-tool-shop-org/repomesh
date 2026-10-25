@@ -462,6 +462,82 @@ describe("Part 2: governance attestor kind and attestor-kind drift guard", () =>
     validateLedgerMod.validateRunAttestations(makeOutcomeEvent("19s"), 2, map);
     validateLedgerMod.validateRunAttestations(makeRootAnchoredEvent("cognate-runs-2026-03-19"), 3, map);
   });
+
+  it("REFUSES a governance-kind node's anchor as a trusted clock in validate-ledger and delegates to the shared anchor-trust helper", async () => {
+    const keyWindowMod = await import("../../verifiers/lib/key-window.mjs");
+    assert.equal(
+      typeof keyWindowMod.isBundledTrustedAnchorEvent,
+      "function",
+      "verifiers/lib/key-window.mjs must export the shared isBundledTrustedAnchorEvent helper",
+    );
+
+    const relTime = new Date(Date.now() - 180_000).toISOString();
+    const anchorTime = new Date(Date.now() - 150_000).toISOString();
+    const invalidAfter = new Date(Date.now() - 120_000).toISOString();
+    const revokedAt = new Date(Date.now() - 60_000).toISOString();
+
+    const relEv = signRaw32Bytes(
+      {
+        type: "ReleasePublished",
+        repo: "mcp-tool-shop-org/repomesh",
+        version: "1.0.0",
+        commit: COMMIT_SHA,
+        timestamp: relTime,
+        artifacts: [{ name: "bundle.js", sha256: "b".repeat(64), uri: "https://example.com/bundle.js" }],
+        attestations: [],
+      },
+      "ci-rm-2026",
+      RELEASE_KEYS.privateKey,
+    );
+    const leaf = relEv.signature.canonicalHash;
+    const govAnchor = signRaw32Bytes(
+      {
+        type: "AttestationPublished",
+        repo: "mcp-tool-shop-org/cognate",
+        version: "0.0.0-anchor",
+        commit: COMMIT_SHA,
+        timestamp: anchorTime,
+        artifacts: [],
+        attestations: [{ type: "ledger.anchor", uri: "xrpl:testnet:tx:CAFE" }],
+        notes: "ledger.anchor: pass\n" + JSON.stringify({ partitionId: "p-gov", range: [leaf, leaf] }),
+      },
+      "ci-cognate-2026",
+      COGNATE_KEYS.privateKey,
+    );
+
+    const cognateNode = nodeManifest("mcp-tool-shop-org/cognate", "governance", "ci-cognate-2026", COGNATE_KEYS.publicKey);
+    const releaseNode = {
+      ...nodeManifest("mcp-tool-shop-org/repomesh", "registry", "ci-rm-2026", RELEASE_KEYS.publicKey),
+      maintainers: [
+        {
+          name: "tester",
+          keyId: "ci-rm-2026",
+          publicKey: RELEASE_KEYS.publicKey.trim(),
+          contact: "64996768+mcp-tool-shop@users.noreply.github.com",
+          revokedAt,
+          revocationReason: "compromise",
+          invalidAfter,
+        },
+      ],
+    };
+
+    assert.equal(
+      keyWindowMod.isBundledTrustedAnchorEvent(govAnchor, {
+        trustedAttestors: new Set(["mcp-tool-shop-org/cognate"]),
+        loadNode: (id) => (id === "mcp-tool-shop-org/cognate" ? cognateNode : null),
+        verifySignature: () => true,
+      }),
+      false,
+      "shared isBundledTrustedAnchorEvent must refuse a governance-kind node's anchor",
+    );
+
+    const sb = sandbox([govAnchor, relEv], { nodes: [cognateNode, releaseNode] });
+    const basePath = path.join(sb.dir, "base.jsonl");
+    fs.writeFileSync(basePath, JSON.stringify(govAnchor) + "\n");
+    const r = sb.run({ BASE_LEDGER: basePath });
+    assert.equal(r.code, 1, "validate-ledger must refuse a compromised-key release anchored only by a governance node\n" + r.out + r.err);
+    assert.match(r.err + r.out, /compromised key requires a provable \(anchored\) signature time/i);
+  });
 });
 
 // ===========================================================================

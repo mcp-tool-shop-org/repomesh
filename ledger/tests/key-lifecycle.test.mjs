@@ -164,7 +164,7 @@ function sandbox({ nodes, events, trustedAttestors, trustedPolicy }) {
 // and it imports ../../verifiers/lib/key-window.mjs (REPO_ROOT/verifiers/lib/…). So we mirror the FULL
 // repo-relative layout into a temp dir and run the COPIED script there — every relative path (sibling
 // canonicalize.mjs AND the cross-package key-window import) resolves to our fixture, never the real repo.
-function runVerifyRelease({ nodes, events, repo, version }) {
+function runVerifyRelease({ nodes, events, repo, version, policy }) {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rm-vr-"));
   const ledgerDir = path.join(repoRoot, "ledger");
   const scriptsDir = path.join(ledgerDir, "scripts");
@@ -194,7 +194,7 @@ function runVerifyRelease({ nodes, events, repo, version }) {
   }
   // Point the policy env var at a policy that trusts our anchor node so the anchor-event clock is provable.
   const policyPath = path.join(repoRoot, "verifier.policy.json");
-  fs.writeFileSync(policyPath, JSON.stringify({
+  fs.writeFileSync(policyPath, JSON.stringify(policy || {
     v: 1, trustedAttestors: ["test-org/anchor"], trustedPolicy: ["test-org/policy"],
   }, null, 2));
   const res = spawnSync("node", [path.join(scriptsDir, "verify-release.mjs"),
@@ -746,5 +746,48 @@ describe("§13.1 ③ — order-aware authorization (verify-release)", () => {
     assert.equal(r.code, 1,
       "K_a's post-compromise release must STILL be rejected — a self-signed rotation cannot rehabilitate it\n" + r.out + r.err);
     assert.match(r.err + r.out, /compromise|invalidity|No usable key/i);
+  });
+
+  it("REFUSES a governance-kind node's anchor as a trusted clock in ledger/scripts/verify-release.mjs", () => {
+    const GOV = genKeyPair();
+    const govNode = nodeManifest("mcp-tool-shop-org/cognate", "governance", [
+      maintainer("gov", "gov-key", GOV.publicKey),
+    ]);
+    const relNode = nodeManifest("test-org/test-repo", "compute", [
+      maintainer("dev1", "rel-key", REL.publicKey, {
+        revokedAt: "2026-05-28T09:00:00.000Z",
+        revocationReason: "compromise",
+        invalidAfter: "2026-05-25T00:00:00.000Z",
+      }),
+    ]);
+    const rel = sign(release({ timestamp: "2026-05-20T00:00:00.000Z" }), "rel-key", REL.privateKey);
+    const leaf = rel.signature.canonicalHash;
+    const govAnchor = sign(
+      {
+        ...anchorEvent([leaf, leaf], "2026-05-22T00:00:00.000Z"),
+        repo: "mcp-tool-shop-org/cognate",
+      },
+      "gov-key",
+      GOV.privateKey,
+    );
+
+    const r = runVerifyRelease({
+      nodes: [relNode, govNode],
+      events: [rel, govAnchor],
+      repo: "test-org/test-repo",
+      version: "1.0.0",
+      policy: {
+        v: 2,
+        trustedAttestors: ["test-org/anchor", "mcp-tool-shop-org/cognate"],
+        trustedRunAttestors: ["mcp-tool-shop-org/cognate"],
+        trustedPolicy: ["test-org/policy"],
+      },
+    });
+    assert.equal(
+      r.code,
+      1,
+      "ledger/scripts/verify-release.mjs must refuse a governance-kind node's anchor as a provable clock\n" + r.out + r.err,
+    );
+    assert.match(r.err + r.out, /compromised key requires a provable \(anchored\) signature time|No usable key/i);
   });
 });
