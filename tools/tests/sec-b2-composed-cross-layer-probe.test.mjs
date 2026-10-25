@@ -234,6 +234,7 @@ function strippedNodes() {
       maintainer("rel-key-2", SK.publicKey),   // surviving same-node signer of the revocation
     ]),
     nodeManifest(ANCHOR, "attestor", [maintainer("anchor-key", NK.publicKey)]),
+    nodeManifest(REAL_ANCHOR, "attestor", [maintainer("anchor-key", NK.publicKey)]),
   ];
 }
 

@@ -39,6 +39,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isSignerTrustedForCheck,
 } from "../../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old greedy
 // trailing-JSON regex). The anchor-event-type + range guards stay local to parseAnchorMeta below.
@@ -481,10 +482,7 @@ function loadVerifierPolicy(policyPath) {
 // Resolve consensus from multiple attestations for a single check kind.
 function resolveConsensus(sources, checkPolicy) {
   if (sources.length === 0) return { consensus: "missing", sources };
-  let filtered = sources;
-  if (checkPolicy?.mode === "trusted-set" && checkPolicy.trustedNodes?.length > 0) {
-    filtered = sources.filter((s) => checkPolicy.trustedNodes.includes(s.node));
-  }
+  const filtered = sources.filter((s) => isSignerTrustedForCheck(s.node, checkPolicy));
   if (filtered.length === 0) return { consensus: "untrusted", sources };
 
   const results = filtered.map((s) => s.result);
@@ -720,12 +718,16 @@ export function buildTrust(opts = {}) {
   }
 
   // Collect ALL attestation sources per (release, check kind) — from verified AttestationPublished.
+  const manifestByNode = new Map(nodeManifests.map(({ id, manifest }) => [id, manifest]));
   const rawSources = {};
   for (const ev of okEvents) {
     if (ev.type !== "AttestationPublished") continue;
     const key = `${ev.repo}@${ev.version}`;
     if (!releases[key]) continue;
     const signerNode = signerByEvent.get(ev) || "unknown";
+    const signerKind = manifestByNode.get(signerNode)?.kind || null;
+    const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
+    const evAttTypes = new Set(evAttestations.map((a) => a?.type).filter(Boolean));
 
     try {
       const noteLines = (ev.notes || "").split("\n").filter(Boolean);
@@ -733,6 +735,16 @@ export function buildTrust(opts = {}) {
         const match = line.match(ATTESTATION_NOTE_RE);
         if (match) {
           const kind = match[1].trim();
+          const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
+          if (!evAttTypes.has(kind) || !auth.ok) {
+            console.warn(
+              `Warning: dropping notes verdict for ${ev.type} ${key} from signer ${signerNode} on kind ${kind} — ` +
+              (!evAttTypes.has(kind)
+                ? `kind "${kind}" is not listed in ev.attestations`
+                : auth.reason)
+            );
+            continue;
+          }
           (rawSources[key] ||= {});
           (rawSources[key][kind] ||= []);
           if (!rawSources[key][kind].some((s) => s.node === signerNode)) {
@@ -752,13 +764,22 @@ export function buildTrust(opts = {}) {
     }
 
     try {
-      const evAttestations = Array.isArray(ev.attestations) ? ev.attestations : [];
       for (const att of evAttestations) {
         if (!att || typeof att.uri !== "string") continue;
         const uriMatch = att.uri.match(/^repomesh:attestor:([^:]+):(\w+)$/);
         if (uriMatch) {
           const kind = uriMatch[1];
           const result = uriMatch[2];
+          const auth = canNodeSignAttestations(verifierPolicy, signerNode, signerKind, [kind]);
+          if (att.type !== kind || !evAttTypes.has(kind) || !auth.ok) {
+            console.warn(
+              `Warning: dropping URI verdict for ${ev.type} ${key} from signer ${signerNode} on kind ${kind} — ` +
+              (att.type !== kind || !evAttTypes.has(kind)
+                ? `kind "${kind}" does not match attestation entry type "${att.type || ""}"`
+                : auth.reason)
+            );
+            continue;
+          }
           (rawSources[key] ||= {});
           (rawSources[key][kind] ||= []);
           if (!rawSources[key][kind].some((s) => s.node === signerNode)) {

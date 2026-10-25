@@ -11,6 +11,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isBundledTrustedAnchorEvent,
 } from "../../verifiers/lib/key-window.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -36,12 +37,14 @@ const VERIFIER_POLICY_PATH =
 //     A forged/untrusted anchor's timestamp is NOT a trusted clock.
 function buildOfflineTrustCtx(events) {
   let trustedAttestors = new Set();
+  let trustedRunAttestors = new Set();
   let trustedPolicy = new Set();
   const nodeCache = new Map();
   try {
     if (fs.existsSync(VERIFIER_POLICY_PATH)) {
       const policy = JSON.parse(fs.readFileSync(VERIFIER_POLICY_PATH, "utf8"));
       trustedAttestors = new Set(policy.trustedAttestors || []);
+      trustedRunAttestors = new Set(policy.trustedRunAttestors || []);
       // trustedPolicy = the governance-floor allowlist (§4.3). A node here may sign a
       // KeyRotation/KeyRevocation for ANY node. Falls back to trustedAttestors when absent, matching
       // validate-ledger's resolution.
@@ -104,29 +107,23 @@ function buildOfflineTrustCtx(events) {
   }
 
   function isBundledTrustedAnchor(anchorEvent) {
-    const keyId = anchorEvent?.signature?.keyId;
-    if (!keyId) return false;
-    // The signer must belong to a trustedAttestors node that advertises this keyId, and the anchor's
-    // own signature must verify against that node's key.
-    for (const id of trustedAttestors) {
-      const node = loadNode(id);
-      const m = (node?.maintainers || []).find((x) => x.keyId === keyId);
-      if (!m?.publicKey) continue;
-      const pem = String(m.publicKey).trim();
-      if (!pem.includes("BEGIN PUBLIC KEY")) continue;
-      try {
-        const ok = crypto.verify(
-          null,
-          Buffer.from(anchorEvent.signature.canonicalHash, "hex"),
-          pem,
-          Buffer.from(anchorEvent.signature.value, "base64")
-        );
-        if (ok) return true;
-      } catch {
-        // try the next candidate node
-      }
-    }
-    return false;
+    return isBundledTrustedAnchorEvent(anchorEvent, {
+      trustedAttestors,
+      trustedRunAttestors,
+      loadNode,
+      verifySignature: (pem, ev) => {
+        try {
+          return crypto.verify(
+            null,
+            Buffer.from(ev.signature.canonicalHash, "hex"),
+            pem,
+            Buffer.from(ev.signature.value, "base64")
+          );
+        } catch {
+          return false;
+        }
+      },
+    });
   }
 
   return { findEarliestAnchorForLeaf, isBundledTrustedAnchor, loadNode, trustedPolicy };

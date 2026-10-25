@@ -26,6 +26,7 @@ import {
   keyWindow,
   isKeyValidForSignature,
   resolveTrustedSignatureTimeSync,
+  isBundledTrustedAnchorEvent,
 } from "../../verifiers/lib/key-window.mjs";
 // SEAM-PARSE-001: the ONE canonical anchor-note metadata parser (replaces this file's old
 // indexOf("{") rule, which would have grabbed a brace appearing in the anchor's prose line).
@@ -477,20 +478,13 @@ function buildOfflineTrustCtx(events, trustedAttestorsSet) {
   }
 
   function isBundledTrustedAnchor(anchorEvent) {
-    const keyId = anchorEvent?.signature?.keyId;
-    if (!keyId) return false;
-    for (const id of trustedAttestorsSet) {
-      const node = loadNode(id);
-      if (!node || node.kind === "governance") continue;
-      const m = (node?.maintainers || []).find((x) => x.keyId === keyId);
-      if (!m?.publicKey) continue;
-      const pem = String(m.publicKey).trim();
-      if (!pem.includes("BEGIN PUBLIC KEY")) continue;
-      if (verifyEd25519(pem, anchorEvent.signature.canonicalHash, anchorEvent.signature.value)) {
-        return true;
-      }
-    }
-    return false;
+    return isBundledTrustedAnchorEvent(anchorEvent, {
+      trustedAttestors: trustedAttestorsSet,
+      trustedRunAttestors: new Set(verifierPolicy?.trustedRunAttestors || []),
+      loadNode,
+      verifySignature: (pem, ev) =>
+        verifyEd25519(pem, ev.signature?.canonicalHash, ev.signature?.value),
+    });
   }
 
   return { findEarliestAnchorForLeaf, isBundledTrustedAnchor };

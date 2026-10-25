@@ -440,3 +440,187 @@ describe("SCORING-A-003 verdict-band thresholds are a single shared source of tr
       "not exit 1 from the drifted >=50 floor");
   });
 });
+
+// ===========================================================================
+// Authorised notes verdicts only (kind in ev.attestations + canNodeSignAttestations)
+// ===========================================================================
+
+describe("build-trust scores only verdicts the signer is authorised for", () => {
+  const COGNATE = "mcp-tool-shop-org/cognate";
+  const PREREG_HASH = "1".repeat(64);
+  let CK;
+  before(() => { CK = genKeyPair(); });
+
+  function shippedStylePolicy() {
+    return {
+      v: 2,
+      trustedAttestors: [ATTESTOR, COGNATE, RELEASE],
+      trustedRunAttestors: [COGNATE],
+      trustedPolicy: [RELEASE],
+      nodeKinds: {
+        attestor: { canSign: ["AttestationPublished"] },
+        governance: { canSign: ["run.preregistered", "run.outcome", "cognate.root.anchored"] },
+        policy: { canSign: ["PolicyViolation"] },
+        registry: { canSign: ["AttestationPublished", "PolicyViolation"] },
+      },
+      scoreableResults: ["pass", "warn", "fail"],
+      checks: {
+        "sbom.present": {
+          mode: "trusted-set", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "integrity", attestorGated: true, weights: { pass: 20, warn: 0, fail: 0 },
+        },
+        "provenance.present": {
+          mode: "trusted-set", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "integrity", attestorGated: true, weights: { pass: 20, warn: 0, fail: 0 },
+        },
+        "signature.chain": {
+          mode: "trusted-set", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "integrity", attestorGated: true, weights: { pass: 15, warn: 0, fail: 0 },
+        },
+        "license.audit": {
+          mode: "trusted-set", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "assurance", attestorGated: false, weights: { pass: 30, warn: 15, fail: 0 },
+        },
+        "security.scan": {
+          mode: "trusted-set", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "assurance", attestorGated: false, weights: { pass: 40, warn: 20, fail: 0 },
+        },
+        "repro.build": {
+          mode: "open", trustedNodes: [ATTESTOR], quorum: 1, conflictPolicy: "fail-wins",
+          category: "assurance", attestorGated: false, weights: { pass: 30, warn: 15, fail: 0 },
+        },
+      },
+    };
+  }
+
+  function cognateNodes() {
+    return [
+      nodeManifest(RELEASE, "registry", "rel-key", RK.publicKey),
+      nodeManifest(ATTESTOR, "attestor", "att-key", AK.publicKey),
+      nodeManifest(COGNATE, "governance", "cog-key", CK.publicKey),
+    ];
+  }
+
+  it("drops unreferenced or governance-signed notes verdicts on a run.preregistered event with zero score impact", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const baseline = entryFor(sandbox([rel], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run());
+
+    const cognateRunEv = sign(attestation([
+      { type: "run.preregistered", uri: "urn:cognate:run:prereg:19s", sha256: PREREG_HASH },
+    ], {
+      notes: "sbom.present: pass — ok\nrepro.build: pass — ok",
+    }), "cog-key", CK.privateKey);
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    let entry;
+    try {
+      entry = entryFor(sandbox([rel, cognateRunEv], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run());
+    } finally {
+      console.warn = origWarn;
+    }
+
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "missing", "repro.build must remain missing");
+    assert.equal(entry.assuranceConsensus["repro.build"], undefined, "repro.build must have no recorded sources");
+    assert.equal(entry.assuranceConsensus["sbom.present"], undefined, "sbom.present must have no recorded sources");
+    assert.equal(entry.integrityScore, baseline.integrityScore, "integrityScore must not change");
+    assert.equal(entry.assuranceScore, baseline.assuranceScore, "assuranceScore must not change");
+    assert.equal(entry.trustScore, baseline.trustScore, "trustScore must not change");
+    assert.ok(
+      warnings.some((w) => w.includes(COGNATE) && w.includes("repro.build")),
+      "warning must name signer and kind for dropped repro.build notes verdict",
+    );
+  });
+
+  it("fail-wins variant: an unauthorised repro.build: fail note on a governance event does not change consensus", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const legitRepro = sign(attestation([
+      { type: "repro.build", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      timestamp: "2026-03-01T01:00:00.000Z",
+      notes: "repro.build: pass — reproducible build verified",
+    }), "att-key", AK.privateKey);
+
+    const cognateRunEv = sign(attestation([
+      { type: "run.preregistered", uri: "urn:cognate:run:prereg:19s", sha256: PREREG_HASH },
+    ], {
+      timestamp: "2026-03-01T02:00:00.000Z",
+      notes: "repro.build: fail — unauthorised note line",
+    }), "cog-key", CK.privateKey);
+
+    const entry = entryFor(
+      sandbox([rel, legitRepro, cognateRunEv], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run(),
+    );
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "repro.build result must remain pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].consensus, "pass", "repro.build consensus must remain pass");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1, "only the legitimate attestor source may be recorded");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].node, ATTESTOR);
+    assert.equal(entry.assuranceScore, 30, "assuranceScore must reflect the legitimate repro.build pass (30)");
+  });
+
+  it("regression guard: a legitimate attestor's authorised notes verdict still counts while unlisted note kinds are dropped", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const legitNoteOnly = sign(attestation([
+      { type: "repro.build", uri: "https://example.com/repro-log.json" },
+    ], {
+      notes: "repro.build: pass — legitimate note verdict\nlicense.audit: pass — unlisted kind on event",
+    }), "att-key", AK.privateKey);
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    let entry;
+    try {
+      entry = entryFor(sandbox([rel, legitNoteOnly], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run());
+    } finally {
+      console.warn = origWarn;
+    }
+
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "pass", "legitimate attestor's notes verdict for listed kind must still count");
+    assert.equal(entry.assuranceConsensus["repro.build"].sources.length, 1);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].node, ATTESTOR);
+    assert.equal(entry.assuranceConsensus["repro.build"].sources[0].reason, "legitimate note verdict");
+    assert.equal(entry.assuranceScore, 30, "legitimate repro.build pass must still award 30 assurance points");
+    assert.equal(entry.assuranceBreakdown["license.audit"].result, "missing", "unlisted kind in notes must be dropped");
+    assert.equal(entry.assuranceConsensus["license.audit"], undefined, "unlisted kind must have no sources");
+    assert.ok(
+      warnings.some((w) => w.includes(ATTESTOR) && w.includes("license.audit")),
+      "warning must name signer and kind for dropped unlisted note kind",
+    );
+  });
+
+  it("drops URI verdicts whose kind does not match the attestation entry type or is unauthorised for the signer", () => {
+    const rel = sign(release(), "rel-key", RK.privateKey);
+    const mismatchedUriEv = sign(attestation([
+      { type: "license.audit", uri: "repomesh:attestor:sbom.present:pass" },
+      { type: "license.audit", uri: "repomesh:attestor:repro.build:pass" },
+    ], {
+      notes: "license.audit: pass — ok",
+    }), "att-key", AK.privateKey);
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    let entry;
+    try {
+      entry = entryFor(sandbox([rel, mismatchedUriEv], { nodes: cognateNodes(), policy: shippedStylePolicy() }).run());
+    } finally {
+      console.warn = origWarn;
+    }
+
+    assert.equal(entry.assuranceBreakdown["license.audit"].result, "pass", "authorised license.audit note must still count");
+    assert.equal(entry.assuranceBreakdown["repro.build"].result, "missing", "mismatched URI kind repro.build must be dropped");
+    assert.equal(entry.assuranceConsensus["repro.build"], undefined, "repro.build must have no recorded sources from mismatched URI");
+    assert.equal(entry.attestationSources["sbom.present"], undefined, "sbom.present must have no recorded sources from mismatched URI");
+    assert.equal(entry.assuranceScore, 30, "assuranceScore must reflect only license.audit pass (30)");
+    assert.ok(
+      warnings.some((w) => w.includes(ATTESTOR) && w.includes("sbom.present") && w.includes("URI verdict")),
+      "warning must name signer and kind for dropped sbom.present URI verdict",
+    );
+    assert.ok(
+      warnings.some((w) => w.includes(ATTESTOR) && w.includes("repro.build") && w.includes("URI verdict")),
+      "warning must name signer and kind for dropped repro.build URI verdict",
+    );
+  });
+});

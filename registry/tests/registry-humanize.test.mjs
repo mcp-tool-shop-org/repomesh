@@ -135,7 +135,7 @@ function entryFor(out, repo = RELEASE, version = "1.0.0") {
 describe("STGB-VER-003 trust.json keeps the verifier's reason string", () => {
   it("a warn attestation's reason is preserved in assuranceConsensus.sources", () => {
     const rel = sign(release(), "rel-key", RK.privateKey);
-    const att = sign(attestation([], {
+    const att = sign(attestation([{ type: "security.scan", uri: "https://example.com/scan.json" }], {
       notes: "security.scan: warn — moderate vuln in transitive dep foo@1.2.3",
     }), "att-key", AK.privateKey);
     const out = sandbox([rel, att]).run();
@@ -254,7 +254,7 @@ describe("ANC-B10 note separator tolerance", () => {
   for (const [label, dash] of SEPARATORS) {
     it(`parses an attestation note that uses an ${label} separator`, () => {
       const rel = sign(release(), "rel-key", RK.privateKey);
-      const att = sign(attestation([], {
+      const att = sign(attestation([{ type: "security.scan", uri: "https://example.com/scan.json" }], {
         notes: `security.scan: warn ${dash} drifted-separator reason text`,
       }), "att-key", AK.privateKey);
       const out = sandbox([rel, att]).run();

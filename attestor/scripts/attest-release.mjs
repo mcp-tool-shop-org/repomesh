@@ -17,6 +17,7 @@ import {
   resolveTrustedSignatureTimeSync,
   deriveKeyWindowConstraints,
   mergeStricterWindow,
+  isBundledTrustedAnchorEvent,
 } from "../../verifiers/lib/key-window.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
@@ -88,10 +89,34 @@ function findNodeManifest(repoId) {
 
 function loadTrustedAttestors() {
   try {
-    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
     return new Set(Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
   } catch {
     return new Set();
+  }
+}
+
+function loadTrustedRunAttestors() {
+  try {
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+    return new Set(Array.isArray(policy?.trustedRunAttestors) ? policy.trustedRunAttestors : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function findNodeManifestForAnchor(repoId) {
+  const [org, repo] = String(repoId || "").split("/");
+  if (!org || !repo || !SAFE_SEGMENT.test(org) || !SAFE_SEGMENT.test(repo)) return null;
+  const nodesDir = process.env.REPOMESH_NODES_PATH || NODES_DIR;
+  const p = path.join(nodesDir, org, repo, "node.json");
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch {
+    return null;
   }
 }
 
@@ -100,7 +125,8 @@ function loadTrustedAttestors() {
 // validate-ledger's resolution (`policy.trustedPolicy || policy.trustedAttestors`).
 function loadTrustedPolicy() {
   try {
-    const policy = JSON.parse(fs.readFileSync(path.join(ROOT, "verifier.policy.json"), "utf8"));
+    const policyPath = process.env.REPOMESH_VERIFIER_POLICY_PATH || path.join(ROOT, "verifier.policy.json");
+    const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
     const list = Array.isArray(policy?.trustedPolicy)
       ? policy.trustedPolicy
       : (Array.isArray(policy?.trustedAttestors) ? policy.trustedAttestors : []);
@@ -201,6 +227,7 @@ function isLedgerAnchorEvent(ev) {
 export function buildAttestorTimeCtx(events) {
   const evs = Array.isArray(events) ? events : [];
   const trusted = loadTrustedAttestors();
+  const trustedRunAttestors = loadTrustedRunAttestors();
 
   // Index source events by their leaf (signature.canonicalHash) so we can map a leaf -> its
   // self-asserted timestamp, which is what a partition-by-time-range anchor covers.
@@ -239,7 +266,12 @@ export function buildAttestorTimeCtx(events) {
   }
 
   function isBundledTrustedAnchor(anchorEvent) {
-    return trusted.has(anchorEvent?.repo);
+    return isBundledTrustedAnchorEvent(anchorEvent, {
+      trustedAttestors: trusted,
+      trustedRunAttestors,
+      loadNode: findNodeManifestForAnchor,
+      verifySignature: (pem, ev) => verifyEventSig(ev, pem),
+    });
   }
 
   // Wave-B2 §12.1 + Wave-B3 §13.1: also expose the loaded events + the NEW-shape derive opts
