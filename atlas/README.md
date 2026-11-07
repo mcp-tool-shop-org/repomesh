@@ -1,22 +1,14 @@
 # repomesh: how it works
 
-Mapped at 2026-10-25 from commit 2081a4b by Atlas 1.24.0.
+Mapped at 2026-11-07 from commit d1b1b87 by Atlas 1.24.0.
 
 ## What this is
 
 18 parts, mostly JavaScript (180 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; the busiest is ledger-ci, which reaches 9 parts. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
 
-## What changed since 2026-10-24 (5716064)
+## What changed since 2026-10-25 (2081a4b)
 
-- ledger-ci now also starts on a push to main touching 18 paths.
-- ledger-ci now also runs anchor/xrpl/tests/, attestor/tests/, ledger/tests/ and 7 more.
-- registry-ci now also starts when the workflow ledger-ci completes.
-- And 1 more change to a door.
-- .github/workflows/ is now read by registry/tests/registry-ci-follower.test.mjs.
-- .github/workflows/registry-ci.yml is now read by .github/workflows/registry-ci.yml and registry/tests/registry-ci-follower.test.mjs.
-- README.md is now also read by registry/tests/registry-ci-follower.test.mjs.
-- And 12 more new writers and readers of places.
-- 5 files added and 55 changed content, across 11 parts.
+Nothing structural changed since 2026-10-25; 19 files changed content.
 
 ## What comes in
 
@@ -79,10 +71,10 @@ Mapped at 2026-10-25 from commit 2081a4b by Atlas 1.24.0.
 ## What tends to change together
 
 - **packages/repomesh-cli/src/verify/key-window.mjs** and **verifiers/lib/key-window.mjs** changed together in 6 of 6 commits, and the repomesh-cli part imports the verifiers part.
-- **packages/repomesh-cli/src/verify/verify-release.mjs** and **tools/verify-release.mjs** changed together in 8 of 9 commits, and the tools part imports the repomesh-cli part.
+- **packages/repomesh-cli/src/verify/verify-release.mjs** and **tools/verify-release.mjs** changed together in 6 of 7 commits, and the tools part imports the repomesh-cli part.
+- **registry/scripts/build-trust.mjs** and **tools/verify-release.mjs** changed together in 6 of 7 commits, and the tools part imports the registry part.
+- **ledger/scripts/validate-ledger.mjs** and **packages/repomesh-cli/src/verify/verify-release.mjs** changed together in 6 of 8 commits, and the ledger part imports the repomesh-cli part.
 - **ledger/scripts/validate-ledger.mjs** and **registry/scripts/build-trust.mjs** changed together in 6 of 8 commits, and the ledger part and the registry part import each other.
-- **registry/scripts/build-trust.mjs** and **tools/verify-release.mjs** changed together in 6 of 9 commits, and the tools part imports the registry part.
-- **packages/repomesh-cli/src/remote-defaults.mjs** and **tools/verify-release.mjs** changed together in 5 of 8 commits, and the tools part imports the repomesh-cli part.
 
 Confidence is low: fewer than 25 source files reach 10 revisions in the window.
 

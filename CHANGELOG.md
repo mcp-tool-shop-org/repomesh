@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-11-07
+
+Hardening release. No new features; the fixes below tighten how release verification reads verdicts, policy and anchor events.
+
 ### Fixed
 
 - **Per-signer latest verdict selection**: `registry/scripts/build-trust.mjs`, `packages/repomesh-cli/src/verify/verify-release.mjs`, and `tools/verify-release.mjs` share `selectLatestVerdictPerSigner` in `verifiers/lib/key-window.mjs` (and its CLI mirror) so that per `(check, signer)` all three consumers select the same latest verdict and events with an invalid signature never compete.

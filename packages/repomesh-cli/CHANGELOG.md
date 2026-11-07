@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-11-07
+
+### Fixed
+
+- `repomesh verify-release` picks the latest verdict per signer by ledger position, not by the signer's own timestamp, and ignores events with an invalid signature.
+- A missing or malformed `verifier.policy.json` fails closed (remote and `--local`) and reports a structured `policyError`.
+- Check types outside the bundled policies are treated as closed in every mode.
+- Anchor events are re-hashed before their signature is trusted.
+
 ## [2.5.0] - 2026-10-25
 
 ### Added

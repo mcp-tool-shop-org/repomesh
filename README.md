@@ -29,7 +29,9 @@ Attestia, Cognate, and RepoMesh are three products.
 
 ## What's new in 2.4 and 2.5
 
-**Version 2.5.0.**
+**Version 2.5.1.**
+
+- **2.5.1: verification hardening.** When a verifier signs more than one verdict for the same check, every consumer now picks the latest by ledger position, not by the signer's own timestamp. A missing or malformed `verifier.policy.json` now fails closed, and any check type the policy does not know is treated as closed in every mode.
 
 - **2.5.0: anchor posting fails closed.** `post-anchor.mjs` refuses to post, and opens no connection, unless the config says `testnet` and the WebSocket URL is a known testnet endpoint. An environment variable alone can't switch posting to mainnet. See [XRPL Anchoring (Testnet Guard)](#xrpl-anchoring-testnet-guard).
 - **2.5.0: a required test gate.** Every pull request runs all 9 `node --test` suites with a line-coverage floor and a production `npm audit` at `high`. `validate-ledger` and `test` are required checks on `main`, and `registry-ci.yml` now runs only after `ledger-ci` succeeds on `main`.
