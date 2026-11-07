@@ -5,7 +5,14 @@ sidebar:
   order: 5
 ---
 
-This page covers 2.4.0 and 2.5.0, which ship together as 2.5.0. The full list is in the repository's [CHANGELOG.md](https://github.com/mcp-tool-shop-org/repomesh/blob/main/CHANGELOG.md).
+This page covers 2.4.0 and 2.5.0, which ship together as 2.5.0, and the 2.5.1 hardening release. The full list is in the repository's [CHANGELOG.md](https://github.com/mcp-tool-shop-org/repomesh/blob/main/CHANGELOG.md).
+
+## 2.5.1: verification hardening
+
+- When a verifier signs more than one verdict for the same check, the registry and both verify commands pick the latest by position on the ledger, not by the signer's own timestamp.
+- A missing, unreadable or malformed `verifier.policy.json` now fails closed and reports a structured `policyError`.
+- Check types the policy does not know are treated as closed in remote, `--local` and `tools` modes.
+- Anchor events are re-hashed and checked before their signature is trusted.
 
 ## 2.5.0: anchor posting fails closed
 

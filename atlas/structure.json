@@ -999,7 +999,7 @@
           "path": "docs/contracts/key-lifecycle-contract.md"
         },
         {
-          "hash": "772cd918705c1c1be5f5f89168e271bf28097089cddd22ec883d8d9b96532808",
+          "hash": "bdd0aa9d2c768d3034e26f3234f06379eea3fc9a6b90efac2a717175d002edf9",
           "path": "docs/handbook.md"
         },
         {
@@ -1015,7 +1015,7 @@
           "path": "docs/threat-model.md"
         },
         {
-          "hash": "234f2f0770b7bf5f8d13303ecfa9386659531d12e570346e93b6c9b9b4cf8366",
+          "hash": "83671d13bd609e2143b51e3dfb4136dbb836b741f5c5a17d90c0f6480b6d4d07",
           "path": "docs/verification.md"
         },
         {
@@ -1983,15 +1983,15 @@
             {
               "in": "buildTrust",
               "kind": "catch",
-              "line": 778
+              "line": 782
             },
             {
               "in": "buildTrust",
               "kind": "catch",
-              "line": 811
+              "line": 816
             }
           ],
-          "hash": "793be19793a6b12e563694b18dfa426e82a402d7023d2984fa23c7a4b7355e07",
+          "hash": "508900f1f305e5e43c1a4a390ee84bf8031ed1ea8b2ed1e977dc5e0b8da64526",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "verifiers/lib/anchor-notes.mjs",
@@ -2308,14 +2308,14 @@
                   "via": "verifyEventSignature"
                 },
                 {
-                  "line": 749,
+                  "line": 752,
                   "name": "canNodeSignAttestations",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 762,
+                  "line": 765,
                   "name": "selectLatestVerdictPerSigner",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2330,7 +2330,7 @@
                   "via": "isAuthorizedUriVerdict"
                 },
                 {
-                  "line": 802,
+                  "line": 806,
                   "name": "selectLatestVerdictPerSigner",
                   "target": {
                     "file": "verifiers/lib/key-window.mjs"
@@ -2345,14 +2345,14 @@
                   "via": "resolveConsensus"
                 },
                 {
-                  "line": 868,
+                  "line": 873,
                   "name": "isRegisteredCheck",
                   "target": {
                     "file": "verifiers/lib/policy.mjs"
                   }
                 },
                 {
-                  "line": 1142,
+                  "line": 1147,
                   "name": "writeJsonAtomic",
                   "target": {
                     "file": "verifiers/lib/common.mjs"
@@ -2492,7 +2492,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "8fbc539cd7e94a16c5e4a8a7226fda814f0e3ca1335614868284d240192e628d",
+          "hash": "7d72161504a9971641379c339252bbc3a410acf930c4b12796540f46f2850571",
           "importsFiles": [
             "ledger/scripts/canonicalize.mjs",
             "registry/scripts/build-trust.mjs"
@@ -2584,7 +2584,7 @@
       "externals": 0,
       "files": [
         {
-          "hash": "84df4d0429f0d33aa6dac12498f077864b75122a828ea7d45c93fbff1b5747c0",
+          "hash": "2400c8a4e482ef3d166c70f11fd365aca2e54cfae5f34c8f1c68369316077abc",
           "path": "packages/repomesh-cli/CHANGELOG.md"
         },
         {
@@ -2592,11 +2592,11 @@
           "path": "packages/repomesh-cli/LICENSE"
         },
         {
-          "hash": "986943e5c85e0f1f298567490edfc16d48c87195c80193fad879d87d1d2bba72",
+          "hash": "69496dce1b4123d816ecfff48a39b754a7f252617bca2bf8e01d46ce656f32ba",
           "path": "packages/repomesh-cli/README.md"
         },
         {
-          "hash": "1e44b20f03de60d91e54b0afb7322264432edadd7683c1497cb9fcb3bc78f2bc",
+          "hash": "c99219ea25a1d26c5d4e69ce403d7b5702b71fb8746461dd10b6ea361236fdc4",
           "path": "packages/repomesh-cli/package.json"
         },
         {
@@ -3123,7 +3123,7 @@
               "line": 609
             }
           ],
-          "hash": "2eb0f2b1a8bedf0e506985bdcff795ac77bbc88c83820b9346b05521c5266ea8",
+          "hash": "123143bc2b09fbbc1a74d482cbd9045bdbf9467bb8813b16ec4b1b9e1e50c3b6",
           "path": "packages/repomesh-cli/src/verify/key-window.mjs"
         },
         {
@@ -3418,15 +3418,15 @@
             {
               "in": "computeVerifyResult",
               "kind": "catch",
-              "line": 1251
+              "line": 1254
             },
             {
               "in": "computeVerifyResult",
               "kind": "catch",
-              "line": 1285
+              "line": 1288
             }
           ],
-          "hash": "eb32392988b1d052291abcae8ba9317d320d890150e6787458fdb5b51d8bdceb",
+          "hash": "45b7d7599e1683cb49989a3f47a939bb18eb0898d8fc505f889e0cb9229027d0",
           "importOrder": [
             "packages/repomesh-cli/src/log.mjs",
             "packages/repomesh-cli/src/mode.mjs",
@@ -3624,7 +3624,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "9466a2b97412b2785c46748fdf8e806e2385adb4307e95f57f7cec2de1fcc272",
+          "hash": "b9415cbd93b4e8c333a5de17dc2123ca00896bfe850ab2237391f7f7d16bea57",
           "importsFiles": [
             "packages/repomesh-cli/src/verify/key-window.mjs"
           ],
@@ -3739,7 +3739,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "75ccd1e6109e3467cabeef594995213975fdf077e13b5dcd5df8d69de4a558f3",
+          "hash": "6deafa4dff334e262c586be864cc56411f77c1b17d7c40735b899c12070ab04e",
           "names": [
             "packages/repomesh-cli/src/remote-defaults.mjs"
           ],
@@ -3841,7 +3841,7 @@
           "path": ".gitignore"
         },
         {
-          "hash": "893554bdb584c9a5011a9d1696166e214ed9d3611d34a62c73fc625f1737eccf",
+          "hash": "b5e1325ee8d13d114035f7920881ea478d26df22a2c14df6ca510561eca1de19",
           "path": "CHANGELOG.md"
         },
         {
@@ -3873,7 +3873,7 @@
           "path": "README.ja.md"
         },
         {
-          "hash": "0d76807edb32b959320b6acc8fd74c5b379e0caa34df87631503aa591cd6aabf",
+          "hash": "c4487c9d4c49f8ece32027efa6e721f0278348a0a56c10f66b361ccd0c76e04e",
           "path": "README.md"
         },
         {
@@ -3901,7 +3901,7 @@
           "path": "node.json"
         },
         {
-          "hash": "40e6a83629938f6c09a927e3f97499d3e04b12c3580df5e4f35599870bba18fe",
+          "hash": "4d8e94c914f3b530c3ae84ac39725346b1c6e261199937a0dd595b636b1453ac",
           "path": "package-lock.json"
         },
         {
@@ -4039,7 +4039,7 @@
           "path": "site/src/content/docs/handbook/verification.md"
         },
         {
-          "hash": "4af3a05d3cac9be925f82604f1b8bee01cd04f223fc1ded20e1d1f19e381297a",
+          "hash": "999d447677d5b22685276629c07303d322eb998d8810289563f8c143f568eb0b",
           "path": "site/src/content/docs/handbook/whats-new.md"
         },
         {
@@ -4393,7 +4393,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "7f78dffcec81d7a8b9e60470253c315c7de3a34a0fe9548ef5dc122b1c4caf32",
+          "hash": "7076853659204d387dbfecce082aa52179bd344e2a4ff06478e75963b1766bd5",
           "names": [
             "registry/scripts/build-trust.mjs"
           ],
@@ -4570,20 +4570,20 @@
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 947
+              "line": 951
             },
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 989
+              "line": 993
             },
             {
               "in": "verifyRelease",
               "kind": "catch",
-              "line": 1004
+              "line": 1008
             }
           ],
-          "hash": "489ec5aad94eca1585f41e05e025776e9250de8e74a4d1989987f5c91bac2e68",
+          "hash": "d12f8f36279ad27c83a37fca761a5c93a2dae9fd82dc1766a40a14f65e853646",
           "importOrder": [
             "anchor/xrpl/scripts/merkle.mjs",
             "anchor/xrpl/scripts/verify-anchor.mjs",
@@ -4885,7 +4885,7 @@
               "line": 609
             }
           ],
-          "hash": "2eb0f2b1a8bedf0e506985bdcff795ac77bbc88c83820b9346b05521c5266ea8",
+          "hash": "123143bc2b09fbbc1a74d482cbd9045bdbf9467bb8813b16ec4b1b9e1e50c3b6",
           "path": "verifiers/lib/key-window.mjs",
           "sequences": [
             {
@@ -7044,7 +7044,7 @@
           "testFramework": "node --test"
         },
         {
-          "hash": "45f01466e9c0b96cbd2300ddcf11192f9e4044435d9f134dd339ccea983a46d4",
+          "hash": "d95651cdc7727b8d933738658954c0733c0f9a9bfc68978e579368d999389e60",
           "importsFiles": [
             "verifiers/lib/key-window.mjs"
           ],
@@ -11511,7 +11511,7 @@
   ],
   "engine": "1.24.0",
   "generatedFrom": {
-    "commit": "2081a4bc25f52d1ea7f8c6df4ac8f3b24667c022",
+    "commit": "d1b1b87c74287aa8e438c1564d6334e18515dbe6",
     "tracked": 307
   },
   "landings": [
