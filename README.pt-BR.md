@@ -15,25 +15,27 @@
   <a href="https://mcp-tool-shop-org.github.io/repomesh/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-Libere o livro-razão e o relógio de confiança ancorado ao XRPL para uma rede de repositórios: eventos assinados, manifestos de nós e verificação. Separe do armazenamento de eventos do Attestia.
+Libere o livro-razão e o temporizador de confiança ancorado ao XRPL para uma rede de repositórios: eventos assinados, manifestos de nós e verificação. Separe do armazenamento de eventos do Attestia.
 
 ## Coloque no sistema
 
 Attestia, Cognate e RepoMesh são três produtos.
 
-**RepoMesh** é a rede de lançamento: eventos assinados, manifestos de nós e um relógio de confiança ancorado ao XRPL. Ele mantém seu próprio livro-razão RFC 6962.
+**RepoMesh** é a rede de lançamento: eventos assinados, manifestos de nós e um temporizador de confiança ancorado ao XRPL. Ele mantém seu próprio livro-razão RFC 6962.
 
 **Attestia** prova que um evento, uma transação ou uma transição de estado ocorreu e vincula essa prova a uma cadeia. O domínio que ele oferece é a verdade financeira: cofre pessoal, tesouraria da organização e registrum. Suas provas de Merkle não são este livro-razão.
 
 **Cognate** é o domínio de governança de IA no armazenamento de eventos e nas provas de Merkle do Attestia. Ele chama RepoMesh quando precisa que um lançamento seja verificado. Ele não mantém um segundo armazenamento de eventos e não usa a árvore de Merkle do Attestia para esta rede.
 
-## O que há de novo nas versões 2.4 e 2.5?
+## O que há de novo nas versões 2.4 e 2.5
 
-**Versão 2.5.0.**
+**Versão 2.5.1.**
 
-- **2.5.0: a publicação de âncora falha e é interrompida.** `post-anchor.mjs` se recusa a publicar e não abre nenhuma conexão, a menos que a configuração diga `testnet` e a URL WebSocket seja um endpoint de testnet conhecido. Uma variável de ambiente sozinha não pode alterar a publicação para a mainnet. Consulte [Ancoragem XRPL (Proteção de Testnet)](#ancoragem-xrpl-testnet-guard).
-- **2.5.0: um portão de teste obrigatório.** Cada solicitação de pull executa todas as 9 suítes `node --test` com um limite de cobertura de linha e uma produção `npm audit` em `high`. `validate-ledger` e `test` são verificações obrigatórias em `main`, e `registry-ci.yml` agora é executado apenas após `ledger-ci` ter sucesso em `main`.
-- **2.4.0: execute as atestações do Cognate.** O livro-razão aceita três novos tipos de atestação, `run.preregistered`, `run.outcome` e `cognate.root.anchored`, cada um com um resumo `sha256` e um URI `urn:cognate:...`. Apenas um nó `governance` em ambos `trustedAttestors` e `trustedRunAttestors` (hoje, `mcp-tool-shop-org/cognate`) pode assiná-los, e ele não pode assinar mais nada. Cada `run.outcome` deve referenciar um evento `run.preregistered` já presente no livro-razão.
+- **2.5.1: reforço da verificação.** Quando um verificador assina mais de um veredicto para a mesma verificação, todos os consumidores agora selecionam o mais recente com base na posição no livro-razão, e não no próprio carimbo de data/hora do signatário. Um `verifier.policy.json` ausente ou malformado agora falha e qualquer tipo de verificação que a política não reconheça é tratado como falha em todos os modos.
+
+- **2.5.0: a publicação do âncora falha.** `post-anchor.mjs` se recusa a publicar e não abre nenhuma conexão, a menos que a configuração diga `testnet` e a URL WebSocket seja um endpoint de testnet conhecido. Uma variável de ambiente sozinha não pode alterar a publicação para a mainnet. Consulte [Ancoragem XRPL (Testnet Guard)](#ancoragem-xrpl-testnet-guard).
+- **2.5.0: um portão de teste obrigatório.** Cada solicitação de pull executa todas as 9 suítes `node --test` com um limite de cobertura de linha e uma produção `npm audit` em `high`. `validate-ledger` e `test` são verificações obrigatórias em `main`, e `registry-ci.yml` agora é executado apenas após `ledger-ci` ser bem-sucedido em `main`.
+- **2.4.0: execute as atestações do Cognate.** O livro-razão aceita três novos tipos de atestação, `run.preregistered`, `run.outcome` e `cognate.root.anchored`, cada um com um resumo `sha256` e um URI `urn:cognate:...`. Apenas um nó `governance` em ambos `trustedAttestors` e `trustedRunAttestors` (hoje, `mcp-tool-shop-org/cognate`) pode assiná-los, e ele não pode assinar mais nada. Cada `run.outcome` deve referenciar um evento `run.preregistered` já no livro-razão.
 - **2.4.0: o contrato de assinatura é verificado.** Uma assinatura Ed25519 deve ser sobre os 32 bytes brutos de `canonicalHash`. O validador rejeita uma assinatura feita sobre o texto JSON canônico ou sobre a string hexadecimal de 64 caracteres.
 
 Consulte [CHANGELOG.md](CHANGELOG.md) para a lista completa.
@@ -71,7 +73,7 @@ Isso gera tudo o que você precisa:
 
 Em seguida, adicione dois segredos ao seu repositório:
 1. `REPOMESH_SIGNING_KEY` — sua chave privada PEM (impressa por init)
-2. `REPOMESH_LEDGER_TOKEN` — PAT GitHub com `contents:write` + `pull-requests:write` neste repositório
+2. `REPOMESH_LEDGER_TOKEN` — GitHub PAT com `contents:write` + `pull-requests:write` neste repositório
 
 Faça um lançamento. A confiança converge automaticamente.
 
@@ -90,13 +92,13 @@ repomesh completion zsh >> ~/.zshrc
 
 | Variável | Finalidade |
 |----------|---------|
-| `REPOMESH_LEDGER_URL` | Substituir endpoint do livro-razão |
-| `REPOMESH_MANIFESTS_URL` | Substituir endpoint de manifestos |
+| `REPOMESH_LEDGER_URL` | Substituir o endpoint do livro-razão |
+| `REPOMESH_MANIFESTS_URL` | Substituir o endpoint dos manifestos |
 | `REPOMESH_FETCH_TIMEOUT` | Tempo limite de busca em ms |
 
 ### Perfis
 
-| Perfil | Evidência | Verificações de garantia | Usar quando |
+| Perfil | Evidência | Verificações de garantia | Use quando |
 |---------|----------|-----------------|----------|
 | `baseline` | Opcional | Nenhum obrigatório | Ferramentas internas, experimentos |
 | `open-source` | SBOM + proveniência | Auditoria de licença + verificação de segurança | Padrão para OSS |
@@ -188,7 +190,9 @@ Adicione `node.json` à raiz do seu repositório:
 npx @mcptoolshop/repomesh keygen --repo <your-org>/<your-repo> --out repomesh-private.pem
 ```
 
-`keygen` imprime a chave pública + uma `keyId` pronta para ser adicionada à entrada de seus mantenedores `node.json` e grava a chave privada (modo 0600) apenas onde você aponta `--out` — nunca em um caminho rastreado. Armazene-o como um segredo do repositório GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente manualmente: `openssl genpkey -algorithm ED25519 ...`.)
+`keygen` imprime a chave pública + um `keyId` pronto para ser colocado na entrada dos mantenedores do seu `node.json` e
+grava a chave privada (modo 0600) apenas onde você aponta `--out` — nunca em um caminho rastreado. Armazene-o como um
+segredo do repositório GitHub (`REPOMESH_SIGNING_KEY`). (Equivalente manualmente: `openssl genpkey -algorithm ED25519 ...`.)
 
 > **Registre ≥2 chaves para um nó crítico para a confiança** (TUF §6.1): uma única chave não pode assinar sua própria revogação se for comprometida. `repomesh init --second-key` registra um segundo mantenedor distinto para que uma chave possa revogar a outra — `init` avisa quando um nó tem apenas uma chave ativa.
 
@@ -206,19 +210,19 @@ ledger/nodes/<your-org>/<your-repo>/repomesh.profile.json
 Copie `templates/repomesh-broadcast.yml` para o `.github/workflows/` do seu repositório.
 Defina o segredo `REPOMESH_LEDGER_TOKEN` (um PAT de granularidade fina com conteúdo:write + pull-requests:write neste repositório).
 
-Cada lançamento agora transmitirá automaticamente um evento assinado `ReleasePublished` para o livro-razão.
+A partir de agora, cada lançamento transmitirá automaticamente um evento assinado `ReleasePublished` para o livro-razão.
 
-## Regras do livro-razão
+## Regras do Livro-Razão
 
 - **Apenas anexar** — as linhas existentes são imutáveis
 - **Validação de esquema** — cada evento é validado em relação a `schemas/event.schema.json`
 - **Validação de assinatura** — cada evento é assinado por um mantenedor de nó registrado
-- **Único** — sem entradas duplicadas `(repo, version, type)`
+- **Único** — sem entradas `(repo, version, type)` duplicadas
 - **Carimbo de data/hora consistente** — não mais do que 1 hora no futuro ou 1 ano no passado
 
-## Tipos de eventos
+## Tipos de Evento
 
-Atualmente, o livro-razão emite os seguintes tipos de eventos **ativos**. O restante está **reservado/planejado** — o esquema os aceita, mas nenhum nó os emite ainda. Listamos para que o roteiro seja visível sem implicar cobertura que não existe (honestidade transparente para um produto de confiança).
+Atualmente, o livro-razão emite os tipos de evento **ativos** listados abaixo. O restante é **reservado/planejado** — o esquema os aceita, mas nenhum nó os emite ainda. Listamos para que o roteiro seja visível sem implicar uma cobertura que não existe (honestidade transparente para um produto de confiança).
 
 **Ativos (emitidos hoje):**
 
@@ -228,10 +232,10 @@ Atualmente, o livro-razão emite os seguintes tipos de eventos **ativos**. O res
 | `AttestationPublished` | Um atestador verifica um lançamento |
 | `ledger.anchor` | O nó âncora sela uma partição (raiz Merkle + memorando XRPL) |
 | `attestation.dispute` | Um nó confiável contesta uma atestação (rebaixa o veredicto) |
-| `KeyRotation` | Uma chave de mantenedor é rotacionada para um sucessor (prospectivo — assinaturas passadas permanecem válidas) |
+| `KeyRotation` | Uma chave de mantenedor é rotacionada para um sucessor (prospectivo — as assinaturas passadas permanecem válidas) |
 | `KeyRevocation` | Uma chave de mantenedor é revogada (comprometimento = invalidação retroativa, RFC 5280) |
 
-`AttestationPublished` também contém as atestações de execução da Cognate (`run.preregistered`, `run.outcome`, `cognate.root.anchored`, desde a versão 2.4.0), assinadas apenas por seu `governance` nó.
+`AttestationPublished` também carrega as atestações de execução da Cognate (`run.preregistered`, `run.outcome`, `cognate.root.anchored`, desde a versão 2.4.0), assinadas apenas por seu nó `governance`.
 
 **Reservado/planejado (ainda não emitido):**
 
@@ -243,7 +247,7 @@ Atualmente, o livro-razão emite os seguintes tipos de eventos **ativos**. O res
 | `InterfaceUpdated` | Um esquema de interface é alterado |
 | `PolicyViolation` | Uma política de rede é violada. `policy/scripts/check-policy.mjs` pode construir e assinar uma; nenhuma está no livro-razão ainda |
 
-## Rotação e revogação de chaves
+## Rotação e Revogação de Chaves
 
 As chaves de mantenedor têm um ciclo de vida. Uma chave pode ser **rotacionada** para um sucessor ou **revogada**, e a verificação é **consciente do tempo**: uma assinatura é confiável apenas se a chave era válida no momento da assinatura — o tempo de fechamento da âncora XRPL, o mesmo relógio confiável que o livro-razão já usa.
 
@@ -258,17 +262,17 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 ```
 
 - A **rotação de rotina** é *prospectiva* — as assinaturas passadas da chave desativada permanecem válidas; ela simplesmente para de assinar novos lançamentos.
-- O **comprometimento** é *retroativo* (RFC 5280 §5.3.2) — qualquer assinatura cujo tempo de ancoragem comprovável seja na/após a data de invalidação é rejeitada, e uma assinatura que não pode ser comprovada como anterior a ela é rejeitada.
-- Uma chave **sem** campos de ciclo de vida é considerada como existente (sempre válida), para que os nós existentes verifiquem sem alterações.
-- As revogações são eventos assinados `KeyRevocation`; um nó de chave única cuja única chave foi comprometida é recuperado por um nó de **governança** (`trustedPolicy`) que assina a revogação. Os nós críticos para a confiança devem registrar **≥2 chaves** (TUF §6.1).
+- O **comprometimento** é *retroativo* (RFC 5280 §5.3.2) — qualquer assinatura cujo tempo de ancoragem comprovável seja no/após a data de invalidação é rejeitada, e uma assinatura que não pode ser comprovada como anterior a ela é rejeitada.
+- Uma chave **sem** campos de ciclo de vida é considerada como legado (sempre válida), para que os nós existentes verifiquem sem alterações.
+- As revogações são eventos `KeyRevocation` assinados; um nó de chave única cuja única chave foi comprometida é recuperado por um nó de **governança** (`trustedPolicy`) que assina a revogação. Os nós críticos para a confiança devem registrar **≥2 chaves** (TUF §6.1).
 - Mesmo contra um `node.json` adulterado, uma revogação é reimposta a partir dos eventos assinados e ancorados na XRPL — um manifesto despojado não pode reativar uma chave revogada. Consulte o [modelo de ameaças](docs/threat-model.md) para o limite (verifique em relação ao livro-razão canônico; use `--anchored` para verificações sensíveis à revogação).
 
-## Tipos de nós
+## Tipos de Nó
 
 | Tipo | Função |
 |------|------|
 | `registry` | Indexa nós e capacidades |
-| `attestor` | Verifica alegações (cria, conformidade) |
+| `attestor` | Verifica reivindicações (cria, conformidade) |
 | `policy` | Aplica regras (pontuação, controle) |
 | `oracle` | Fornece dados externos |
 | `compute` | Realiza trabalho (transforma, cria) |
@@ -278,11 +282,11 @@ npx @mcptoolshop/repomesh key revoke --repo your-org/your-repo \
 
 ## Estendendo a rede — o contrato do plugin verificador
 
-Novos **tipos de verificação** e **nós verificadores** são adicionados editando dados, não código. O registro de tipos de verificação, pesos de pontuação e permissões de tipo de nó estão em [`verifier.policy.json`](verifier.policy.json) (validação de esquema, falha segura). Adicionar uma verificação (por exemplo, `sast.scan`) é uma edição de política de ~6 linhas + um `node.json`, revisada em um PR — nenhuma alteração de código.
+Novos **tipos de verificação** e **nós verificadores** são adicionados editando dados, não código. O registro de tipos de verificação, pesos de pontuação e permissões de tipo de nó estão em [`verifier.policy.json`](verifier.policy.json) (validação de esquema, falha segura). Adicionar uma verificação (por exemplo, `sast.scan`) é uma edição de política de cerca de 6 linhas + um `node.json`, revisada em um PR — nenhuma alteração de código.
 
 A única invariante: **registrado ≠ confiável**. O registro permite que uma verificação participe; o crédito ainda requer uma aprovação de consenso do conjunto confiável. Guia completo: [docs/verifier-plugin-contract.md](docs/verifier-plugin-contract.md).
 
-## Verificação pública
+## Verificação Pública
 
 Qualquer pessoa pode verificar um lançamento com um único comando — **não é necessário clonar**, a CLI busca o livro-razão público para você:
 
@@ -292,8 +296,8 @@ npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --ve
 
 Isso verifica:
 1. O evento `ReleasePublished` existe e é assinado (Ed25519) por uma chave registrada para **o próprio repositório** `node.json` — uma chave registrada em um repositório diferente não pode validá-lo.
-2. O perfil de confiança do repositório é satisfeito: cada atestação exigida pelo perfil (SBOM, procedência, licença, segurança) está presente, assinada por um atestador confiável e seu resultado mais recente é `pass`, com pelo menos um atestador **independente**. Um lançamento com apenas uma autoassinatura e sem atestações independentes relata `UNVERIFIED`, nunca `PASS`.
-3. Com `--anchored`: a raiz Merkle da partição é recalculada e correspondida ao manifesto e — quando a rede estiver acessível — a transação XRPL na cadeia é buscada e afirmada (`validated` + `tesSUCCESS`, a conta de assinatura está na lista de permissões do âncora confiável e o memorando na cadeia se vincula à raiz/hash/contagem local do manifesto). Offline, ele relata `XRPL NOT verified` em vez de uma transação falsa; o `--anchored` estrito falha então (use `--anchored-or-local` para aceitar um manifesto verificado localmente sem a prova na cadeia).
+2. O perfil de confiança do repositório é satisfeito: cada atestação exigida pelo perfil (SBOM, proveniência, licença, segurança) está presente, assinada por um atestador confiável e seu resultado mais recente pela posição no livro-razão é `pass` (conforme `(check, signer)`, o evento no índice do livro-razão maior vence; o carimbo de data/hora do assinante é apenas um dado), com pelo menos um atestador **independente**. Um lançamento com apenas uma autoassinatura e sem atestações independentes relata `UNVERIFIED`, nunca `PASS`.
+3. Com `--anchored`: a raiz Merkle da partição é recalculada e correspondida ao manifesto e — quando a rede estiver acessível — a transação XRPL na cadeia é buscada e afirmada (`validated` + `tesSUCCESS`, a conta de assinatura está na lista de permissões de âncora confiável e o memorando na cadeia se vincula à raiz/hash/contagem local do manifesto). Offline, ele relata `XRPL NOT verified` em vez de uma transação falsa; o `--anchored` estrito falha então (use `--anchored-or-local` para aceitar um manifesto verificado localmente sem a prova na cadeia).
 
 Para portões de CI, escolha um formato de saída com `--format <text|json|sarif|markdown>` (`--json` é um alias para `--format json`):
 
@@ -306,13 +310,13 @@ O **código de saída** é derivado do veredicto de três estados, para que um p
 | Saída | Veredicto | Significado |
 |------|---------|---------|
 | `0` | PASS | Autêntico e garantido (ou NÃO VERIFICADO quando relaxado por `--fail-on=fail`). |
-| `1` | FAIL | Falha grave — assinatura falsificada/de repositório incorreto, atestador não autorizado ou uma verificação obrigatória falhou. |
+| `1` | FAIL | Falha grave — assinatura de repositório falsificada/incorreta, atestador não listado ou uma verificação obrigatória falhou. |
 | `3` | NÃO VERIFICADO | Suave — ainda não ancorado, sem testemunha independente ou uma verificação obrigatória ausente. |
 | `2` | — | Erro de uso ou falha interna. |
 
 ### Contêiner
 
-A mesma CLI é publicada como `ghcr.io/mcp-tool-shop-org/repomesh`, com a tag da versão npm e o hash Git. A imagem é executada como um usuário não root. Não contém uma seed de carteira.
+A mesma CLI é publicada como `ghcr.io/mcp-tool-shop-org/repomesh`, com a tag da versão npm e o hash Git. A imagem é executada como um usuário não root. Não contém uma semente de carteira.
 
 ```bash
 docker run --rm ghcr.io/mcp-tool-shop-org/repomesh verify-anchor --tx <TX_HASH>
@@ -329,15 +333,14 @@ O fluxo de trabalho diário cria esta imagem a partir do checkout e a publica.
 
 ### Ancoragem XRPL (Testnet Guard)
 
-A ancoragem em `anchor/xrpl/config.json` é **apenas para testnet** (`"network": "testnet"`). `anchor/xrpl/scripts/post-anchor.mjs` aplica uma proteção de ponto de extremidade do tipo "fail-closed" (`assertPostingEndpoint`) antes de validar `XRPL_SEED` ou construir uma `xrpl.Client`:
+A ancoragem em `anchor/xrpl/config.json` é **apenas para testnet** (`"network": "testnet"`). `anchor/xrpl/scripts/post-anchor.mjs` impõe uma proteção de ponto de extremidade de falha segura (`assertPostingEndpoint`) antes de validar `XRPL_SEED` ou construir uma `xrpl.Client`:
 
-- **Verificação padrão da testnet:** a publicação é recusada (saída diferente de zero, nenhum socket aberto), a menos que `config.network === "testnet"` **e** a URL resolvida WebSocket (`process.env.XRPL_WS_URL || config.rippledUrl`) estejam em `KNOWN_TESTNET_WS_URLS` (`wss://s.altnet.rippletest.net:51233`, `wss://clio.altnet.rippletest.net:51233`, `wss://testnet.xrpl-labs.com`). Definir `XRPL_WS_URL` para uma URL da mainnet ou desconhecida é recusado imediatamente com uma mensagem que indica a rede e a URL resolvidas.
-- **Opção de mainnet (desativada):** uma variável de ambiente sozinha nunca pode alterar a publicação para a mainnet. Optar pela mainnet requer um commit revisado em `anchor/xrpl/config.json`, definindo `"network": "mainnet"`, `"allowMainnetPosting": true` e `"mainnetAllowedEndpoints": ["wss://..."]`, contendo o ponto de extremidade de destino `wss://`, após adicionar o endereço clássico da mainnet financiado à lista de permissões enviada (`packages/repomesh-cli/src/trusted-anchor-accounts.mjs`). Essa lista de permissões é um limite: uma configuração obtida pode remover uma conta e não pode adicionar uma.
+- **Verificação padrão da testnet:** a publicação é recusada (saída diferente de zero, nenhum socket aberto), a menos que `config.network === "testnet"` **e** a URL resolvida WebSocket (`process.env.XRPL_WS_URL || config.rippledUrl`) estejam em `KNOWN_TESTNET_WS_URLS` (`wss://s.altnet.rippletest.net:51233`, `wss://clio.altnet.rippletest.net:51233`, `wss://testnet.xrpl-labs.com`). Definir `XRPL_WS_URL` para uma URL de mainnet ou desconhecida é recusado imediatamente com uma mensagem que indica a rede e a URL resolvidas.
+- **Opt-in para mainnet (desativado):** uma variável de ambiente sozinha nunca pode alterar a publicação para a mainnet. Optar pela mainnet requer um commit revisado em `anchor/xrpl/config.json`, definindo `"network": "mainnet"`, `"allowMainnetPosting": true` e `"mainnetAllowedEndpoints": ["wss://..."]`, contendo o ponto de extremidade de destino `wss://`, após adicionar o endereço clássico financiado da mainnet ao limite da lista de permissões enviada (`packages/repomesh-cli/src/trusted-anchor-accounts.mjs`). Essa lista de permissões é um limite: uma configuração obtida pode remover uma conta e não pode adicionar uma.
 
-`--fail-on <fail\|unverified>` define o nível de rigor. O padrão `unverified` falha em ambos, FAIL e
-UNVERIFIED; `--fail-on=fail` permite que UNVERIFIED passe (saída 0, com um aviso) para adoção do modo de aviso.
+`--fail-on <fail\|unverified>` define o rigor. O padrão `unverified` falha em FAIL e NÃO VERIFICADO; `--fail-on=fail` permite que NÃO VERIFICADO passe (saída 0, com um aviso) para adoção do modo de aviso.
 
-Verifique um lote inteiro em uma única carga do ledger com `verify-all` e verifique offline em relação a um clone local com `--local`:
+Verifique um lote inteiro em uma única carga do livro-razão com `verify-all` e verifique offline em relação a um clone local com `--local`:
 
 ```bash
 # Every release in the trust index, warn-mode
@@ -347,8 +350,7 @@ npx @mcptoolshop/repomesh verify-all --from-registry --fail-on fail
 npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local ./repomesh
 ```
 
-**Implemente no CI** com a ação composta incluída — veja
-[Usando a ação GitHub](docs/verification.md#using-the-github-action):
+**Implemente no CI** com a ação composta incluída — consulte [Usando a ação GitHub](docs/verification.md#using-the-github-action):
 
 ```yaml
 - uses: mcp-tool-shop-org/repomesh/.github/actions/verify@v1
@@ -358,7 +360,7 @@ npx @mcptoolshop/repomesh verify-release --repo org/repo --version 1.0.0 --local
     anchored: "true"
 ```
 
-Veja [docs/verification.md](docs/verification.md) para o guia completo de verificação, modelo de ameaças e conceitos-chave.
+Consulte [docs/verification.md](docs/verification.md) para obter o guia completo de verificação, o modelo de ameaças e os conceitos-chave.
 
 ### Use como uma biblioteca
 
@@ -373,9 +375,7 @@ process.exitCode = exitCodeForStatus(result.status);
 
 ### Ponto de extremidade de status da rede
 
-O painel publica um dado legível por máquina [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json)
-para polling externo — atualização do ledger (com um sinal de ledger congelado), contagens de veredicto de confiança, âncoras versus
-partições pendentes e um rollup `ok`/`degraded` com motivos.
+O painel publica uma versão legível por máquina de [`status.json`](https://mcp-tool-shop-org.github.io/repomesh/status.json) para sondagem externa — atualização do livro-razão (com um sinal de livro-razão congelado), contagens de veredicto de confiança, partições ancoradas versus pendentes e um rollup `ok`/`degraded` com motivos.
 
 ### Crachás de confiança
 
@@ -397,7 +397,7 @@ npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/shipcheck --ve
 
 ### Ateste uma versão
 
-> Atestar e executar verificadores são tarefas do **operador** que atuam em um clone deste ledger, portanto, são executados a partir de um checkout. A verificação de uma versão não — use o comando `npx` acima.
+> Atestar e executar verificadores são tarefas do **operador** que atuam em um clone deste livro-razão, portanto, são executados a partir de um checkout. A verificação de uma versão não — use o comando `npx` acima.
 
 ```bash
 node attestor/scripts/attest-release.mjs --scan-new  # process all unattested releases
@@ -413,7 +413,7 @@ node verifiers/license/scripts/verify-license.mjs --scan-new
 node verifiers/security/scripts/verify-security.mjs --scan-new
 ```
 
-Os limites do verificador de segurança (CVEs máximos, severidades permitidas) são definidos por meio da configuração em `verifiers/security/config.json`.
+Os limites do verificador de segurança (CVEs máximos, severidades permitidas) são configurados por meio de `verifiers/security/config.json`.
 
 ### Execute verificações de política
 
@@ -421,23 +421,23 @@ Os limites do verificador de segurança (CVEs máximos, severidades permitidas) 
 node policy/scripts/check-policy.mjs
 ```
 
-Verificações: monotonicidade semver, singularidade do hash do artefato, capacidades necessárias.
+Verificações: monotonicidade semver, exclusividade do hash do artefato, capacidades obrigatórias.
 
 ## Segurança e Modelo de Ameaças
 
-RepoMesh acessa **eventos do ledger** (JSON assinado), **manifestos de nó** (chaves públicas + capacidades), **índices do registro** (pontuações de confiança geradas automaticamente) e **testnet XRPL** (transações de âncora; a publicação recusa qualquer ponto de extremidade que não seja um ponto de extremidade conhecido da testnet). **Não** acessa o código-fonte do repositório do membro, chaves privadas, credenciais de usuário ou dados de navegação. As chaves de assinatura privadas nunca saem do executor do CI. O acesso à rede é limitado à API GitHub (criação de PR), testnet XRPL (ancoragem) e OSV.dev (pesquisa de vulnerabilidades). **Nenhuma telemetria** é coletada ou enviada — zero análises, zero relatórios de falhas, zero comunicação com o servidor. Veja [SECURITY.md](SECURITY.md) para o escopo completo, permissões necessárias e processo de relatório de vulnerabilidades, e o [modelo de ameaças](docs/threat-model.md) para o limite de confiança do ciclo de vida da chave (por que a autenticidade de `node.json` depende de sua fonte e por que a verificação sensível à revogação deve usar `--anchored`).
+RepoMesh acessa **eventos do livro-razão** (JSON assinado), **manifestos de nó** (chaves públicas + capacidades), **índices de registro** (pontuações de confiança geradas automaticamente) e **testnet XRPL** (transações de âncora; a publicação recusa qualquer ponto de extremidade que não seja um ponto de extremidade conhecido da testnet). Não acessa o código-fonte do repositório do membro, chaves privadas, credenciais de usuário ou dados de navegação. As chaves de assinatura privadas nunca saem do executor do CI. O acesso à rede é limitado à API GitHub (criação de PR), testnet XRPL (ancoragem) e OSV.dev (pesquisas de vulnerabilidades). **Nenhuma telemetria** é coletada ou enviada — zero análises, zero relatórios de falhas, zero comunicação com o servidor. Consulte [SECURITY.md](SECURITY.md) para obter o escopo completo, as permissões necessárias e o processo de relatório de vulnerabilidades, e o [modelo de ameaças](docs/threat-model.md) para obter o limite de confiança do ciclo de vida da chave (por que a autenticidade de `node.json` depende de sua origem e por que a verificação sensível à revogação deve usar `--anchored`).
 
-Reforço:
+Fortalecimento:
 
-- As chamadas de processo filho que interpolam dados variáveis usam `execFileSync` com argumentos de array; as chamadas `execSync` restantes usam strings de comando estáticas e constantes — sem vetores de injeção de shell.
-- O JSON do ledger e do registro é analisado dentro de `try`/`catch` com erros estruturados e numerados por linha; uma linha malformada é ignorada e exibida, nunca causando a falha da ferramenta com uma pilha bruta.
+- As chamadas de processo filho que interpolam dados variáveis usam `execFileSync` com argumentos de matriz; as chamadas `execSync` restantes usam strings de comando estáticas e constantes — sem vetores de injeção de shell.
+- O JSON do livro-razão e do registro é analisado dentro de `try`/`catch` com erros estruturados e numerados; uma linha malformada é ignorada e exibida, nunca causando a falha da ferramenta com uma pilha bruta.
 - A travessia de caminho é evitada em todas as operações de arquivo (resolução + verificação de limite).
-- Análise ReDoS-segura em todo o código (sem regex não limitado).
+- Análise ReDoS segura em todo o código (sem regex não limitado).
 - As chaves privadas PEM são excluídas por meio de `.gitignore`, nunca impressas no stdout ou nos logs do CI e gravadas com permissões de proprietário (`0600`).
 
 ## Testes
 
-O conjunto completo `node --test` cobre Ed25519 assinaturas, validação de esquema, integridade da árvore de Merkle (v1 + RFC-6962 v2), invariantes de anexação, prevenção de travessia de caminho, verificação de âncora, a lista de permissões de atestador confiável e validação de entrada em todas as camadas da CLI, ledger, âncora, verificador e ferramentas.
+O conjunto completo `node --test` cobre Ed25519 assinaturas, validação de esquema, integridade da árvore de Merkle (v1 + RFC-6962 v2), invariantes de anexação, prevenção de travessia de caminho, verificação de âncora, a lista de permissões de atestadores confiáveis e validação de entrada em todas as camadas da CLI, do livro-razão, da âncora, do verificador e das ferramentas.
 
 ```bash
 # Run every suite and read the exact pass/fail counts from the summary footer:
@@ -446,7 +446,7 @@ node --test $(git ls-files '*.test.mjs')
 
 A contagem de testes aumenta à medida que os conjuntos são adicionados — execute o comando acima para obter o total atual, em vez de confiar em um número que se torna desatualizado.
 
-O CI executa os mesmos 9 conjuntos em cada solicitação de pull (`ledger-ci.yml`, a verificação `test` necessária), com `--experimental-test-coverage` e um limite de cobertura de linha (`--test-coverage-lines=57`), e, em seguida, `npm audit --audit-level=high --omit=dev` para a raiz, `anchor/xrpl` e `ledger`.
+O CI executa os mesmos 9 conjuntos em cada solicitação pull (`ledger-ci.yml`, a verificação `test` obrigatória), com `--experimental-test-coverage` e um limite de cobertura de linha (`--test-coverage-lines=57`), depois `npm audit --audit-level=high --omit=dev` para a raiz, `anchor/xrpl` e `ledger`.
 
 ## Licença
 
