@@ -389,8 +389,8 @@
         "path": ".github/workflows/xrpl-watch.yml"
       },
       {
-        "commits": 17,
-        "lines": 305,
+        "commits": 18,
+        "lines": 751,
         "path": "CHANGELOG.md"
       },
       {
@@ -404,43 +404,43 @@
         "path": "LICENSE"
       },
       {
-        "commits": 10,
-        "lines": 1159,
+        "commits": 11,
+        "lines": 1291,
         "path": "README.es.md"
       },
       {
-        "commits": 10,
-        "lines": 1393,
+        "commits": 11,
+        "lines": 1538,
         "path": "README.fr.md"
       },
       {
-        "commits": 10,
-        "lines": 866,
+        "commits": 11,
+        "lines": 1093,
         "path": "README.hi.md"
       },
       {
-        "commits": 10,
-        "lines": 1077,
+        "commits": 11,
+        "lines": 1193,
         "path": "README.it.md"
       },
       {
-        "commits": 10,
-        "lines": 1566,
+        "commits": 11,
+        "lines": 1749,
         "path": "README.ja.md"
       },
       {
-        "commits": 14,
-        "lines": 329,
+        "commits": 15,
+        "lines": 1303,
         "path": "README.md"
       },
       {
-        "commits": 10,
-        "lines": 1018,
+        "commits": 11,
+        "lines": 1124,
         "path": "README.pt-BR.md"
       },
       {
-        "commits": 10,
-        "lines": 1104,
+        "commits": 11,
+        "lines": 1210,
         "path": "README.zh.md"
       },
       {
@@ -594,8 +594,8 @@
         "path": "anchor/xrpl/watch-baseline.json"
       },
       {
-        "commits": 12,
-        "lines": 800,
+        "commits": 13,
+        "lines": 820,
         "path": "atlas/README.md"
       },
       {
@@ -604,18 +604,18 @@
         "path": "atlas/boundaries.yaml"
       },
       {
-        "commits": 12,
-        "lines": 4285,
+        "commits": 13,
+        "lines": 4419,
         "path": "atlas/page.json"
       },
       {
-        "commits": 12,
-        "lines": 6018,
+        "commits": 13,
+        "lines": 6243,
         "path": "atlas/statistics.json"
       },
       {
-        "commits": 12,
-        "lines": 40140,
+        "commits": 13,
+        "lines": 40204,
         "path": "atlas/structure.json"
       },
       {
@@ -784,13 +784,13 @@
         "path": "ledger/tests/verifier-policy-contract.test.mjs"
       },
       {
-        "commits": 6,
-        "lines": 210,
+        "commits": 7,
+        "lines": 215,
         "path": "package-lock.json"
       },
       {
-        "commits": 13,
-        "lines": 204,
+        "commits": 14,
+        "lines": 577,
         "path": "packages/repomesh-cli/CHANGELOG.md"
       },
       {
@@ -804,8 +804,8 @@
         "path": "packages/repomesh-cli/README.md"
       },
       {
-        "commits": 13,
-        "lines": 48,
+        "commits": 14,
+        "lines": 50,
         "path": "packages/repomesh-cli/package.json"
       },
       {
@@ -1354,8 +1354,8 @@
         "path": "site/src/content/docs/handbook/ledger.md"
       },
       {
-        "commits": 1,
-        "lines": 41,
+        "commits": 2,
+        "lines": 130,
         "path": "site/src/content/docs/handbook/whats-new.md"
       },
       {
@@ -1629,240 +1629,240 @@
     "level": "low",
     "reason": "fewer than 25 source files reach 10 revisions in the window"
   },
-  "generatedAt": "2026-11-07T16:05:37.662Z",
+  "generatedAt": "2026-11-11T22:33:59.166Z",
   "generatedFrom": {
-    "commit": "d1b1b87c74287aa8e438c1564d6334e18515dbe6"
+    "commit": "3c04d9625571a3b7f9192b47a6eaa7ea57c1d395"
   },
   "pairs": [
     {
       "a": "CHANGELOG.md",
       "b": "README.md",
-      "either": 13,
-      "shared": 8,
-      "strength": 0.615385
+      "either": 14,
+      "shared": 9,
+      "strength": 0.642857
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 12,
-      "shared": 9,
-      "strength": 0.75
+      "either": 13,
+      "shared": 10,
+      "strength": 0.769231
     },
     {
       "a": "CHANGELOG.md",
       "b": "packages/repomesh-cli/package.json",
-      "either": 13,
-      "shared": 8,
-      "strength": 0.615385
+      "either": 14,
+      "shared": 9,
+      "strength": 0.642857
     },
     {
       "a": "README.es.md",
       "b": "README.fr.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.hi.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.it.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.ja.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.es.md",
       "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.es.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.hi.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.it.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.ja.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.fr.md",
       "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.fr.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.it.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.ja.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.hi.md",
       "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.hi.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "README.ja.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "README.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.it.md",
       "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.it.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.ja.md",
       "b": "README.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.ja.md",
       "b": "README.pt-BR.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.ja.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
       "a": "README.md",
       "b": "README.pt-BR.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.md",
       "b": "README.zh.md",
-      "either": 10,
-      "shared": 5,
-      "strength": 0.5
+      "either": 11,
+      "shared": 6,
+      "strength": 0.545455
     },
     {
       "a": "README.md",
       "b": "packages/repomesh-cli/CHANGELOG.md",
-      "either": 11,
-      "shared": 7,
-      "strength": 0.636364
+      "either": 12,
+      "shared": 8,
+      "strength": 0.666667
     },
     {
       "a": "README.md",
       "b": "packages/repomesh-cli/package.json",
-      "either": 12,
-      "shared": 6,
-      "strength": 0.5
+      "either": 13,
+      "shared": 7,
+      "strength": 0.538462
     },
     {
       "a": "README.pt-BR.md",
       "b": "README.zh.md",
-      "either": 6,
-      "shared": 6,
+      "either": 7,
+      "shared": 7,
       "strength": 1
     },
     {
@@ -1875,43 +1875,43 @@
     {
       "a": "atlas/README.md",
       "b": "atlas/page.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
       "a": "atlas/README.md",
       "b": "atlas/statistics.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
       "a": "atlas/README.md",
       "b": "atlas/structure.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
       "a": "atlas/page.json",
       "b": "atlas/statistics.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
       "a": "atlas/page.json",
       "b": "atlas/structure.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
       "a": "atlas/statistics.json",
       "b": "atlas/structure.json",
-      "either": 8,
-      "shared": 8,
+      "either": 9,
+      "shared": 9,
       "strength": 1
     },
     {
@@ -1938,9 +1938,9 @@
     {
       "a": "packages/repomesh-cli/CHANGELOG.md",
       "b": "packages/repomesh-cli/package.json",
-      "either": 10,
-      "shared": 8,
-      "strength": 0.8
+      "either": 11,
+      "shared": 9,
+      "strength": 0.818182
     },
     {
       "a": "packages/repomesh-cli/src/verify/key-window.mjs",
@@ -2037,16 +2037,16 @@
     "floor": "fallen",
     "floorHeld": false,
     "floorTrigger": "revision-depth",
-    "headDate": "2026-10-25T07:23:21-04:00",
+    "headDate": "2026-11-07T13:19:11-05:00",
     "inScopeFiles": 312,
     "pinnedStart": null,
     "priorFloor": "fallen",
-    "qualifyingCommits": 78,
+    "qualifyingCommits": 79,
     "qualifyingMinimum": 30,
     "revisions": 5,
     "shared": 10,
     "sharedFloorUsed": 3,
-    "since": "2026-04-28T11:23:21.000Z",
+    "since": "2026-05-11T18:19:11.000Z",
     "sourceExtensions": [
       ".js",
       ".mjs",

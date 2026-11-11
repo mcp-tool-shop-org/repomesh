@@ -1,14 +1,14 @@
 # repomesh: how it works
 
-Mapped at 2026-11-07 from commit d1b1b87 by Atlas 1.24.0.
+Mapped at 2026-11-11 from commit 3c04d96 by Atlas 1.26.0.
 
 ## What this is
 
 18 parts, mostly JavaScript (180 files), CSS (3), TypeScript (2), Astro (1) and shell (1). Work enters through 11 doors; the busiest is ledger-ci, which reaches 9 parts. It publishes @mcptoolshop/repomesh to npm and a container image. It deploys a site to GitHub Pages. People run repomesh. People import @mcptoolshop/repomesh. Other repositories use the RepoMesh verify-release action.
 
-## What changed since 2026-10-25 (2081a4b)
+## What changed since 2026-11-07 (d1b1b87)
 
-Nothing structural changed since 2026-10-25; 19 files changed content.
+Nothing structural changed since 2026-11-07; 8 files changed content.
 
 ## What comes in
 
@@ -106,9 +106,9 @@ And 12 more pairs.
 
 - **anchor/xrpl/manifests/** is written by anchor/xrpl/scripts/compute-root.mjs.
 - **ledger/events/events.jsonl** is written by .github/workflows/anchor-xrpl.yml, .github/workflows/attestor-ci.yml, attestor/scripts/emit-key-event.mjs and packages/repomesh-cli/src/key/rotate-revoke.mjs.
-- **ledger/nodes/** is written by attestor/scripts/emit-key-event.mjs, tools/join-node.mjs and tools/register-node.mjs.
+- **ledger/nodes/** holds files written by attestor/scripts/emit-key-event.mjs, tools/join-node.mjs and tools/register-node.mjs.
 - **registry/anchors.json** is written by verifiers/lib/common.mjs.
-- **registry/badges/** is written by registry/scripts/build-badges.mjs.
+- **registry/badges/** holds files written by registry/scripts/build-badges.mjs.
 - **registry/capabilities.json** is written by registry/scripts/build-registry.mjs.
 - **registry/dependencies.json** is written by registry/scripts/build-dependencies.mjs.
 - **registry/nodes.json** is written by registry/scripts/build-registry.mjs.
