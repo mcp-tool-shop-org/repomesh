@@ -25,7 +25,7 @@
           "path": ".github/workflows/attestor-ci.yml"
         },
         {
-          "hash": "b00f6682f7c5d79e91c7e00e911ff698358c71f362089ab7f437a626ab48363a",
+          "hash": "cbcd18a2fcadbfcaac1ca0d9f2a2f1d30d908e219a308bb3aab9a9292fe77378",
           "path": ".github/workflows/ledger-ci.yml"
         },
         {
@@ -3853,23 +3853,23 @@
           "path": "LICENSE"
         },
         {
-          "hash": "5758ab8331f430b2a0fa1af2c0260b90018adf7287cf5a6cbcaf8b49d7931bbb",
+          "hash": "43094c09a49d29b25527322212310f1495d12559b5937d6905407cc6c896f1ea",
           "path": "README.es.md"
         },
         {
-          "hash": "6d3ea97eca31ffc9b303e3eb4866b899d6a2ff653990b2e48e8c44af8cd07ee3",
+          "hash": "b2841e867b16beb0fc53b0a2038d02ef63b37dcb70433613c2f62b78a115e2b4",
           "path": "README.fr.md"
         },
         {
-          "hash": "3a6a7d01aaf636b7c5b15cd7948a446652e816e826872ad6e76f5916fff37a5f",
+          "hash": "f0c587e5c6a868459173d44c7d8d6d9c87443db0af2becdba33f6c387ce67ed1",
           "path": "README.hi.md"
         },
         {
-          "hash": "9cb518706f7da04ba675c2c1088129369faf3f8afcecdf122becd1199e8bdbc2",
+          "hash": "7cf54e9c618ddb01af94cee4295e45aeca812feaf72de67c506ce46854b86a91",
           "path": "README.it.md"
         },
         {
-          "hash": "b0f60f19b3411b9ff719240080432e0e2889b1723750b8a39faa6bd5b7631266",
+          "hash": "24374bb4a8e94c3acf472ffd5d0952cd40aeee34ee18932c1418d09ebd74b07d",
           "path": "README.ja.md"
         },
         {
@@ -3877,11 +3877,11 @@
           "path": "README.md"
         },
         {
-          "hash": "05cb4e584014c840531c0ea23ad474f9318071ecb266de68f73a803a6047897a",
+          "hash": "ee42103399168fd6526b7c2300789b78a264148c2cd1d7451d600ca0becdfca4",
           "path": "README.pt-BR.md"
         },
         {
-          "hash": "822f901f86e928724eeab2edf861f98a33bac43463257c60f63ca98392512675",
+          "hash": "4dba0934abf9c29c2175bd835e2c89e6df14a363fd9c718f24e67603393510af",
           "path": "README.zh.md"
         },
         {
@@ -8869,6 +8869,13 @@
           "event": "workflow_dispatch"
         }
       ],
+      "unresolvedExpressions": [
+        {
+          "adds": "words",
+          "job": "attest-and-check",
+          "step": "Append events to ledger via PR"
+        }
+      ],
       "uses": [
         "actions/checkout",
         "actions/setup-node",
@@ -11196,6 +11203,13 @@
           "event": "workflow_dispatch"
         }
       ],
+      "unresolvedExpressions": [
+        {
+          "adds": "words",
+          "job": "broadcast",
+          "step": "Append to ledger via PR"
+        }
+      ],
       "untrackedLandings": [
         "packages/repomesh-cli/dist/"
       ],
@@ -11509,9 +11523,9 @@
       "to": "verifiers"
     }
   ],
-  "engine": "1.24.0",
+  "engine": "1.26.0",
   "generatedFrom": {
-    "commit": "d1b1b87c74287aa8e438c1564d6334e18515dbe6",
+    "commit": "3c04d9625571a3b7f9192b47a6eaa7ea57c1d395",
     "tracked": 307
   },
   "landings": [
@@ -12435,7 +12449,8 @@
           "confidence": "ast",
           "fromCwd": true
         }
-      ]
+      ],
+      "writesInto": true
     },
     {
       "readers": [
@@ -13920,7 +13935,8 @@
             "main"
           ]
         }
-      ]
+      ],
+      "writesInto": true
     },
     {
       "readers": [],
