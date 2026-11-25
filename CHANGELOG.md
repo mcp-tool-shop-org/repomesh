@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Broadcast workflow manifest regeneration**: `repomesh-broadcast` (`.github/workflows/repomesh-broadcast.yml` and both broadcast workflow templates) now regenerates `anchor/xrpl/manifests/all.json` (`compute-root.mjs --all`) and `registry/trust.json` (`build-trust.mjs`) in the same commit as the appended release event, preventing ledger drift-guard and trust-index regression failures on automated event PRs.
+- **Ledger backfill (`2.5.0`, `2.5.1`)**: recorded the signed `ReleasePublished` events for `2.5.0` and `2.5.1` in `ledger/events/events.jsonl` and updated `anchor/xrpl/manifests/all.json` and `registry/trust.json` to match.
+
 ## [2.5.1] - 2026-11-07
 
 Hardening release. No new features; the fixes below tighten how release verification reads verdicts, policy and anchor events.

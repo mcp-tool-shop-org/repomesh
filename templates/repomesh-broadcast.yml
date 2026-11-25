@@ -215,8 +215,8 @@ jobs:
       - name: Append to ledger via PR
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
+          REPO_SLUG: ${{ github.event.repository.name }}
         run: |
-          REPO_SLUG="${{ github.event.repository.name }}"
           VERSION="${{ github.ref_name }}"
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 
@@ -231,7 +231,13 @@ jobs:
           cat /tmp/repomesh/event.json >> ledger/events/events.jsonl
           printf '\n' >> ledger/events/events.jsonl
 
-          git add ledger/events/events.jsonl
+          # Regenerate whole-ledger manifest (LEDGER-A-001) and derived trust index (#7 gate)
+          # so ledger-ci's drift guard, truncation check, and build-trust regression gate pass on the event PR.
+          rm -f anchor/xrpl/manifests/all.json
+          node anchor/xrpl/scripts/compute-root.mjs --all
+          node registry/scripts/build-trust.mjs
+
+          git add ledger/events/events.jsonl anchor/xrpl/manifests/all.json registry/trust.json
           git commit -m "event: ${{ github.repository }}@${VERSION}"
           git push origin "$BRANCH"
 
