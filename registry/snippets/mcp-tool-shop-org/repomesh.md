@@ -18,12 +18,12 @@
 
 ```bash
 # Verify the latest release (no clone required)
-npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/repomesh --version 2.3.3 --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/repomesh --version 2.5.1 --anchored
 ```
 
 ### CI Gate (JSON output)
 
 ```bash
-npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/repomesh --version 2.3.3 --json --anchored
+npx @mcptoolshop/repomesh verify-release --repo mcp-tool-shop-org/repomesh --version 2.5.1 --json --anchored
 ```
 
