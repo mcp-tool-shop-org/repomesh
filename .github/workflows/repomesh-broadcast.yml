@@ -109,8 +109,8 @@ jobs:
       - name: Upload attestation assets
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          VERSION="${{ inputs.version || github.ref_name }}"
           gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
           gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
 
@@ -215,8 +215,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
           REPO_SLUG: ${{ github.event.repository.name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          VERSION="${{ inputs.version || github.ref_name }}"
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 
           gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
@@ -244,11 +244,11 @@ jobs:
             --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
             --head "$BRANCH" \
             --title "event: ${{ github.repository }}@${VERSION}" \
-            --body "$(cat <<'EOF'
+            --body "$(cat <<EOF
           ## RepoMesh Broadcast
 
           **Repo:** ${{ github.repository }}
-          **Version:** ${{ inputs.version || github.ref_name }}
+          **Version:** ${VERSION}
           **Commit:** ${{ github.sha }}
           **Type:** ReleasePublished
 

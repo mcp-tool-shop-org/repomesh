@@ -72,6 +72,43 @@ function extractAppendStepScript(workflowRelPath) {
   return bodyLines.join("\n") + "\n";
 }
 
+function findUntrustedRunExpressions(workflowRelPath) {
+  const lines = fs.readFileSync(path.join(REPO_ROOT, workflowRelPath), "utf8").split(/\r?\n/);
+  const violations = [];
+  const untrustedRe = /\$\{\{[^}]*(?:github\.ref_name|github\.head_ref|inputs\.|github\.event\.)/;
+  let inRunBlock = false;
+  let runIndent = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const indent = line.match(/^(\s*)/)[1].length;
+
+    if (inRunBlock) {
+      if (trimmed !== "" && indent <= runIndent) {
+        inRunBlock = false;
+      } else {
+        if (untrustedRe.test(line)) {
+          violations.push(`${workflowRelPath}:${i + 1}: ${trimmed}`);
+        }
+        continue;
+      }
+    }
+
+    const runMatch = line.match(/^\s*(?:-\s*)?run:\s*(.*)$/);
+    if (runMatch) {
+      const rest = runMatch[1].trim();
+      if (/^[|>][+-]?$/.test(rest)) {
+        inRunBlock = true;
+        runIndent = line.indexOf("run:");
+      } else if (untrustedRe.test(rest)) {
+        violations.push(`${workflowRelPath}:${i + 1}: ${trimmed}`);
+      }
+    }
+  }
+  return violations;
+}
+
 function createOfflineBroadcastFixture(tmpRoot) {
   const allLines = fs.readFileSync(REAL_LEDGER, "utf8").trim().split("\n").filter(Boolean);
   assert.ok(allLines.length >= 2, "live ledger must have at least 2 events");
@@ -146,11 +183,10 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
       const rawStep = extractAppendStepScript(".github/workflows/repomesh-broadcast.yml");
 
       const branchVersion = "v0.0.0-test";
+      const ghPrArgsPath = path.join(tmpRoot, "gh-pr-create.args");
       const substituted = rawStep
         .replaceAll("/tmp/repomesh-ledger", toPosix(fx.cloneDir))
         .replaceAll("/tmp/repomesh", toPosix(fx.eventTmpDir))
-        .replaceAll("${{ inputs.version || github.ref_name }}", branchVersion)
-        .replaceAll("${{ github.ref_name }}", branchVersion)
         .replaceAll("${{ env.REPOMESH_LEDGER_REPO }}", "mcp-tool-shop-org/repomesh")
         .replaceAll("${{ github.repository }}", "mcp-tool-shop-org/repomesh")
         .replaceAll("${{ github.sha }}", "0000000000000000000000000000000000000000");
@@ -170,6 +206,7 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
         "    return $?",
         "  fi",
         '  if [ "${1:-}" = "pr" ] && [ "${2:-}" = "create" ]; then',
+        '    printf "%s\\0" "$@" > "$GH_PR_ARGS_FILE"',
         '    echo "https://github.com/mcp-tool-shop-org/repomesh/pull/999"',
         "    return 0",
         "  fi",
@@ -191,11 +228,21 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
           ...process.env,
           GH_TOKEN: "stub-token",
           REPO_SLUG: "repomesh",
+          VERSION: branchVersion,
           BARE_ORIGIN: toPosix(fx.bareDir),
+          GH_PR_ARGS_FILE: toPosix(ghPrArgsPath),
         },
         encoding: "utf8",
       });
       assert.equal(res.status, 0, `broadcast append step failed (exit ${res.status}):\n${res.stderr}\n${res.stdout}`);
+
+      const ghArgs = fs.readFileSync(ghPrArgsPath, "utf8").split("\0");
+      const titleIdx = ghArgs.indexOf("--title");
+      const bodyIdx = ghArgs.indexOf("--body");
+      assert.notEqual(titleIdx, -1, "gh pr create must pass --title");
+      assert.notEqual(bodyIdx, -1, "gh pr create must pass --body");
+      assert.equal(ghArgs[titleIdx + 1], `event: mcp-tool-shop-org/repomesh@${branchVersion}`);
+      assert.match(ghArgs[bodyIdx + 1], new RegExp(`\\*\\*Version:\\*\\* ${branchVersion.replace(/\./g, "\\.")}`));
 
       const verifyDir = path.join(tmpRoot, "verify-pr");
       execFileSync("git", ["clone", "--branch", `event/repomesh/${branchVersion}`, fx.bareDir, verifyDir], {
@@ -251,5 +298,14 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
       assert.match(step, /registry\/trust\.json/, `${rel} must stage registry/trust.json`);
       assert.doesNotMatch(step, /\$\{\{\s*github\.event/, `${rel} must not interpolate github.event inside run:`);
     }
+  });
+
+  it("forbids interpolating github.ref_name, github.head_ref, inputs.*, or github.event.* inside run: blocks", () => {
+    const violations = BROADCAST_WORKFLOWS.flatMap(findUntrustedRunExpressions);
+    assert.deepEqual(
+      violations,
+      [],
+      `Untrusted GitHub expression interpolated in run: block: ${violations.join("; ")}`,
+    );
   });
 });

@@ -93,6 +93,36 @@ against the committed manifests, tamper-PROOF on-chain via `--anchored`; the aut
   and one key can sign another's revocation. Tracked for the operators of the trust roots; the code
   already supports distinct per-node keys and time-windowed rotation/revocation.
 
+## Adopter broadcast workflow — cloned-script execution edge
+
+Adopter `repomesh-broadcast` jobs clone `REPOMESH_LEDGER_REPO` (`mcp-tool-shop-org/repomesh` `main`) in the
+`Append to ledger via PR` step and run `node anchor/xrpl/scripts/compute-root.mjs --all` and
+`node registry/scripts/build-trust.mjs` from that checkout while `GH_TOKEN` (`secrets.REPOMESH_LEDGER_TOKEN`,
+a token with write access to the ledger repo) is present in the step environment.
+
+- **Trust edge:** Running unpinned scripts cloned from `repomesh` `main` inside an adopter release job is a
+  cross-repo code-execution trust edge. Any compromise of `repomesh` `main` executes arbitrary Node.js code
+  on the adopter's runner with `REPOMESH_LEDGER_TOKEN` in `process.env` (and inside a job whose
+  `GITHUB_TOKEN` has `contents: write` on the adopter repo).
+- **What limits this today:**
+  - `REPOMESH_SIGNING_KEY` is bound only to the earlier `Create signed event` step and is absent from
+    `Append to ledger via PR`.
+  - `REPOMESH_LEDGER_TOKEN` is scoped to `contents: write` and `pull-requests: write` on the ledger repo,
+    and `repomesh` `main` is protected behind required `ledger-ci` checks (`validate-ledger` and `test`) on
+    pull requests (the broadcast workflow opens a PR and enables auto-merge rather than pushing to `main`).
+  - `.github/workflows/repomesh-broadcast.yml` SHA-pins its third-party GitHub Actions, though the adopter
+    templates (`templates/repomesh-broadcast.yml` and `packages/repomesh-cli/templates/repomesh-broadcast.yml`)
+    still use major-tag action references (`@v4`) and none of the three workflows pin the cloned ledger
+    scripts by commit.
+- **What is NOT mitigated:** `gh repo clone` fetches the unpinned `main` tip at runtime with no commit-SHA
+  or digest verification. If `repomesh` `main` is compromised (via a stolen maintainer/admin credential or
+  bypassed branch protection), the executed scripts can read and exfiltrate `REPOMESH_LEDGER_TOKEN` from
+  the environment and access workspace state (including the adopter checkout's git credentials when
+  `actions/checkout` does not set `persist-credentials: false`).
+- **Later option (not implemented in this change):** Pin the cloned script checkout or executed helper to a
+  verified commit SHA (or run a version-pinned/bundled generator, or move manifest and trust regeneration
+  off the adopter runner alongside `persist-credentials: false`).
+
 ## Reporting
 
 Security issues: see [SECURITY.md](../SECURITY.md).

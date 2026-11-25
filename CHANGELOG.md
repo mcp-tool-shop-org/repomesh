@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Broadcast workflow expression safety and threat model**: moved tag/version expressions (`inputs.version || github.ref_name` / `github.ref_name`) out of `run:` scripts into step `env:` across `.github/workflows/repomesh-broadcast.yml`, `templates/repomesh-broadcast.yml`, and `packages/repomesh-cli/templates/repomesh-broadcast.yml` with a regression check in `ledger/tests/broadcast-event-manifest.test.mjs`, and documented the adopter broadcast cloned-script execution trust edge in `docs/threat-model.md`.
+
 ### Fixed
 
 - **Broadcast workflow manifest regeneration**: `repomesh-broadcast` (`.github/workflows/repomesh-broadcast.yml` and both broadcast workflow templates) now regenerates `anchor/xrpl/manifests/all.json` (`compute-root.mjs --all`) and `registry/trust.json` (`build-trust.mjs`) in the same commit as the appended release event, preventing ledger drift-guard and trust-index regression failures on automated event PRs.
