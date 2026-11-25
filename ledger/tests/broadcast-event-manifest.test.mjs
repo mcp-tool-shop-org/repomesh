@@ -242,7 +242,7 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
       assert.notEqual(titleIdx, -1, "gh pr create must pass --title");
       assert.notEqual(bodyIdx, -1, "gh pr create must pass --body");
       assert.equal(ghArgs[titleIdx + 1], `event: mcp-tool-shop-org/repomesh@${branchVersion}`);
-      assert.match(ghArgs[bodyIdx + 1], new RegExp(`\\*\\*Version:\\*\\* ${branchVersion.replace(/\./g, "\\.")}`));
+      assert.ok(ghArgs[bodyIdx + 1].includes(`**Version:** ${branchVersion}`), "PR body must include expanded VERSION");
 
       const verifyDir = path.join(tmpRoot, "verify-pr");
       execFileSync("git", ["clone", "--branch", `event/repomesh/${branchVersion}`, fx.bareDir, verifyDir], {
