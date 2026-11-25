@@ -37,21 +37,56 @@ function resolveBashBinary() {
 const BASH_BIN = resolveBashBinary();
 const toPosix = (p) => p.replace(/\\/g, "/");
 
-function extractAppendStepScript(workflowRelPath) {
+function extractWorkflowStep(workflowRelPath, stepName) {
   const raw = fs.readFileSync(path.join(REPO_ROOT, workflowRelPath), "utf8");
   const lines = raw.split(/\r?\n/);
-  const stepIdx = lines.findIndex((l) => /^\s*-\s*name:\s*Append to ledger via PR\s*$/.test(l));
-  assert.notEqual(stepIdx, -1, `${workflowRelPath} must contain step 'Append to ledger via PR'`);
+  let stepIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)-\s*name:\s*(.+?)\s*$/);
+    if (m && m[2] === stepName) {
+      stepIdx = i;
+      break;
+    }
+  }
+  assert.notEqual(stepIdx, -1, `${workflowRelPath} must contain step '${stepName}'`);
 
+  const stepDashIndent = lines[stepIdx].match(/^(\s*)/)[1].length;
+  const env = {};
+  let inEnv = false;
+  let envIndent = 0;
   let runIdx = -1;
+
   for (let i = stepIdx + 1; i < lines.length; i++) {
-    if (/^\s*-\s*(name|uses):/.test(lines[i])) break;
-    if (/^\s*run:\s*\|\s*$/.test(lines[i])) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+
+    const indent = line.match(/^(\s*)/)[1].length;
+    if (indent <= stepDashIndent) break;
+
+    if (inEnv) {
+      if (indent > envIndent) {
+        const kv = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+        if (kv) {
+          env[kv[1]] = kv[2].trim();
+        }
+        continue;
+      }
+      inEnv = false;
+    }
+
+    if (/^env:\s*$/.test(trimmed)) {
+      inEnv = true;
+      envIndent = indent;
+      continue;
+    }
+
+    if (/^run:\s*\|\s*$/.test(trimmed)) {
       runIdx = i;
       break;
     }
   }
-  assert.notEqual(runIdx, -1, `${workflowRelPath} step 'Append to ledger via PR' must have a 'run: |' block`);
+  assert.notEqual(runIdx, -1, `${workflowRelPath} step '${stepName}' must have a 'run: |' block`);
 
   const bodyLines = [];
   let baseIndent = null;
@@ -69,44 +104,173 @@ function extractAppendStepScript(workflowRelPath) {
     }
     bodyLines.push(line.slice(baseIndent));
   }
-  return bodyLines.join("\n") + "\n";
+  return { env, run: bodyLines.join("\n") + "\n" };
 }
 
-function findUntrustedRunExpressions(workflowRelPath) {
-  const lines = fs.readFileSync(path.join(REPO_ROOT, workflowRelPath), "utf8").split(/\r?\n/);
+function resolveStepVersionEnv(step, workflowRelPath, stepName, { inputVersion = "", refName = "" }) {
+  assert.ok(
+    Object.hasOwn(step.env, "VERSION") && step.env.VERSION.length > 0,
+    `${workflowRelPath} step '${stepName}' must define VERSION in step env:`,
+  );
+  const expr = step.env.VERSION;
+  if (/^\$\{\{\s*inputs\.version\s*\|\|\s*github\.ref_name\s*\}\}$/.test(expr)) {
+    return inputVersion || refName;
+  }
+  if (/^\$\{\{\s*github\.ref_name\s*\}\}$/.test(expr)) {
+    return refName;
+  }
+  assert.fail(`${workflowRelPath} step '${stepName}' has unsupported VERSION env expression: ${expr}`);
+}
+
+function extractMustacheSpans(text) {
+  const spans = [];
+  let pos = 0;
+  while (pos < text.length) {
+    const start = text.indexOf("${{", pos);
+    if (start === -1) break;
+    let i = start + 3;
+    let inSingleQuote = false;
+    let end = text.length;
+    while (i < text.length) {
+      const ch = text[i];
+      if (inSingleQuote) {
+        if (ch === "'") {
+          if (text[i + 1] === "'") {
+            i += 2;
+            continue;
+          }
+          inSingleQuote = false;
+        }
+        i += 1;
+        continue;
+      }
+      if (ch === "'") {
+        inSingleQuote = true;
+        i += 1;
+        continue;
+      }
+      if (ch === "}" && text[i + 1] === "}") {
+        end = i + 2;
+        break;
+      }
+      i += 1;
+    }
+    spans.push({ start, expr: text.slice(start, end) });
+    pos = end;
+  }
+  return spans;
+}
+
+const UNTRUSTED_EXPR_PATTERNS = [
+  /\bgithub\s*\.\s*(?:ref_name|head_ref|ref|event)\b/i,
+  /\bgithub\s*\[\s*['"](?:ref_name|head_ref|ref|event)['"]\s*\]/i,
+  /\binputs\s*(?:\.|\[)/i,
+];
+
+function findUntrustedRunExpressionsInYaml(rawYaml, sourceLabel = "workflow.yml") {
+  const lines = rawYaml.split(/\r?\n/);
   const violations = [];
-  const untrustedRe = /\$\{\{[^}]*(?:github\.ref_name|github\.head_ref|inputs\.|github\.event\.)/;
-  let inRunBlock = false;
-  let runIndent = 0;
+  const blockHeaderRe = /^[|>](?:[1-9]?[+-]?|[+-]?[1-9]?)(?:\s+#.*)?$/;
+
+  let inScalar = false;
+  let isBlockScalar = false;
+  let ownerIndent = 0;
+  let blockBodyIndent = null;
+  let segments = [];
+
+  const flushScalar = () => {
+    if (segments.length === 0) return;
+    let joined = "";
+    const ranges = [];
+    for (const seg of segments) {
+      const offset = joined.length;
+      joined += (joined.length > 0 ? "\n" : "") + seg.text;
+      ranges.push({ offset: joined.length > seg.text.length ? offset + 1 : offset, lineNo: seg.lineNo });
+    }
+    for (const span of extractMustacheSpans(joined)) {
+      if (UNTRUSTED_EXPR_PATTERNS.some((re) => re.test(span.expr))) {
+        let lineNo = ranges[0].lineNo;
+        for (const r of ranges) {
+          if (r.offset <= span.start) lineNo = r.lineNo;
+          else break;
+        }
+        const compact = span.expr.replace(/\s+/g, " ").trim();
+        violations.push(`${sourceLabel}:${lineNo}: ${compact}`);
+      }
+    }
+    segments = [];
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     const indent = line.match(/^(\s*)/)[1].length;
 
-    if (inRunBlock) {
-      if (trimmed !== "" && indent <= runIndent) {
-        inRunBlock = false;
-      } else {
-        if (untrustedRe.test(line)) {
-          violations.push(`${workflowRelPath}:${i + 1}: ${trimmed}`);
-        }
+    if (inScalar) {
+      if (trimmed === "") {
+        segments.push({ lineNo: i + 1, text: "" });
         continue;
+      }
+      if (isBlockScalar) {
+        if (blockBodyIndent === null) {
+          if (indent > ownerIndent) {
+            blockBodyIndent = indent;
+            segments.push({ lineNo: i + 1, text: trimmed });
+            continue;
+          }
+          flushScalar();
+          inScalar = false;
+        } else if (indent >= blockBodyIndent) {
+          segments.push({ lineNo: i + 1, text: trimmed });
+          continue;
+        } else {
+          flushScalar();
+          inScalar = false;
+        }
+      } else if (indent > ownerIndent) {
+        segments.push({ lineNo: i + 1, text: trimmed });
+        continue;
+      } else {
+        flushScalar();
+        inScalar = false;
       }
     }
 
-    const runMatch = line.match(/^\s*(?:-\s*)?run:\s*(.*)$/);
-    if (runMatch) {
-      const rest = runMatch[1].trim();
-      if (/^[|>][+-]?$/.test(rest)) {
-        inRunBlock = true;
-        runIndent = line.indexOf("run:");
-      } else if (untrustedRe.test(rest)) {
-        violations.push(`${workflowRelPath}:${i + 1}: ${trimmed}`);
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+
+    if (trimmed.startsWith("{") || /^-\s*\{/.test(trimmed)) {
+      violations.push(`${sourceLabel}:${i + 1}: flow-mapping step is not allowed: ${trimmed}`);
+      continue;
+    }
+
+    const keyMatch = line.match(/^\s*(?:-\s*)?(run|script):\s*(.*)$/);
+    if (keyMatch) {
+      const rest = keyMatch[2].trim();
+      ownerIndent = indent;
+      blockBodyIndent = null;
+      segments = [];
+      if (blockHeaderRe.test(rest)) {
+        inScalar = true;
+        isBlockScalar = true;
+      } else {
+        inScalar = true;
+        isBlockScalar = false;
+        if (rest.length > 0) {
+          segments.push({ lineNo: i + 1, text: rest });
+        }
       }
     }
   }
+
+  if (inScalar) {
+    flushScalar();
+  }
   return violations;
+}
+
+function findUntrustedRunExpressions(workflowRelPath) {
+  const rawYaml = fs.readFileSync(path.join(REPO_ROOT, workflowRelPath), "utf8");
+  return findUntrustedRunExpressionsInYaml(rawYaml, workflowRelPath);
 }
 
 function createOfflineBroadcastFixture(tmpRoot) {
@@ -180,11 +344,17 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rm-broadcast-pr-"));
     try {
       const fx = createOfflineBroadcastFixture(tmpRoot);
-      const rawStep = extractAppendStepScript(".github/workflows/repomesh-broadcast.yml");
+      const workflowRel = ".github/workflows/repomesh-broadcast.yml";
+      const stepName = "Append to ledger via PR";
+      const step = extractWorkflowStep(workflowRel, stepName);
 
       const branchVersion = "v0.0.0-test";
+      const resolvedVersion = resolveStepVersionEnv(step, workflowRel, stepName, {
+        inputVersion: branchVersion,
+        refName: branchVersion,
+      });
       const ghPrArgsPath = path.join(tmpRoot, "gh-pr-create.args");
-      const substituted = rawStep
+      const substituted = step.run
         .replaceAll("/tmp/repomesh-ledger", toPosix(fx.cloneDir))
         .replaceAll("/tmp/repomesh", toPosix(fx.eventTmpDir))
         .replaceAll("${{ env.REPOMESH_LEDGER_REPO }}", "mcp-tool-shop-org/repomesh")
@@ -228,7 +398,7 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
           ...process.env,
           GH_TOKEN: "stub-token",
           REPO_SLUG: "repomesh",
-          VERSION: branchVersion,
+          VERSION: resolvedVersion,
           BARE_ORIGIN: toPosix(fx.bareDir),
           GH_PR_ARGS_FILE: toPosix(ghPrArgsPath),
         },
@@ -291,12 +461,119 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
 
   it("keeps .github/workflows/repomesh-broadcast.yml and templates in parity", () => {
     for (const rel of BROADCAST_WORKFLOWS) {
-      const step = extractAppendStepScript(rel);
-      assert.match(step, /compute-root\.mjs\s+--all/, `${rel} must regenerate all.json via compute-root.mjs --all`);
-      assert.match(step, /build-trust\.mjs/, `${rel} must regenerate registry/trust.json via build-trust.mjs`);
-      assert.match(step, /anchor\/xrpl\/manifests\/all\.json/, `${rel} must stage anchor/xrpl/manifests/all.json`);
-      assert.match(step, /registry\/trust\.json/, `${rel} must stage registry/trust.json`);
-      assert.doesNotMatch(step, /\$\{\{\s*github\.event/, `${rel} must not interpolate github.event inside run:`);
+      const uploadStep = extractWorkflowStep(rel, "Upload attestation assets");
+      assert.ok(Object.hasOwn(uploadStep.env, "VERSION"), `${rel} Upload attestation assets must set VERSION env`);
+      assert.match(uploadStep.run, /Invalid semver version/, `${rel} Upload attestation assets must validate semver`);
+      assert.match(
+        uploadStep.run,
+        /gh release upload --clobber -- "\$VERSION" \/tmp\/repomesh\/sbom\.json/,
+        `${rel} Upload attestation assets must put -- before "$VERSION" for sbom upload`,
+      );
+      assert.match(
+        uploadStep.run,
+        /gh release upload --clobber -- "\$VERSION" \/tmp\/repomesh\/provenance\.json/,
+        `${rel} Upload attestation assets must put -- before "$VERSION" for provenance upload`,
+      );
+
+      const step = extractWorkflowStep(rel, "Append to ledger via PR");
+      assert.ok(Object.hasOwn(step.env, "VERSION"), `${rel} Append to ledger via PR must set VERSION env`);
+      assert.match(step.run, /Invalid semver version/, `${rel} Append to ledger via PR must validate semver`);
+      assert.match(step.run, /compute-root\.mjs\s+--all/, `${rel} must regenerate all.json via compute-root.mjs --all`);
+      assert.match(step.run, /build-trust\.mjs/, `${rel} must regenerate registry/trust.json via build-trust.mjs`);
+      assert.match(step.run, /anchor\/xrpl\/manifests\/all\.json/, `${rel} must stage anchor/xrpl/manifests/all.json`);
+      assert.match(step.run, /registry\/trust\.json/, `${rel} must stage registry/trust.json`);
+      assert.doesNotMatch(step.run, /\$\{\{\s*github\.event/, `${rel} must not interpolate github.event inside run:`);
+    }
+    const ghAppend = extractWorkflowStep(".github/workflows/repomesh-broadcast.yml", "Append to ledger via PR");
+    assert.match(
+      ghAppend.run,
+      /gh pr merge --auto --merge --repo "\$\{\{ env\.REPOMESH_LEDGER_REPO \}\}" -- "\$PR_URL"/,
+      ".github/workflows/repomesh-broadcast.yml must put -- before \"$PR_URL\" in gh pr merge",
+    );
+  });
+
+  it("rejects option-like VERSION (--repo=x) in Upload attestation assets", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rm-semver-upload-"));
+    try {
+      const workflowRel = ".github/workflows/repomesh-broadcast.yml";
+      const stepName = "Upload attestation assets";
+      const step = extractWorkflowStep(workflowRel, stepName);
+      const badVersion = resolveStepVersionEnv(step, workflowRel, stepName, {
+        inputVersion: "--repo=x",
+        refName: "v1.0.0",
+      });
+      const markerPath = path.join(tmpRoot, "gh-called");
+      const scriptPath = path.join(tmpRoot, "upload.sh");
+      const preamble = [
+        "set -euo pipefail",
+        "gh() {",
+        '  : > "$GH_CALLED_MARKER"',
+        '  echo "gh should not have been called: $*" >&2',
+        "  return 99",
+        "}",
+        "",
+      ].join("\n");
+      fs.writeFileSync(scriptPath, preamble + step.run, "utf8");
+      const res = spawnSync(BASH_BIN, [toPosix(scriptPath)], {
+        cwd: tmpRoot,
+        env: {
+          ...process.env,
+          GH_TOKEN: "stub-token",
+          VERSION: badVersion,
+          GH_CALLED_MARKER: toPosix(markerPath),
+        },
+        encoding: "utf8",
+      });
+      assert.notEqual(res.status, 0, "option-like VERSION must fail Upload attestation assets");
+      assert.match(res.stderr, /Invalid semver version: --repo=x/);
+      assert.equal(fs.existsSync(markerPath), false, "gh must not execute when VERSION is not semver");
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects option-like VERSION (--repo=x) in Append to ledger via PR", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rm-semver-append-"));
+    try {
+      const workflowRel = ".github/workflows/repomesh-broadcast.yml";
+      const stepName = "Append to ledger via PR";
+      const step = extractWorkflowStep(workflowRel, stepName);
+      const badVersion = resolveStepVersionEnv(step, workflowRel, stepName, {
+        inputVersion: "--repo=x",
+        refName: "v1.0.0",
+      });
+      const markerPath = path.join(tmpRoot, "gh-called");
+      const scriptPath = path.join(tmpRoot, "append.sh");
+      const substituted = step.run
+        .replaceAll("${{ env.REPOMESH_LEDGER_REPO }}", "mcp-tool-shop-org/repomesh")
+        .replaceAll("${{ github.repository }}", "mcp-tool-shop-org/repomesh")
+        .replaceAll("${{ github.sha }}", "0000000000000000000000000000000000000000");
+      const preamble = [
+        "set -euo pipefail",
+        "gh() {",
+        '  : > "$GH_CALLED_MARKER"',
+        '  echo "gh should not have been called: $*" >&2',
+        "  return 99",
+        "}",
+        "",
+      ].join("\n");
+      fs.writeFileSync(scriptPath, preamble + substituted, "utf8");
+      const res = spawnSync(BASH_BIN, [toPosix(scriptPath)], {
+        cwd: tmpRoot,
+        env: {
+          ...process.env,
+          GH_TOKEN: "stub-token",
+          REPO_SLUG: "repomesh",
+          VERSION: badVersion,
+          GH_CALLED_MARKER: toPosix(markerPath),
+        },
+        encoding: "utf8",
+      });
+      assert.notEqual(res.status, 0, "option-like VERSION must fail Append to ledger via PR");
+      assert.match(res.stderr, /Invalid semver version: --repo=x/);
+      assert.equal(fs.existsSync(markerPath), false, "gh must not execute when VERSION is not semver");
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
 
@@ -307,5 +584,134 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
       [],
       `Untrusted GitHub expression interpolated in run: block: ${violations.join("; ")}`,
     );
+  });
+
+  it("detector catches expression containing '}' before its end", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Braces before end",
+      "    run: echo \"${{ format('{0}', github.ref_name) }}\"",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for embedded '}'; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector catches uppercase/mixed-case expressions (GITHUB.REF_NAME)", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Uppercase",
+      "    run: echo \"${{ GITHUB.REF_NAME }}\"",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for uppercase GITHUB.REF_NAME; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector catches github.ref", () => {
+    const yaml = [
+      "steps:",
+      "  - name: GitHub ref",
+      "    run: echo \"${{ github.ref }}\"",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for github.ref; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector catches dotless github.event (e.g. toJSON(github.event))", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Dotless github.event",
+      "    run: echo '${{ toJSON(github.event) }}'",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for dotless github.event; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector catches bracket syntax on github (github['head_ref'])", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Bracket github",
+      "    run: echo \"${{ github['head_ref'] }}\"",
+    ].join("\n");
+    const v = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(v.length >= 1, `expected violation for github['head_ref']; got ${JSON.stringify(v)}`);
+  });
+
+  it("detector catches bracket syntax on inputs (inputs['version'])", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Bracket inputs",
+      "    run: echo \"${{ inputs['version'] }}\"",
+    ].join("\n");
+    const v = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(v.length >= 1, `expected violation for inputs['version']; got ${JSON.stringify(v)}`);
+  });
+
+  it("detector catches block scalar header run: |2", () => {
+    const yaml = "steps:\n  - run: |2\n      echo \"${{ github.ref_name }}\"";
+    const v = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(v.length >= 1, `expected violation for block header '|2'; got ${JSON.stringify(v)}`);
+  });
+
+  it("detector catches block scalar header run: >-", () => {
+    const yaml = "steps:\n  - run: >-\n      echo \"${{ github.ref_name }}\"";
+    const v = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(v.length >= 1, `expected violation for block header '>-'; got ${JSON.stringify(v)}`);
+  });
+
+  it("detector catches block scalar header run: | # comment", () => {
+    const yaml = "steps:\n  - run: | # comment\n      echo \"${{ github.ref_name }}\"";
+    const v = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(v.length >= 1, `expected violation for block header '| # comment'; got ${JSON.stringify(v)}`);
+  });
+
+  it("detector catches expressions split across two lines", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Multiline expr",
+      "    run: |",
+      "      echo \"${{",
+      "        github.ref_name",
+      "      }}\"",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for multi-line expression; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector catches actions/github-script script: blocks", () => {
+    const yaml = [
+      "steps:",
+      "  - uses: actions/github-script@v7",
+      "    with:",
+      "      script: |",
+      "        console.log('${{ github.event.issue.title }}')",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected violation for actions/github-script script:; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector refuses flow-mapping steps (- { run: ... })", () => {
+    const yaml = [
+      "steps:",
+      "  - { run: 'echo ${{ github.ref_name }}' }",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "fixture.yml");
+    assert.ok(violations.length >= 1, `expected flow-mapping step refusal; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector allows safe expressions in run:/script: and untrusted expressions in step env:", () => {
+    const yaml = [
+      "steps:",
+      "  - name: Safe step",
+      "    env:",
+      "      VERSION: ${{ inputs.version || github.ref_name }}",
+      "    run: |",
+      "      echo \"${{ github.repository }} ${{ github.sha }} ${{ github.run_id }} ${{ env.REPOMESH_LEDGER_REPO }}\"",
+      "      echo \"$VERSION\"",
+      "  - uses: actions/github-script@v7",
+      "    with:",
+      "      script: |",
+      "        console.log('${{ github.repository }}')",
+    ].join("\n");
+    assert.deepEqual(findUntrustedRunExpressionsInYaml(yaml, "safe.yml"), []);
   });
 });

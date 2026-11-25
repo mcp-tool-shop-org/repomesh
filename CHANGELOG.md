@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
-- **Broadcast workflow expression safety and threat model**: moved tag/version expressions (`inputs.version || github.ref_name` / `github.ref_name`) out of `run:` scripts into step `env:` across `.github/workflows/repomesh-broadcast.yml`, `templates/repomesh-broadcast.yml`, and `packages/repomesh-cli/templates/repomesh-broadcast.yml` with a regression check in `ledger/tests/broadcast-event-manifest.test.mjs`, and documented the adopter broadcast cloned-script execution trust edge in `docs/threat-model.md`.
+- **Broadcast workflow expression safety and threat model**: moved tag/version expressions (`inputs.version || github.ref_name` / `github.ref_name`) out of `run:` scripts into step `env:` across `.github/workflows/repomesh-broadcast.yml`, `templates/repomesh-broadcast.yml`, and `packages/repomesh-cli/templates/repomesh-broadcast.yml`, validated `VERSION` as semver at the start of `Upload attestation assets` and `Append to ledger via PR` with `--` before `gh` positional arguments, expanded untrusted-expression (`run:`/`script:`, flow-mapping rejection) and step-`env:` regression checks in `ledger/tests/broadcast-event-manifest.test.mjs`, and documented the adopter broadcast cloned-script execution trust edge, unverified GitHub settings, and unmitigated token-escalation risks in `docs/threat-model.md`.
 
 ### Fixed
 
