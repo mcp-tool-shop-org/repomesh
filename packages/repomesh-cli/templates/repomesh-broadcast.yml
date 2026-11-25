@@ -110,10 +110,14 @@ jobs:
       - name: Upload attestation assets
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION="${{ github.ref_name }}"
-          gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
-          gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
+          if [[ ! "${VERSION:-}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Invalid semver version: ${VERSION:-}" >&2
+            exit 1
+          fi
+          gh release upload --clobber -- "$VERSION" /tmp/repomesh/sbom.json 2>/dev/null || echo "SBOM upload skipped"
+          gh release upload --clobber -- "$VERSION" /tmp/repomesh/provenance.json 2>/dev/null || echo "Provenance upload skipped"
 
       # Generate + sign the event (with SBOM + provenance attestations)
       - name: Create signed event
@@ -222,8 +226,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
           REPO_SLUG: ${{ github.event.repository.name }}
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION="${{ github.ref_name }}"
+          if [[ ! "${VERSION:-}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Invalid semver version: ${VERSION:-}" >&2
+            exit 1
+          fi
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 
           gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
@@ -251,11 +259,11 @@ jobs:
             --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
             --head "$BRANCH" \
             --title "event: ${{ github.repository }}@${VERSION}" \
-            --body "$(cat <<'EOF'
+            --body "$(cat <<EOF
           ## RepoMesh Broadcast
 
           **Repo:** ${{ github.repository }}
-          **Version:** ${{ github.ref_name }}
+          **Version:** ${VERSION}
           **Commit:** ${{ github.sha }}
           **Type:** ReleasePublished
 

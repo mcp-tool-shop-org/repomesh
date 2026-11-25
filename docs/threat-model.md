@@ -93,6 +93,50 @@ against the committed manifests, tamper-PROOF on-chain via `--anchored`; the aut
   and one key can sign another's revocation. Tracked for the operators of the trust roots; the code
   already supports distinct per-node keys and time-windowed rotation/revocation.
 
+## Adopter broadcast workflow — cloned-script execution edge
+
+Adopter `repomesh-broadcast` jobs clone `REPOMESH_LEDGER_REPO` (`mcp-tool-shop-org/repomesh` `main`) in the
+`Append to ledger via PR` step and run `node anchor/xrpl/scripts/compute-root.mjs --all` and
+`node registry/scripts/build-trust.mjs` from that checkout while `GH_TOKEN` (`secrets.REPOMESH_LEDGER_TOKEN`,
+a token with write access to the ledger repo) is present in the step environment.
+
+- **Trust edge:** Running unpinned scripts cloned from `repomesh` `main` inside an adopter release job is a
+  cross-repo code-execution trust edge. Any compromise of `repomesh` `main` executes arbitrary Node.js code
+  on the adopter's runner with `REPOMESH_LEDGER_TOKEN` in `process.env` (and inside a job whose
+  `GITHUB_TOKEN` has `contents: write` on the adopter repo).
+- **What limits this today:**
+  - `REPOMESH_SIGNING_KEY` is bound only to the earlier `Create signed event` step and is absent from
+    `Append to ledger via PR`.
+  - Setup guidance recommends scoping `REPOMESH_LEDGER_TOKEN` to `contents: write` and
+    `pull-requests: write` on the ledger repo, and `ledger-ci` defines `validate-ledger` and `test` jobs
+    that can be configured as required status checks on `repomesh` `main` (the broadcast workflow opens a
+    PR and enables auto-merge rather than pushing directly). Both the token's actual scope (especially if
+    a classic PAT is used) and `main` branch protection (including required checks and required reviews)
+    are **GitHub settings that cannot be verified from the repository**.
+  - Required status checks are **not** human review. The repository has no `CODEOWNERS` file and no
+    `ledger-ci` rule limiting which paths an event PR may touch, so unless branch protection on `main`
+    enforces required review, any adopter's `REPOMESH_LEDGER_TOKEN` can open a PR that edits the scripts
+    adopters clone (`anchor/xrpl/scripts/`, `registry/scripts/`) and have it auto-merge on green.
+  - `.github/workflows/repomesh-broadcast.yml` SHA-pins its third-party GitHub Actions, whereas the
+    adopter templates (`templates/repomesh-broadcast.yml` and
+    `packages/repomesh-cli/templates/repomesh-broadcast.yml`) still use major-tag action references (`@v4`),
+    none of the three workflows pin the cloned ledger scripts by commit, and none set
+    `persist-credentials: false` on `actions/checkout`.
+- **What is NOT mitigated:** `gh repo clone` fetches the unpinned `main` tip at runtime with no commit-SHA
+  or digest verification, and any leaked adopter `REPOMESH_LEDGER_TOKEN` can open PRs against non-event
+  paths (including `anchor/xrpl/scripts/` and `registry/scripts/`) that auto-merge if `main` relies on CI
+  checks without required human review. Because `REPOMESH_LEDGER_TOKEN` is shared across automated
+  adopter broadcast flows to the same ledger repo, one leaked adopter token (or a maintainer/protection
+  compromise) could execute code on every adopter's runner, exfiltrate `REPOMESH_LEDGER_TOKEN` from the
+  environment, and access workspace state (including the adopter checkout's git credentials when
+  `actions/checkout` does not set `persist-credentials: false`).
+- **Later options (not implemented):**
+  - A `ledger-ci` check that refuses event PRs touching anything other than ledger event files (and derived
+    manifest/trust files) or explicitly rejects edits to scripts/workflows from bot/event PRs.
+  - `CODEOWNERS` / required pull-request review on script and workflow paths.
+  - Commit-pinning the cloned scripts (or running a version-pinned/bundled generator, or moving manifest and
+    trust regeneration off the adopter runner alongside `persist-credentials: false`).
+
 ## Reporting
 
 Security issues: see [SECURITY.md](../SECURITY.md).

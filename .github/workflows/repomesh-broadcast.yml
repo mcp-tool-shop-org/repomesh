@@ -109,10 +109,14 @@ jobs:
       - name: Upload attestation assets
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          VERSION="${{ inputs.version || github.ref_name }}"
-          gh release upload "$VERSION" /tmp/repomesh/sbom.json --clobber 2>/dev/null || echo "SBOM upload skipped"
-          gh release upload "$VERSION" /tmp/repomesh/provenance.json --clobber 2>/dev/null || echo "Provenance upload skipped"
+          if [[ ! "${VERSION:-}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Invalid semver version: ${VERSION:-}" >&2
+            exit 1
+          fi
+          gh release upload --clobber -- "$VERSION" /tmp/repomesh/sbom.json 2>/dev/null || echo "SBOM upload skipped"
+          gh release upload --clobber -- "$VERSION" /tmp/repomesh/provenance.json 2>/dev/null || echo "Provenance upload skipped"
 
       # Generate + sign the event (with SBOM + provenance attestations)
       - name: Create signed event
@@ -215,8 +219,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPOMESH_LEDGER_TOKEN }}
           REPO_SLUG: ${{ github.event.repository.name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          VERSION="${{ inputs.version || github.ref_name }}"
+          if [[ ! "${VERSION:-}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Invalid semver version: ${VERSION:-}" >&2
+            exit 1
+          fi
           BRANCH="event/${REPO_SLUG}/${VERSION}"
 
           gh repo clone "${{ env.REPOMESH_LEDGER_REPO }}" /tmp/repomesh-ledger -- --depth 1
@@ -244,11 +252,11 @@ jobs:
             --repo "${{ env.REPOMESH_LEDGER_REPO }}" \
             --head "$BRANCH" \
             --title "event: ${{ github.repository }}@${VERSION}" \
-            --body "$(cat <<'EOF'
+            --body "$(cat <<EOF
           ## RepoMesh Broadcast
 
           **Repo:** ${{ github.repository }}
-          **Version:** ${{ inputs.version || github.ref_name }}
+          **Version:** ${VERSION}
           **Commit:** ${{ github.sha }}
           **Type:** ReleasePublished
 
@@ -258,5 +266,5 @@ jobs:
           echo "Opened $PR_URL"
           # Close the loop: auto-merge on green so release-event PRs don't pile up unmerged (the
           # ledger should record every release). Degrades gracefully if allow_auto_merge is off.
-          gh pr merge --auto --merge --repo "${{ env.REPOMESH_LEDGER_REPO }}" "$PR_URL" \
+          gh pr merge --auto --merge --repo "${{ env.REPOMESH_LEDGER_REPO }}" -- "$PR_URL" \
             || echo "::warning::Could not enable auto-merge on $PR_URL — ensure allow_auto_merge is enabled on ${{ env.REPOMESH_LEDGER_REPO }}."
