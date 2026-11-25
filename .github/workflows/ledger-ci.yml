@@ -26,110 +26,17 @@ on:
   # required status checks (validate-ledger, test), and a PR that matched no
   # path (a docs-only change) would never report them and could never merge.
   pull_request:
-  pull_request_target:
-    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  event-paths:
-    name: event-paths
-    if: github.event_name == 'pull_request_target'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Setup Node
-        uses: actions/setup-node@v7.1.0
-        with:
-          node-version: 22
-
-      - name: Evaluate event-path guard from base branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          BASE_SHA: ${{ github.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          if [[ ! "${BASE_SHA:-}" =~ ^[0-9a-fA-F]{40}$ ]] || [[ ! "${PR_HEAD_SHA:-}" =~ ^[0-9a-fA-F]{40}$ ]] || [[ ! "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
-            echo "::error::Invalid PR metadata format (fail-closed)." >&2
-            exit 1
-          fi
-          WORK_DIR="$(mktemp -d)"
-          trap 'rm -rf "$WORK_DIR"' EXIT
-          export WORK_DIR
-
-          gh api -H "Accept: application/vnd.github.raw+json" \
-            "repos/${REPO}/contents/scripts/ci/event-path-guard.mjs?ref=${BASE_SHA}" \
-            > "${WORK_DIR}/event-path-guard.mjs"
-
-          node - <<'NODE'
-          import fs from "node:fs";
-          import path from "node:path";
-          import { execFileSync } from "node:child_process";
-
-          const repo = process.env.REPO;
-          const prNumber = process.env.PR_NUMBER;
-          const expectedHeadSha = process.env.PR_HEAD_SHA;
-          const workDir = process.env.WORK_DIR;
-          const eventPayload = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-          const senderLogin = eventPayload?.sender?.login || "";
-
-          const ghJson = (args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8" }));
-
-          const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
-          const filesPages = ghJson(["api", "--paginate", "--slurp", `repos/${repo}/pulls/${prNumber}/files?per_page=100`]);
-          const files = filesPages.flat();
-
-          const headSha = pr?.head?.sha || expectedHeadSha;
-          const commit = ghJson(["api", `repos/${repo}/git/commits/${headSha}`]);
-          const tree = ghJson(["api", `repos/${repo}/git/trees/${commit.tree.sha}?recursive=1`]);
-
-          const headTreeEntries = {};
-          for (const item of tree.tree || []) {
-            headTreeEntries[item.path] = { mode: item.mode, type: item.type };
-          }
-
-          const readRole = (login) => {
-            if (!login || !/^[A-Za-z0-9-]+(\[bot\])?$/.test(login)) return null;
-            try {
-              const res = ghJson(["api", `repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`]);
-              return typeof res?.role_name === "string" ? res.role_name : null;
-            } catch {
-              return null;
-            }
-          };
-
-          const authorLogin = pr?.user?.login || "";
-          const payload = {
-            changedFilesCount: pr?.changed_files,
-            expectedHeadSha,
-            actualHeadSha: headSha,
-            files,
-            headTreeEntries,
-            treeTruncated: Boolean(tree.truncated),
-            authorLogin,
-            authorRole: readRole(authorLogin),
-            senderLogin,
-            senderRole: readRole(senderLogin),
-          };
-          fs.writeFileSync(path.join(workDir, "guard-input.json"), JSON.stringify(payload), "utf8");
-          NODE
-
-          node "${WORK_DIR}/event-path-guard.mjs" "${WORK_DIR}/guard-input.json"
-
   validate-ledger:
-    if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 10  # STGB-CI-004: bound wall-clock
     steps:
@@ -213,7 +120,6 @@ jobs:
           echo "::error::See docs/handbook.md CI Troubleshooting section for resolution steps."
 
   test:
-    if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 10  # STGB-CI-004: bound wall-clock
     steps:

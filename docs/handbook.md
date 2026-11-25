@@ -201,7 +201,7 @@ Go to your repo's Settings > Secrets and variables > Actions. Add:
 **`REPOMESH_SIGNING_KEY`** — paste the full contents of `private.pem`. This is how your broadcast workflow signs release events.
 
 **`REPOMESH_LEDGER_TOKEN`** — a GitHub fine-grained PAT used to open PRs against the ledger:
-  - Create it on a dedicated account that has only **Write** access (not Maintain, not Admin) on `mcp-tool-shop-org/repomesh`; never use an owner or admin account's token.
+  - Create it on a dedicated account that has only **Write** access (not Maintain, not Admin) on `mcp-tool-shop-org/repomesh`; never use an owner or admin account's token. The ledger token's account must not be an owner, admin, or maintainer, because the admin bypass in the merge rules would otherwise apply to it.
   - Limit repository access to only `mcp-tool-shop-org/repomesh` with permissions **Contents: Read and write** and **Pull requests: Read and write** (nothing else).
   - Set an expiration and rotate it before expiry.
 

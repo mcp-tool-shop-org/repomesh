@@ -5,9 +5,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateEventPathGuard, MAX_PR_FILES } from "../ci/event-path-guard.mjs";
+import { ALLOWED_EVENT_PATHS, evaluateEventPathGuard, MAX_PR_FILES } from "../ci/event-path-guard.mjs";
 
-const GUARD_SCRIPT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "ci", "event-path-guard.mjs");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, "..", "..");
+const GUARD_SCRIPT = path.resolve(HERE, "..", "ci", "event-path-guard.mjs");
+const CODEOWNERS_PATH = path.join(REPO_ROOT, ".github", "CODEOWNERS");
+const BROADCAST_WORKFLOWS = [
+  ".github/workflows/repomesh-broadcast.yml",
+  "templates/repomesh-broadcast.yml",
+  "packages/repomesh-cli/templates/repomesh-broadcast.yml",
+];
 
 const THREE_EVENT_FILES = [
   { filename: "ledger/events/events.jsonl", status: "modified" },
@@ -23,36 +31,65 @@ function makeRegularTreeEntries(paths = THREE_EVENT_FILES.map((f) => f.filename)
   return { ...entries, ...overrides };
 }
 
-describe("event-path-guard (pull_request_target base-branch policy)", () => {
-  it("rejects a script-edit PR from a non-admin author", () => {
+function parseCodeowners(raw) {
+  const rules = [];
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const parts = trimmed.split(/\s+/);
+    rules.push({ pattern: parts[0], owners: parts.slice(1) });
+  }
+  return rules;
+}
+
+function extractAppendGitAddPaths(workflowRelPath) {
+  const raw = fs.readFileSync(path.join(REPO_ROOT, workflowRelPath), "utf8");
+  const lines = raw.split(/\r?\n/);
+  const stepIdx = lines.findIndex((l) => /^\s*-\s*name:\s*Append to ledger via PR\s*$/.test(l));
+  assert.notEqual(stepIdx, -1, `${workflowRelPath} must contain step 'Append to ledger via PR'`);
+  let runIdx = -1;
+  for (let i = stepIdx + 1; i < lines.length; i++) {
+    if (/^\s*-\s*(name|uses):/.test(lines[i])) break;
+    if (/^\s*run:\s*\|/.test(lines[i])) {
+      runIdx = i;
+      break;
+    }
+  }
+  assert.notEqual(runIdx, -1, `${workflowRelPath} must have run: | in 'Append to ledger via PR'`);
+  let gitAddLine = null;
+  for (let i = runIdx + 1; i < lines.length; i++) {
+    if (lines[i].trim() !== "" && /^\s*-\s*(name|uses):/.test(lines[i])) break;
+    const m = lines[i].match(/^\s*git add\s+(.+)$/);
+    if (m) {
+      gitAddLine = m[1].trim();
+      break;
+    }
+  }
+  assert.ok(gitAddLine, `${workflowRelPath} 'Append to ledger via PR' must run 'git add ...'`);
+  return gitAddLine.split(/\s+/);
+}
+
+describe("event-path-guard (offline lint helper)", () => {
+  it("rejects a script-edit change set", () => {
     const res = evaluateEventPathGuard({
       changedFilesCount: 1,
       files: [{ filename: "anchor/xrpl/scripts/compute-root.mjs", status: "modified" }],
       headTreeEntries: makeRegularTreeEntries(["anchor/xrpl/scripts/compute-root.mjs"]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
-    assert.equal(res.ok, false, `expected script-edit PR from write user to FAIL, got ${JSON.stringify(res)}`);
+    assert.equal(res.ok, false, `expected script-edit PR to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => r.includes("anchor/xrpl/scripts/compute-root.mjs")));
   });
 
-  it("allows a pure event PR (the three paths, modified, mode 100644) from a non-admin", () => {
+  it("allows a pure event change set (the three paths, modified, mode 100644)", () => {
     const res = evaluateEventPathGuard({
       changedFilesCount: 3,
       files: THREE_EVENT_FILES,
       headTreeEntries: makeRegularTreeEntries(),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, true, `expected pure event PR to PASS, got ${JSON.stringify(res)}`);
-    assert.equal(res.exempted, false);
   });
 
-  it("rejects a mixed event + script PR from a non-admin", () => {
+  it("rejects a mixed event + script change set", () => {
     const res = evaluateEventPathGuard({
       changedFilesCount: 4,
       files: [...THREE_EVENT_FILES, { filename: "registry/scripts/build-trust.mjs", status: "modified" }],
@@ -60,10 +97,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
         ...THREE_EVENT_FILES.map((f) => f.filename),
         "registry/scripts/build-trust.mjs",
       ]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected mixed event + script PR to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => r.includes("registry/scripts/build-trust.mjs")));
@@ -80,10 +113,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
         },
       ],
       headTreeEntries: makeRegularTreeEntries(["registry/scripts/x"]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected rename from ledger/events/x to registry/scripts/x to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => /rename/i.test(r)));
@@ -100,10 +129,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
         },
       ],
       headTreeEntries: makeRegularTreeEntries(["registry/trust.json"]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected rename onto allowed path to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => /rename/i.test(r)));
@@ -116,10 +141,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       headTreeEntries: makeRegularTreeEntries(["ledger/events/events.jsonl"], {
         "ledger/events/events.jsonl": { mode: "120000", type: "blob" },
       }),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected symlink mode 120000 to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => r.includes("120000")));
@@ -132,10 +153,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       headTreeEntries: makeRegularTreeEntries(["anchor/xrpl/manifests/all.json"], {
         "anchor/xrpl/manifests/all.json": { mode: "100755", type: "blob" },
       }),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected executable mode 100755 to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => r.includes("100755")));
@@ -146,26 +163,18 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       changedFilesCount: 1,
       files: [{ filename: "registry/trust.json", status: "removed" }],
       headTreeEntries: makeRegularTreeEntries(["ledger/events/events.jsonl", "anchor/xrpl/manifests/all.json"]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(res.ok, false, `expected removing an allowed file to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => /removal/i.test(r)));
   });
 
-  it("rejects a .github/workflows/ledger-ci.yml edit from a non-admin", () => {
+  it("rejects a .github/workflows/ledger-ci.yml edit", () => {
     const res = evaluateEventPathGuard({
       changedFilesCount: 1,
       files: [{ filename: ".github/workflows/ledger-ci.yml", status: "modified" }],
       headTreeEntries: makeRegularTreeEntries([".github/workflows/ledger-ci.yml"]),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
-    assert.equal(res.ok, false, `expected workflow edit from non-admin to FAIL, got ${JSON.stringify(res)}`);
+    assert.equal(res.ok, false, `expected workflow edit to FAIL, got ${JSON.stringify(res)}`);
     assert.ok(res.reasons.some((r) => r.includes(".github/workflows/ledger-ci.yml")));
   });
 
@@ -174,10 +183,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       changedFilesCount: 4,
       files: THREE_EVENT_FILES,
       headTreeEntries: makeRegularTreeEntries(),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(mismatchRes.ok, false, `expected count mismatch to FAIL, got ${JSON.stringify(mismatchRes)}`);
 
@@ -189,33 +194,11 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       changedFilesCount: MAX_PR_FILES,
       files: capFiles,
       headTreeEntries: makeRegularTreeEntries(),
-      authorLogin: "admin-user",
-      authorRole: "admin",
-      senderLogin: "admin-user",
-      senderRole: "admin",
     });
-    assert.equal(capRes.ok, false, `expected API file-list cap to FAIL closed even for admin, got ${JSON.stringify(capRes)}`);
+    assert.equal(capRes.ok, false, `expected file-list cap to FAIL closed, got ${JSON.stringify(capRes)}`);
   });
 
-  it("rejects an admin-authored PR whose latest push came from a non-admin sender, with script edits", () => {
-    const res = evaluateEventPathGuard({
-      changedFilesCount: 1,
-      files: [{ filename: "anchor/xrpl/scripts/compute-root.mjs", status: "modified" }],
-      headTreeEntries: makeRegularTreeEntries(["anchor/xrpl/scripts/compute-root.mjs"]),
-      authorLogin: "repo-admin",
-      authorRole: "admin",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
-    });
-    assert.equal(
-      res.ok,
-      false,
-      `expected admin-authored PR pushed by non-admin sender with script edits to FAIL, got ${JSON.stringify(res)}`,
-    );
-    assert.equal(res.exempted, false);
-  });
-
-  it("allows an admin author plus admin sender with script edits", () => {
+  it("always rejects script edits even when admin author/sender metadata is supplied (no exemption)", () => {
     const res = evaluateEventPathGuard({
       changedFilesCount: 1,
       files: [{ filename: "anchor/xrpl/scripts/compute-root.mjs", status: "modified" }],
@@ -225,8 +208,12 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       senderLogin: "repo-admin",
       senderRole: "admin",
     });
-    assert.equal(res.ok, true, `expected admin author + admin sender with script edits to PASS, got ${JSON.stringify(res)}`);
-    assert.equal(res.exempted, true);
+    assert.equal(
+      res.ok,
+      false,
+      `expected script edit with admin metadata to FAIL lint (no exemption), got ${JSON.stringify(res)}`,
+    );
+    assert.equal(Object.hasOwn(res, "exempted"), false);
   });
 
   it("rejects a submodule entry (mode 160000) and supports CLI JSON execution", () => {
@@ -236,10 +223,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       headTreeEntries: makeRegularTreeEntries(["registry/trust.json"], {
         "registry/trust.json": { mode: "160000", type: "commit" },
       }),
-      authorLogin: "adopter-bot",
-      authorRole: "write",
-      senderLogin: "adopter-bot",
-      senderRole: "write",
     });
     assert.equal(subRes.ok, false, `expected submodule mode 160000 to FAIL, got ${JSON.stringify(subRes)}`);
     assert.ok(subRes.reasons.some((r) => r.includes("160000")));
@@ -253,10 +236,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
           changedFilesCount: 3,
           files: THREE_EVENT_FILES,
           headTreeEntries: makeRegularTreeEntries(),
-          authorLogin: "adopter-bot",
-          authorRole: "write",
-          senderLogin: "adopter-bot",
-          senderRole: "write",
         }),
         "utf8",
       );
@@ -270,10 +249,6 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
           changedFilesCount: 1,
           files: [{ filename: "scripts/ci/event-path-guard.mjs", status: "modified" }],
           headTreeEntries: makeRegularTreeEntries(["scripts/ci/event-path-guard.mjs"]),
-          authorLogin: "adopter-bot",
-          authorRole: "write",
-          senderLogin: "adopter-bot",
-          senderRole: "write",
         }),
         "utf8",
       );
@@ -281,6 +256,29 @@ describe("event-path-guard (pull_request_target base-branch policy)", () => {
       assert.equal(cliFail.status, 1, `expected CLI fail to exit 1: ${cliFail.stdout}\n${cliFail.stderr}`);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("CODEOWNERS owns * via @mcp-tool-shop and leaves unowned exactly the three broadcast git-add event files", () => {
+    const rules = parseCodeowners(fs.readFileSync(CODEOWNERS_PATH, "utf8"));
+    assert.equal(rules.length, 4, `expected 4 CODEOWNERS rules (* plus 3 unowned event paths); got ${JSON.stringify(rules)}`);
+    assert.deepEqual(rules[0], { pattern: "*", owners: ["@mcp-tool-shop"] });
+
+    const unownedPaths = [];
+    for (const rule of rules.slice(1)) {
+      assert.deepEqual(rule.owners, [], `CODEOWNERS event rule ${rule.pattern} must have no owner`);
+      assert.ok(rule.pattern.startsWith("/"), `CODEOWNERS event rule ${rule.pattern} must be root-anchored with leading '/'`);
+      unownedPaths.push(rule.pattern.slice(1));
+    }
+
+    assert.deepEqual(unownedPaths, [...ALLOWED_EVENT_PATHS]);
+    for (const workflowRel of BROADCAST_WORKFLOWS) {
+      const stagedPaths = extractAppendGitAddPaths(workflowRel);
+      assert.deepEqual(
+        stagedPaths,
+        unownedPaths,
+        `${workflowRel} 'Append to ledger via PR' git add paths must match unowned CODEOWNERS paths`,
+      );
     }
   });
 });

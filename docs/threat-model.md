@@ -113,37 +113,44 @@ a token with write access to the ledger repo) is present in the step environment
     PR and enables auto-merge rather than pushing directly). Both the token's actual scope (especially if
     a classic PAT is used) and `main` branch protection (including required checks and required reviews)
     are **GitHub settings that cannot be verified from the repository**.
-  - Required status checks are **not** human review. The repository adds `.github/CODEOWNERS` (covering
-    `.github/**`, `anchor/xrpl/scripts/**`, `registry/scripts/**`, `scripts/**`, and `CODEOWNERS`), and a
-    base-branch `pull_request_target` job (`event-paths` in `.github/workflows/ledger-ci.yml`, implemented in
-    `scripts/ci/event-path-guard.mjs`) that runs with no checkout and read-only permissions
-    (`contents: read`, `pull-requests: read`). The guard enforces that non-exempt PRs touch only
-    `ledger/events/events.jsonl`, `anchor/xrpl/manifests/all.json`, and `registry/trust.json` as `100644`
-    regular files (rejecting renames, removals, symlinks/executables/submodules, and API file-count
-    mismatches or caps), exempting other paths only when both the PR author and the event sender hold
-    `admin` or `maintain`.
-  - **Enforcement conditions and current state:** `event-paths` only blocks a merge once (1) `event-paths`
-    is configured as a required status check on `main` and (2) the adopter token's account does not hold
-    `admin` or `maintain` (otherwise the exemption passes it); **both are not set at the time of writing;
-    verify in the repository settings**. Similarly, `.github/CODEOWNERS` only blocks a merge when branch
-    protection requires code-owner review, which is **not set at the time of writing; verify in the
-    repository settings**.
+  - **Required status checks are NOT a merge control against a write-token holder:** `ledger-ci` defines
+    `validate-ledger` and `test`, but a same-repo PR executes its own copy of `.github/workflows/ledger-ci.yml`
+    from the PR head/merge commit (under the GitHub Actions app) and can redefine or make any check name pass;
+    additionally, a job skipped by an `if:` condition reports a passing conclusion (`skipped` / `neutral`
+    satisfy required status checks). `scripts/ci/event-path-guard.mjs` is kept strictly as an offline lint
+    helper run inside `test`, not a merge control.
+  - **Intended merge control (code-owner review):** repository rules on `main` using a ruleset with
+    "Require a pull request before merging", `0` required approving reviews, and "Require review from Code
+    Owners", paired with `.github/CODEOWNERS`: `* @mcp-tool-shop` followed by `/ledger/events/events.jsonl`,
+    `/anchor/xrpl/manifests/all.json`, and `/registry/trust.json` with no owner. GitHub reads `.github/CODEOWNERS`
+    from the PR's base branch (`main`), so event-only PRs touch only unowned paths and continue to auto-merge,
+    whereas edits to any other path (`anchor/xrpl/scripts/**`, `registry/scripts/**`,
+    `ledger/scripts/canonicalize.mjs`, `verifiers/lib/**`, `.github/**`, `.github/CODEOWNERS`, etc.) require
+    approval from `@mcp-tool-shop`, which a Write-only account cannot grant.
+  - **Admin bypass requirement:** because non-event PRs are authored by `@mcp-tool-shop` (the sole code owner)
+    and authors cannot approve their own pull requests, this code-owner review configuration also requires a
+    ruleset bypass for the repository `admin` role for admin merges. That admin bypass is safe **only once
+    `REPOMESH_LEDGER_TOKEN` belongs to a separate non-admin account** (otherwise the bypass applies to the
+    token's account as well).
+  - **Current state:** **not set at the time of writing; verify in the repository settings** for all three:
+    the `main` ruleset (PR requirement and code-owner review), the repository `admin` bypass, and moving
+    `REPOMESH_LEDGER_TOKEN` to a dedicated non-admin account.
   - `.github/workflows/repomesh-broadcast.yml` SHA-pins its third-party GitHub Actions, whereas the
     adopter templates (`templates/repomesh-broadcast.yml` and
     `packages/repomesh-cli/templates/repomesh-broadcast.yml`) still use major-tag action references (`@v4`),
     none of the three workflows pin the cloned ledger scripts by commit, and none set
     `persist-credentials: false` on `actions/checkout`.
 - **What is NOT mitigated:** `gh repo clone` fetches the unpinned `main` tip at runtime with no commit-SHA
-  or digest verification. When a compromise or unprotected path allows changes onto `main` — including via
-  an `admin` or `maintain` token holder (which satisfies the `event-paths` exemption), `enforce_admins`
-  being off, or the absence of required human/code-owner review — every adopter's broadcast job clones and
-  runs scripts from the same `repomesh` `main` (even though `REPOMESH_LEDGER_TOKEN` is issued per adopter,
-  not shared). Executed scripts can read and exfiltrate that adopter's `REPOMESH_LEDGER_TOKEN` from the
-  environment and access workspace state (including the adopter checkout's git credentials when
-  `actions/checkout` does not set `persist-credentials: false`).
+  or digest verification. When a compromise or missing rule allows changes onto `main` — including until
+  code-owner review is enabled, if `REPOMESH_LEDGER_TOKEN` belongs to an `admin` or `maintain` account, if a
+  ruleset bypass or `enforce_admins` off permits unreviewed merges, or via a maintainer compromise — every
+  adopter's broadcast job clones and runs scripts from the same `repomesh` `main` (`REPOMESH_LEDGER_TOKEN`
+  itself is issued per adopter, not shared). Executed scripts can read and exfiltrate that adopter's
+  `REPOMESH_LEDGER_TOKEN` from the environment and access workspace state (including the adopter checkout's
+  git credentials when `actions/checkout` does not set `persist-credentials: false`).
 - **Later options (not implemented):**
-  - Configure `event-paths` as a required status check and require code-owner / pull-request review with
-    `enforce_admins` in repository branch protection settings.
+  - Enable the `main` repository ruleset (require pull requests with `0` approvals and require Code Owner
+    review plus `admin` role bypass) alongside a dedicated non-admin Write-only ledger token account.
   - Commit-pinning the cloned scripts (or running a version-pinned/bundled generator, or moving manifest and
     trust regeneration off the adopter runner alongside `persist-credentials: false`).
 
