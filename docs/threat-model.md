@@ -113,27 +113,37 @@ a token with write access to the ledger repo) is present in the step environment
     PR and enables auto-merge rather than pushing directly). Both the token's actual scope (especially if
     a classic PAT is used) and `main` branch protection (including required checks and required reviews)
     are **GitHub settings that cannot be verified from the repository**.
-  - Required status checks are **not** human review. The repository has no `CODEOWNERS` file and no
-    `ledger-ci` rule limiting which paths an event PR may touch, so unless branch protection on `main`
-    enforces required review, any adopter's `REPOMESH_LEDGER_TOKEN` can open a PR that edits the scripts
-    adopters clone (`anchor/xrpl/scripts/`, `registry/scripts/`) and have it auto-merge on green.
+  - Required status checks are **not** human review. The repository adds `.github/CODEOWNERS` (covering
+    `.github/**`, `anchor/xrpl/scripts/**`, `registry/scripts/**`, `scripts/**`, and `CODEOWNERS`), and a
+    base-branch `pull_request_target` job (`event-paths` in `.github/workflows/ledger-ci.yml`, implemented in
+    `scripts/ci/event-path-guard.mjs`) that runs with no checkout and read-only permissions
+    (`contents: read`, `pull-requests: read`). The guard enforces that non-exempt PRs touch only
+    `ledger/events/events.jsonl`, `anchor/xrpl/manifests/all.json`, and `registry/trust.json` as `100644`
+    regular files (rejecting renames, removals, symlinks/executables/submodules, and API file-count
+    mismatches or caps), exempting other paths only when both the PR author and the event sender hold
+    `admin` or `maintain`.
+  - **Enforcement conditions and current state:** `event-paths` only blocks a merge once (1) `event-paths`
+    is configured as a required status check on `main` and (2) the adopter token's account does not hold
+    `admin` or `maintain` (otherwise the exemption passes it); **both are not set at the time of writing;
+    verify in the repository settings**. Similarly, `.github/CODEOWNERS` only blocks a merge when branch
+    protection requires code-owner review, which is **not set at the time of writing; verify in the
+    repository settings**.
   - `.github/workflows/repomesh-broadcast.yml` SHA-pins its third-party GitHub Actions, whereas the
     adopter templates (`templates/repomesh-broadcast.yml` and
     `packages/repomesh-cli/templates/repomesh-broadcast.yml`) still use major-tag action references (`@v4`),
     none of the three workflows pin the cloned ledger scripts by commit, and none set
     `persist-credentials: false` on `actions/checkout`.
 - **What is NOT mitigated:** `gh repo clone` fetches the unpinned `main` tip at runtime with no commit-SHA
-  or digest verification, and any leaked adopter `REPOMESH_LEDGER_TOKEN` can open PRs against non-event
-  paths (including `anchor/xrpl/scripts/` and `registry/scripts/`) that auto-merge if `main` relies on CI
-  checks without required human review. Because `REPOMESH_LEDGER_TOKEN` is shared across automated
-  adopter broadcast flows to the same ledger repo, one leaked adopter token (or a maintainer/protection
-  compromise) could execute code on every adopter's runner, exfiltrate `REPOMESH_LEDGER_TOKEN` from the
-  environment, and access workspace state (including the adopter checkout's git credentials when
+  or digest verification. When a compromise or unprotected path allows changes onto `main` — including via
+  an `admin` or `maintain` token holder (which satisfies the `event-paths` exemption), `enforce_admins`
+  being off, or the absence of required human/code-owner review — every adopter's broadcast job clones and
+  runs scripts from the same `repomesh` `main` (even though `REPOMESH_LEDGER_TOKEN` is issued per adopter,
+  not shared). Executed scripts can read and exfiltrate that adopter's `REPOMESH_LEDGER_TOKEN` from the
+  environment and access workspace state (including the adopter checkout's git credentials when
   `actions/checkout` does not set `persist-credentials: false`).
 - **Later options (not implemented):**
-  - A `ledger-ci` check that refuses event PRs touching anything other than ledger event files (and derived
-    manifest/trust files) or explicitly rejects edits to scripts/workflows from bot/event PRs.
-  - `CODEOWNERS` / required pull-request review on script and workflow paths.
+  - Configure `event-paths` as a required status check and require code-owner / pull-request review with
+    `enforce_admins` in repository branch protection settings.
   - Commit-pinning the cloned scripts (or running a version-pinned/bundled generator, or moving manifest and
     trust regeneration off the adopter runner alongside `persist-credentials: false`).
 

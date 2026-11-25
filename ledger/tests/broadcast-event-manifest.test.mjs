@@ -161,16 +161,54 @@ function extractMustacheSpans(text) {
   return spans;
 }
 
-const UNTRUSTED_EXPR_PATTERNS = [
+function stripSingleQuotedLiterals(expr) {
+  let out = "";
+  let inQuote = false;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (inQuote) {
+      if (ch === "'") {
+        if (expr[i + 1] === "'") {
+          i += 1;
+          continue;
+        }
+        inQuote = false;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inQuote = true;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+const UNTRUSTED_RAW_EXPR_PATTERNS = [
   /\bgithub\s*\.\s*(?:ref_name|head_ref|ref|event)\b/i,
   /\bgithub\s*\[\s*['"](?:ref_name|head_ref|ref|event)['"]\s*\]/i,
-  /\binputs\s*(?:\.|\[)/i,
 ];
+
+function isUntrustedMustacheExpr(expr) {
+  if (UNTRUSTED_RAW_EXPR_PATTERNS.some((re) => re.test(expr))) {
+    return true;
+  }
+  const stripped = stripSingleQuotedLiterals(expr);
+  if (/(?:^|[^.\w-])inputs\b/i.test(stripped)) {
+    return true;
+  }
+  if (/(?:^|[^.\w-])github\b(?!\s*[.\[])/i.test(stripped)) {
+    return true;
+  }
+  return false;
+}
 
 function findUntrustedRunExpressionsInYaml(rawYaml, sourceLabel = "workflow.yml") {
   const lines = rawYaml.split(/\r?\n/);
   const violations = [];
-  const blockHeaderRe = /^[|>](?:[1-9]?[+-]?|[+-]?[1-9]?)(?:\s+#.*)?$/;
+  const blockHeaderRe = /^[|>](?:([1-9])[+-]?|[+-]?([1-9])|[+-]?)(?:\s+#.*)?$/;
+  const keyLineRe = /^(\s*(?:-\s*)?)(?:"(run|script|with|steps)"|'(run|script|with|steps)'|(run|script|with|steps)):\s*(.*)$/;
 
   let inScalar = false;
   let isBlockScalar = false;
@@ -188,7 +226,7 @@ function findUntrustedRunExpressionsInYaml(rawYaml, sourceLabel = "workflow.yml"
       ranges.push({ offset: joined.length > seg.text.length ? offset + 1 : offset, lineNo: seg.lineNo });
     }
     for (const span of extractMustacheSpans(joined)) {
-      if (UNTRUSTED_EXPR_PATTERNS.some((re) => re.test(span.expr))) {
+      if (isUntrustedMustacheExpr(span.expr)) {
         let lineNo = ranges[0].lineNo;
         for (const r of ranges) {
           if (r.offset <= span.start) lineNo = r.lineNo;
@@ -238,21 +276,33 @@ function findUntrustedRunExpressionsInYaml(rawYaml, sourceLabel = "workflow.yml"
 
     if (trimmed === "" || trimmed.startsWith("#")) continue;
 
-    if (trimmed.startsWith("{") || /^-\s*\{/.test(trimmed)) {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[") || /^-\s*[{[]/.test(trimmed)) {
       violations.push(`${sourceLabel}:${i + 1}: flow-mapping step is not allowed: ${trimmed}`);
       continue;
     }
 
-    const keyMatch = line.match(/^\s*(?:-\s*)?(run|script):\s*(.*)$/);
+    const keyMatch = line.match(keyLineRe);
     if (keyMatch) {
-      const rest = keyMatch[2].trim();
-      ownerIndent = indent;
-      blockBodyIndent = null;
+      const keyCol = keyMatch[1].length;
+      const key = keyMatch[2] || keyMatch[3] || keyMatch[4];
+      const rest = keyMatch[5].trim();
+      if (rest.startsWith("{") || rest.startsWith("[")) {
+        violations.push(`${sourceLabel}:${i + 1}: flow value is not allowed on '${key}': ${trimmed}`);
+        continue;
+      }
+      if (key !== "run" && key !== "script") {
+        continue;
+      }
+      ownerIndent = keyCol;
       segments = [];
-      if (blockHeaderRe.test(rest)) {
+      const hdrMatch = rest.match(blockHeaderRe);
+      if (hdrMatch) {
+        const explicitIndent = hdrMatch[1] || hdrMatch[2];
+        blockBodyIndent = explicitIndent ? ownerIndent + Number(explicitIndent) : null;
         inScalar = true;
         isBlockScalar = true;
       } else {
+        blockBodyIndent = null;
         inScalar = true;
         isBlockScalar = false;
         if (rest.length > 0) {
@@ -713,5 +763,78 @@ describe("repomesh-broadcast event PR manifest & trust regeneration (PR #162)", 
       "        console.log('${{ github.repository }}')",
     ].join("\n");
     assert.deepEqual(findUntrustedRunExpressionsInYaml(yaml, "safe.yml"), []);
+  });
+
+  it("detector catches quoted run/script keys (\"run\":, 'run':, \"script\":)", () => {
+    const doubleQuoted = [
+      "steps:",
+      "  - name: Double quoted key",
+      '    "run": echo "${{ github.ref_name }}"',
+    ].join("\n");
+    const singleQuoted = [
+      "steps:",
+      "  - name: Single quoted key",
+      "    'run': echo \"${{ github.ref_name }}\"",
+    ].join("\n");
+    const quotedScript = [
+      "steps:",
+      "  - uses: actions/github-script@v7",
+      "    with:",
+      '      "script": |',
+      "        console.log('${{ github.event.issue.title }}')",
+    ].join("\n");
+    assert.ok(findUntrustedRunExpressionsInYaml(doubleQuoted, "dq.yml").length >= 1, 'expected violation for "run":');
+    assert.ok(findUntrustedRunExpressionsInYaml(singleQuoted, "sq.yml").length >= 1, "expected violation for 'run':");
+    assert.ok(findUntrustedRunExpressionsInYaml(quotedScript, "qs.yml").length >= 1, 'expected violation for "script":');
+  });
+
+  it("detector catches whole-context dumps (${{ toJSON(github) }} and ${{ toJSON(inputs) }})", () => {
+    const githubDump = [
+      "steps:",
+      "  - name: Whole github dump",
+      "    run: echo '${{ toJSON(github) }}'",
+    ].join("\n");
+    const inputsDump = [
+      "steps:",
+      "  - name: Whole inputs dump",
+      "    run: echo '${{ toJSON(inputs) }}'",
+    ].join("\n");
+    assert.ok(findUntrustedRunExpressionsInYaml(githubDump, "gh.yml").length >= 1, "expected violation for toJSON(github)");
+    assert.ok(findUntrustedRunExpressionsInYaml(inputsDump, "in.yml").length >= 1, "expected violation for toJSON(inputs)");
+  });
+
+  it("detector refuses flow values on run, script, with, or steps lines", () => {
+    const withFlow = [
+      "steps:",
+      "  - uses: actions/github-script@v7",
+      '    with: { script: "console.log(\'${{ github.event.issue.title }}\')" }',
+    ].join("\n");
+    const stepsFlow = [
+      "steps: [ { run: 'echo ${{ github.ref_name }}' } ]",
+    ].join("\n");
+    assert.ok(findUntrustedRunExpressionsInYaml(withFlow, "with-flow.yml").length >= 1, "expected refusal for with: { ... }");
+    assert.ok(findUntrustedRunExpressionsInYaml(stepsFlow, "steps-flow.yml").length >= 1, "expected refusal for steps: [ ... ]");
+  });
+
+  it("detector honors explicit block indentation indicator (|2) when first body line is indented further", () => {
+    const yaml = [
+      "steps:",
+      "  - run: |2",
+      "        echo indented-first-line",
+      '      echo "${{ github.ref_name }}"',
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "indent2.yml");
+    assert.ok(violations.length >= 1, `expected violation under |2 declared indent; got ${JSON.stringify(violations)}`);
+  });
+
+  it("detector does not swallow sibling env: after a one-line - run: step", () => {
+    const yaml = [
+      "steps:",
+      "  - run: echo ok",
+      "    env:",
+      "      V: ${{ inputs.version }}",
+    ].join("\n");
+    const violations = findUntrustedRunExpressionsInYaml(yaml, "sibling-env.yml");
+    assert.deepEqual(violations, [], `expected sibling env: not to be flagged after one-line - run:; got ${JSON.stringify(violations)}`);
   });
 });

@@ -1,0 +1,7 @@
+# Code owners for CI workflows, guard scripts, and scripts cloned by adopter broadcast jobs.
+# CODEOWNERS only blocks merges when branch protection requires code-owner review.
+.github/** @mcp-tool-shop
+anchor/xrpl/scripts/** @mcp-tool-shop
+registry/scripts/** @mcp-tool-shop
+scripts/** @mcp-tool-shop
+CODEOWNERS @mcp-tool-shop
