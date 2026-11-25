@@ -150,6 +150,7 @@ jobs:
             pages/tests/*.test.mjs \
             policy/tests/*.test.mjs \
             registry/tests/*.test.mjs \
+            scripts/tests/*.test.mjs \
             tools/tests/*.test.mjs \
             verifiers/tests/*.test.mjs
 
